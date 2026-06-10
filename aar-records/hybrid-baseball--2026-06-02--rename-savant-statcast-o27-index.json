@@ -1,0 +1,49 @@
+{
+  "record_id": "hybrid-baseball--2026-06-02--rename-savant-statcast-o27-index",
+  "source_path": "docs/aar-o27-index-rename.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-02",
+  "title": "After-Action Report — rename \"Savant / Statcast\" → \"O27 Index\" (O27i)",
+  "scope": "o27v2/web/app.py, templates (o27i_*.html, base.html, player.html).",
+  "rationale": [
+    {"item": "The advanced-stats hub shipped under borrowed MLB branding — \"Savant\" for the percentile player page, \"Statcast\" for the batted-ball leaderboard. That reads as a knockoff and doesn't fit the house voice, which already has period-styled in-world publications (the Almanac and the Gazette). The hub was renamed to O27 Index (short form O27i) — named for the game itself, in keeping with that voice.", "references": []}
+  ],
+  "delegation_events": [],
+  "actions": [
+    {"description": "Controlled, repo-wide token rename — no behaviour change, pure identity/plumbing: routes /savant → /o27i, /leaderboard/statcast → /o27i/leaders, /player/<id>/savant → /player/<id>/o27i; endpoints savant_home/statcast_leaderboard/player_savant → o27i_home/o27i_leaders/player_o27i; templates savant.html/savant_home.html/statcast_leaderboard.html → o27i_player.html/o27i_home.html/o27i_leaders.html; internal helpers _SAVANT_*/_savant_* → _O27I_*/_o27i_*; nav label and page titles updated; player-page button \"Savant\" → \"O27i\".", "artifacts": ["o27v2/web/app.py", "o27i_player.html", "o27i_home.html", "o27i_leaders.html", "base.html", "player.html"], "kind": "modified"},
+    {"description": "CSS classes (.savant-* → .o27i-*), search-box element ids, and the JS redirect path renamed so no savant/statcast token survives in any served page.", "artifacts": ["o27i templates"], "kind": "modified"}
+  ],
+  "risk_posture": [
+    "A controlled, repo-wide token rename — no behaviour change, pure identity/plumbing",
+    "No engine, schema, or stat-math change — this was branding + routing only."
+  ],
+  "validation_claims": [
+    {"claim": "Every new route returns 200 (/o27i, /o27i/leaders, /player/<id>/o27i, and the JSON variant); the three old routes return 404.", "evidence_cited": "render/smoke", "checkable_against_repo": "yes", "check_method": "Run the app and curl the new and old routes", "verified": "not_checked"},
+    {"claim": "Nav reads \"O27 Index\" and links to /o27i; the player-page button reads \"O27i\" and links through.", "evidence_cited": "render/smoke", "checkable_against_repo": "yes", "check_method": "Inspect base.html/player.html and rendered pages", "verified": "not_checked"},
+    {"claim": "Grep confirms zero savant / Savant / statcast / Statcast strings in any rendered page (home, leaders, player percentile page).", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "grep -ri savant\\|statcast over o27v2/web and rendered output", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "Historical AARs keep their original names and contents (aar-baseball-savant-feasibility.md, aar-savant-percentile-page.md, aar-savant-phases-2-4.md)", "reason": "Those document how the page was built at the time and are an accurate record; renaming them would falsify history. They reference \"Savant\" because that's what it was called then.", "category": "declined_by_owner", "status": "unknown"},
+    {"item": "No engine, schema, or stat-math change", "reason": "this was branding + routing only", "category": "out_of_scope", "status": "unknown"}
+  ],
+  "residual_risks": [],
+  "open_hooks": [
+    "This rename was the first commit of a larger arc on the same branch (expanded metric suite, Prospect Index, exact OAA/WP) — see docs/aar-expanded-metrics-and-prospect-index.md."
+  ],
+  "section_headers_original": [
+    "After-Action Report — rename \"Savant / Statcast\" → \"O27 Index\" (O27i)",
+    "Why",
+    "What changed",
+    "Validation",
+    "What I deliberately did NOT change",
+    "Follow-on"
+  ],
+  "unmapped_content": "Branch: claude/peaceful-thompson-ZB5UY; Commit: d332915.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": false,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": false
+  },
+  "parser_notes": "Short, clean rename AAR. non_actions category for keeping historical AARs is arguably agent-decided; recorded as declined_by_owner per the document's deliberate phrasing — could also be read as out_of_scope."
+}

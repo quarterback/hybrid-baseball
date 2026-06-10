@@ -1,0 +1,149 @@
+{
+  "record_id": "hybrid-baseball--2026-05-20--foul-out-leaderboards-xo-crossover-consistency-ra27",
+  "source_path": "docs/aar-foul-outs-xo-fixes-and-ra27.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-20",
+  "title": "After-Action Report \u2014 Foul-Out Leaderboards, XO Crossover Consistency, and RA/27",
+  "scope": "The persistent Walk-Back runner rewrite shipped on this same branch and has its own deep-dive: `docs/aar-walk-back-persistent-runner.md`. This report covers the three stat-layer changes that rode alongside it.",
+  "rationale": [
+    {
+      "item": "\"Foul out rates should probably be a leaderboard stat but I can't decide if they are a type of strikeout or a separate thing.\" \u2026 \"It goes on both \u2014 I want to know how often hitters do it and how much pitchers do that too.\"",
+      "references": []
+    },
+    {
+      "item": "XO crossover: \"The crossover stats are [anchoring] instead of actual batting average\u2026 you need to use batting average as a one-to-one, not plate average, which is different.\" The XO z-anchor is only correct if the per-player value and the league baseline distribution are computed by the same formula; they had drifted because _compute_xo_league_baselines re-derives each stat with its own hand-coded SQL loop. The failure mode is silent.",
+      "references": []
+    },
+    {
+      "item": "RA/27: \"I'm wondering if there needs to be an out-share-type ERA rendering against runs allowed?\" It matters in O27 specifically because the Walk-Back rule manufactures unearned runs by design \u2014 real runs that ERA deliberately excludes.",
+      "references": [
+        "docs/aar-walk-back-persistent-runner.md"
+      ]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Foul-outs surfaced on both batting and pitching boards",
+      "decided_by": "owner",
+      "quote": "\"It goes on both \u2014 I want to know how often hitters do it and how much pitchers do that too.\""
+    },
+    {
+      "decision": "Fix AVG anchoring and all other drifted XO baselines",
+      "decided_by": "owner",
+      "quote": "\"Yes do that and any others.\""
+    },
+    {
+      "decision": "Ship both native RA/27 and the ERA-anchored XO twin",
+      "decided_by": "owner",
+      "quote": "\"Yes do the ERA-anchored XO twin.\""
+    }
+  ],
+  "actions": [
+    {
+      "description": "Foul-out leaderboards: Batting \u00b7 Power & Counting FO + FO% (FO/PA); Pitching \u00b7 Counting & Value FO; Pitching \u00b7 Workload & Stuff FO% (FO/BF) beside K%; glossary entries for all four",
+      "artifacts": [
+        "o27v2/web/glossary.py",
+        "game_batter_stats.fo",
+        "game_pitcher_stats.fo_induced"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "_compute_xo_league_baselines now mirrors the per-player formula for every XO stat: AVG \u2192 H/AB (bavg), wOBA \u2192 dynamic weights + stay split, BABIP \u2192 strikeout-excluded denominator, oSLG/oOPS \u2192 (H+3\u00b7HR)/AB_faced; comments at both sites stating they MUST stay in sync",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Native RA/27 in _aggregate_pitcher_rows: runs_allowed \u00d7 27 / outs, shown beside wERA and xRA",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "_aggregate_pitcher_rows"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "ERA-anchored XO twin: ra27 added to XO_PITCHER_STATS with the MLB ERA anchor (4.30 / 1.05) and matching baseline distribution; glossary entry + two leaderboard cards (native + XO)",
+      "artifacts": [
+        "XO_PITCHER_STATS"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Kept foul-outs as their own stat rather than folding them into the strikeout counters, matching how the DB models them \u2014 while K% continues to blend them in (`(K + foul-outs) / BF`), the established O27 convention.",
+    "ERA/WHIP/K9/BB9/HR9 were already consistent and untouched."
+  ],
+  "validation_claims": [
+    {
+      "claim": "mean(xo) over qualified players now lands on the MLB anchor for all six batter stats and the opponent-slash pitcher stats.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compute mean XO over qualified players and compare to anchors",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "RA/27 \u2265 ERA for every pitcher (total \u2265 earned, as it must be). Native league mean ~19\u201322 vs ERA ~15. XO RA/27 centers on 4.302 (target 4.30).",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Audit RA/27 vs ERA per pitcher and league means",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Suites run clean (render / analytics / park / walk-back); the only repo failures are the pre-existing test_phase8_db_migration idempotency cases and a flaky random trade-noise test, both unrelated and red on the base commit.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest suites and compare to base commit",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Extracting a single shared rate-from-counts helper so baseline and per-player formulas can't drift",
+      "reason": "deferred because _aggregate_*_rows calls back into _league_baselines, risking recursion",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Revisiting whether the K-excluding PA-based denominator is the \"right\" BABIP for O27",
+      "reason": "a separate modeling question, untouched here",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The crossover baseline and the per-player stat are two code paths computing the same quantity; any formula divergence silently miscalibrates the translation."
+  ],
+  "open_hooks": [
+    "Longer-term cleanup: extract a single shared rate-from-counts helper"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Foul-Out Leaderboards, XO Crossover Consistency, and RA/27",
+    "1. Foul-Out leaderboards",
+    "What was asked for",
+    "What changed",
+    "2. XO Crossover consistency (the silent-miscalibration class)",
+    "What was asked for",
+    "Diagnosis",
+    "What changed",
+    "Verification",
+    "3. RA/27 \u2014 runs allowed per 27 outs",
+    "What was asked for",
+    "What changed",
+    "Verification",
+    "Notes / follow-ups"
+  ],
+  "unmapped_content": "**Branch:** `claude/add-foul-outs-stat-OXRYr`\n\nXO formula: xo = MLB_mean + ((value \u2212 O27_mean) / O27_sd) \u00d7 MLB_sd. Drift specifics: AVG per-player fed b[\"avg\"] aliased to PAVG (H/PA) but baseline was H/AB; wOBA baseline used fixed MLB-ish weights vs dynamic empirical O27 weights with a true-singles/stay split; BABIP baseline (H\u2212HR)/(AB\u2212HR) vs per-player (H\u2212HR)/(PA\u2212K\u2212BB\u2212HBP\u2212HR); pitcher oSLG/oOPS baseline used full total bases vs crude (H+3\u00b7HR)/AB_faced. RA/27 user quote: \"Or we can use RA/27 since [we] already have wERA or xRA\u2026 what makes sense?\" The trio reads together \u2014 wERA (arc-weighted earned), xRA (expected), RA/27 (all runs) \u2014 so RA/27 \u2212 wERA is the run damage the earned-run stats hide; XO RA/27 \u2212 XO ERA is the same cost on the MLB ERA scale. Foul-out data already existed; only the surfacing was missing.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR; references sibling AAR docs/aar-walk-back-persistent-runner.md on the same branch."
+}

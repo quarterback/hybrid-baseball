@@ -1,0 +1,100 @@
+{
+  "record_id": "hybrid-baseball--2026-05-03--sim-realism-layer",
+  "source_path": "docs/aar-sim-realism-layer.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-03",
+  "title": "After-Action Report — Sim Realism Layer (Multi-D Ratings, Platoon, Parks, Form, Foul-Out)",
+  "scope": "The user described two problems with the live league sim: \"Player stat lines look fake.\" \"Game-to-game feels samey.\"",
+  "rationale": [
+    {"item": "Keep O27 rules as-is. 12-batter lineups, stays, 27-out phases, super-innings, no inter-inning pitcher rest. Do not pivot toward MLB-standard.", "references": []},
+    {"item": "Use 1990s–2000s MLB as a vibe, not a rate-stat ceiling. Contact-era feel, balls-in-play matter, slugging matters, walks matter, low strikeouts. Inside an O27 lens.", "references": []},
+    {"item": "Add MLB factors on top — not a rewrite.", "references": []},
+    {"item": "Mid-task clarification: \"The environment isn't broken, the sport is fundamentally different than baseball. ... I don't want to make it look exactly like baseball — this is a more perverted form of it, that's the whole point.\"", "references": ["HANDOFF doc"]},
+    {"item": "Second mid-task clarification surfaced an O27 rule the engine wasn't modeling: \"If a player fouls off 3 pitches in an at-bat he's out and it's called a FO (foul out).\"", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "Leave the run environment alone; do not suppress scoring to MLB-like levels", "decided_by": "owner", "quote": "The user's instruction to leave the run environment alone was load-bearing — the original Plan-agent proposal had targets that would have suppressed scoring to MLB-like levels."},
+    {"decision": "Implement the 3-foul foul-out rule", "decided_by": "owner", "quote": "If a player fouls off 3 pitches in an at-bat he's out and it's called a FO (foul out)."},
+    {"decision": "Exclude pitch_types / spray_angle / defense_quality", "decided_by": "owner", "quote": "The user's \"Add MLB factors on top — not a rewrite\" scope ruled them out."}
+  ],
+  "actions": [
+    {"description": "Multi-dimensional batter ratings: power, contact, eye added to Player, each rolled independently against the existing 9-tier 20-80 ladder (_TALENT_TIERS from Task #65); existing skill kept as fallback/blend term", "artifacts": ["o27/engine/state.py", "o27v2/league.py"], "kind": "new"},
+    {"description": "Multi-dimensional pitcher ratings: command (reduce P(ball) regardless of Stuff) and movement (bias contact toward weak/ground_out); pitcher_skill (Stuff) keeps its role; stamina stays as-is", "artifacts": ["o27/engine/state.py", "o27v2/league.py"], "kind": "new"},
+    {"description": "Handedness + platoon split: bats ('L'/'R'/'S') and throws ('L'/'R') fields; league ratios match 90s–00s MLB; _platoon_factor applies PLATOON_PENALTY = 0.06 to batter-side shifts in same-handed matchups; switch hitters always have the advantage", "artifacts": ["o27/engine/prob.py", "o27/engine/state.py", "o27v2/league.py"], "kind": "new"},
+    {"description": "Ballpark factors: park_hr and park_hits on Team, generated per team in seed_league from N(1.0, 0.07) HR clipped [0.85, 1.20] and N(1.0, 0.04) hits clipped [0.93, 1.08]; applied in resolve_contact against the home park symmetrically", "artifacts": ["o27/engine/state.py", "o27v2/league.py", "o27/engine/prob.py"], "kind": "new"},
+    {"description": "Daily pitcher form variance: Player.today_form; ProbabilisticProvider._maybe_roll_form rolls ~N(1.0, 0.10) clipped [0.80, 1.20] per fresh pitcher, multiplies effective Stuff in pitch_outcome and contact_quality; seeded by game-level RNG", "artifacts": ["o27/engine/prob.py"], "kind": "new"},
+    {"description": "Era-flavor recalibration of PITCH_BASE in two passes (Pass 4 + Pass 5) shifting mass from swinging strikes into fouls and balls, especially at 2-strike counts", "artifacts": ["o27/config.py"], "kind": "config"},
+    {"description": "Foul-out rule: Count.fouls counter; pa.py foul handler ends AB as an out at 3 fouls (FO, no K credit); renderer flags is_foul_out and credits ab+1, outs_recorded+1", "artifacts": ["o27/engine/state.py", "o27/engine/pa.py", "o27/render/render.py"], "kind": "new"},
+    {"description": "Identity invariant + 6 tests guarding bit-for-bit identical output at neutral attribute values, including a sanity check that the layer is not silently no-op'd", "artifacts": ["tests/test_realism_identity.py"], "kind": "new"},
+    {"description": "Incidental fixes: HANDOFF Bug 5 — super-inning assert state.outs <= 5 in game.py:162, 191 downgraded to if state.outs > 5: break with logged warning; o27/main.py _player() accepts legacy is_joker kwarg (fixes tune.py)", "artifacts": ["o27/engine/game.py", "o27/main.py"], "kind": "modified"},
+    {"description": "Schema additions on players (contact, power, eye, command, movement, bats, throws) and teams (park_hr, park_hits) with ALTER TABLE migration; o27v2/sim.py plumbs new attrs; tune.py rate-stats reporting; .gitignore additions", "artifacts": ["o27v2/db.py", "o27v2/sim.py", "o27/tune.py", ".gitignore"], "kind": "modified"}
+  ],
+  "risk_posture": [
+    "New attribute contributions are added on top, not in lieu of.",
+    "Under those conditions the engine produces bit-for-bit identical output to the pre-realism formulas.",
+    "The contract — every new contribution has the form (rating - 0.5) * 2 * scale so it collapses to 0 at neutral, multipliers default to 1.0, handedness checks gate on truthy strings — was deliberately designed to be testable in isolation.",
+    "left alone rather than chasing into over-tuning",
+    "Not chased because it's orthogonal to the realism complaint."
+  ],
+  "validation_claims": [
+    {"claim": "6/6 identity tests pass (tests/test_realism_identity.py) — including a sanity check that proves the realism layer is wired up (extreme eye=0.95 batter takes more balls than neutral).", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "pytest tests/test_realism_identity.py", "verified": "not_checked"},
+    {"claim": "o27/tune.py --games 200 passes cleanly with new K%/BB%/BA/SLG/HR-PA reporting, all rate-stats within or adjacent to target bands, run environment intentionally unrestricted.", "evidence_cited": "metrics", "checkable_against_repo": "yes", "check_method": "Run python -m o27.tune --games 200", "verified": "not_checked"},
+    {"claim": "o27v2/smoke_test.py passes 10/10 games post-realism — engine still completes end-to-end.", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "Run o27v2/smoke_test.py", "verified": "not_checked"},
+    {"claim": "Fresh DB seed at O27V2_DB_PATH=/tmp/realism_check.db confirmed: every player has populated contact/power/eye/command/movement/bats/throws; every team has park_hr/park_hits with realistic spread (Orioles 0.85 pitcher's park, Mariners 1.11 hitter's park).", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Seed a fresh DB and query player/team columns", "verified": "not_checked"},
+    {"claim": "HANDOFF Bug 5 verified: assertion crash in game.py:162, 191 no longer terminates long batch runs.", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Run a long batch and confirm no assertion failure", "verified": "not_checked"},
+    {"claim": "Foul-out active calibration: K% 17.16% (target 17–19% ✓), BB% 8.53% (within 0.5 pt of 9–10%), BA .293 ✓, SLG .457 ✓, HR/PA 1.95% (within 0.05 pt), R/T/G ~24.7 (intentionally unconstrained), super-inning freq 7.5% (above <5% target, flagged)", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the tune harness at 200 games and compare", "verified": "not_checked"},
+    {"claim": "Baseline regression pass: numbers match the HANDOFF doc almost exactly (K% 24.69 vs 25.5, BB% 7.10 vs 7.1, BA .288 vs .295, SLG .448 vs .465, HR/PA 1.97 vs 2.2)", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Run baseline tune with neutral attrs and compare against HANDOFF figures", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "pitch_types / spray_angle / defense_quality", "reason": "These were proposed in the original Plan-agent reports and would each be a multi-day addition. The user's \"Add MLB factors on top — not a rewrite\" scope ruled them out.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "Chasing super-inning frequency (7.5% vs <5% PRD target)", "reason": "Likely sample variance from 200 games + the foul-out rule slightly compressing scoring distribution variance. Worth monitoring at 500-game scale; not chased here because it's orthogonal to the realism complaint.", "category": "deferred", "status": "unknown"},
+    {"item": "Chasing BB% to within the 9–10% band", "reason": "The BB% sample variance at 200 games (~1 pt spread) is wide enough that the 8.53% reading could land anywhere from 8 to 10 in a different seed range; left alone rather than chasing into over-tuning.", "category": "deferred", "status": "unknown"},
+    {"item": "Dispersion measurement directly in tune.py (--league flag swapping in v2-seeded rosters)", "reason": "The tune harness uses make_foxes/make_bears (hand-coded teams with neutral realism attrs), so the multi-D rating distinction only surfaces in v2-seeded leagues; deferred.", "category": "deferred", "status": "unknown"},
+    {"item": "HANDOFF Bugs 2, 3, 4, 6 (duplicate game_pitcher_stats rows, negative individual FIP, batter outs_recorded = 0 rows, _find_pitcher_id dead branch)", "reason": "All orthogonal to realism; tracked for a separate cleanup pass.", "category": "deferred", "status": "unknown"},
+    {"item": "Aging / drift hooks (HANDOFF §5 outstanding question)", "reason": "Still absent; with realism attributes now in place, an offseason drift function would let archetype shapes evolve over multi-season runs.", "category": "deferred", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "BB% sat at 8.53%, just below the 9–10% target band. Within sample variance for 200 games but worth a 500-game confirmation. If it stays sub-9, a small bump to ball weight at early counts (or a slight lift on BATTER_EYE_BALL) would close the gap.",
+    "Super-inning frequency at 7.5%, above the legacy <5% PRD target. Likely a side effect of the foul-out rule slightly compressing run-distribution variance."
+  ],
+  "open_hooks": [
+    "A --league flag for tune.py that swaps in o27v2.league.generate_players rosters would give the dispersion check a proper home",
+    "Offseason drift function (±1–3 grade points/year, age-curve weighted) for multi-season archetype evolution",
+    "Statcast-style features (pitch types, spray angle, exit velocity, launch angle, defense quality) could be a future expansion if dispersion still feels flat after multi-season aging is added"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Sim Realism Layer (Multi-D Ratings, Platoon, Parks, Form, Foul-Out)",
+    "What was asked for",
+    "What was built",
+    "1. Multi-dimensional batter ratings (`o27/engine/state.py`, `o27v2/league.py`)",
+    "2. Multi-dimensional pitcher ratings",
+    "3. Handedness + platoon split",
+    "4. Ballpark factors",
+    "5. Daily pitcher form variance",
+    "6. Era-flavor recalibration of `PITCH_BASE`",
+    "7. Foul-out rule (mid-task clarification)",
+    "8. Identity invariant + tests",
+    "9. Incidental fixes",
+    "Calibration journey",
+    "Baseline (pre-realism, neutral attrs)",
+    "Pass 4 (PITCH_BASE first retune)",
+    "Pass 5 (deeper foul shift)",
+    "Foul-out rule landing",
+    "Key decisions and trade-offs",
+    "Identity invariant as the safety net",
+    "`''` sentinel for unknown handedness",
+    "Form roll lives on `ProbabilisticProvider`, not `_set_fielding_pitcher`",
+    "No `pitch_types` / `spray_angle` / `defense_quality`",
+    "What was verified",
+    "Files changed",
+    "Known issues / follow-up candidates"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/improve-sim-realism-UHvKE; Commits 7caeee8, 9252e93.\n\nKey decisions and trade-offs detail: (1) Identity invariant as the safety net — the realism layer touches _pitch_probs, contact_quality, resolve_contact, and ProbabilisticProvider hot-path code; without an identity test a typo could silently change the legacy distribution and only show as drift in tune.py later. (2) '' sentinel for unknown handedness — defaulting bats='R', throws='R' would silently subject every legacy-test fox/bear to a ~6% platoon penalty; '' separates \"neutral, skip platoon entirely\" from real handedness. DB column default stays 'R'; only the Python dataclass and o27v2/sim.py bridge use '' for unknowns. (3) Form roll lives on ProbabilisticProvider, not _set_fielding_pitcher — _assign in game.py is a deterministic mutation with no RNG; a global random.gauss there would make form non-reproducible; ProbabilisticProvider already owns the seeded RNG and detects pitching changes, so a _last_pitcher_id field catches half-starts and mid-game changes with zero touchpoints in game.py outside the bug-5 fix.\n\nCalibration journey numbers: Pass 4 — K% 21.73%, BB% 8.37%, BA .299, SLG .466, HR/PA 2.11%. Pass 5 — K% 19.43%, BB% 9.48%, BA .304, SLG .474, HR/PA 2.04%. The foul-out rule did most of the heavy lifting for the K%/BB% landing — the previous calibration was creating \"infinite foul\" at-bats at 2 strikes; at-bats that previously ended in K via swinging strike now end in FO, which is its own out category and not credited as K.\n\nArchetype color: a power-50/contact-30/eye-30 hitter now Ks a lot, walks rarely, but slugs when he connects; two pitchers with the same ERA can have very different K/BB/groundball shapes; LOOGY-style usage emerges naturally without coding it; identical rosters at a Coors-like 1.18 park vs a 0.85 pitcher's park produce visibly different box scores. Platoon penalty empirically lands in the MLB ~10–15 wOBA-point split range.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Long, well-structured AAR with calibration tables and explicit decision log. Date from 'Date completed:' line."
+}

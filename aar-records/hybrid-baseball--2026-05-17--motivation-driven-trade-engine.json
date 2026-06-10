@@ -1,0 +1,93 @@
+{
+  "record_id": "hybrid-baseball--2026-05-17--motivation-driven-trade-engine",
+  "source_path": "docs/aar-motivation-driven-trading.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-17",
+  "title": "After-Action Report — Motivation-driven trade engine",
+  "scope": "Rewrite o27v2/trades.py from scratch into a motivation-driven trade engine with front-office personalities, parsed from the user's thesis that trading should be a player distribution mechanic, a way to unblock talent, a way to backfill injuries, and include irrational trades.",
+  "rationale": [
+    {"item": "User thesis: \"Trading in this game's main function ought to be a player distribution mechanic as well as a way to get talent blocked into roles th play as well as injuries a way to backfill injuries and other reasons trades should happe including irrratioonal ones\" — parsed into four design goals: player distribution, talent unblocking, injury backfill, irrational reasons.", "references": []},
+    {"item": "The existing o27v2/trades.py (~390 lines) was purely heuristic: contenders bought from sellers at a 2/3-season deadline, plus 0–2 random in-season trades, total ~5–10 league-wide per 162-game season. No FO identity, no injury sensitivity, no irrationality.", "references": []},
+    {"item": "The user's intent reads as a balance: trades should be realistic enough that contenders chase stars and rebuilders ship vets, but irrational enough that a power-hungry GM occasionally pays too much for a slugger or a sub-.300 team's ace forces his way out.", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "Scope: rewrite trades.py from scratch", "decided_by": "owner", "quote": "User decisions (via AskUserQuestion, four questions): **Scope**: rewrite `trades.py` from scratch."},
+    {"decision": "Irrationality types to include", "decided_by": "owner", "quote": "**Irrationality**: salary dumps + win-now overpays, rebuilds / fire sales, pure GM noise + star demands."},
+    {"decision": "Trade volume target", "decided_by": "owner", "quote": "**Volume**: high activity — 20–40 trades per team per season."},
+    {"decision": "FO personality persistence", "decided_by": "owner", "quote": "**FO personality**: persisted columns on the `teams` table; drifts year-over-year."},
+    {"decision": "No offseason trade window", "decided_by": "owner", "quote": "the user chose \"high activity, concentrated in-season,\" so no offseason trade pass was added."}
+  ],
+  "actions": [
+    {"description": "Full rewrite of trades.py (390 → 643 lines) implementing nine motivations evaluated per team per game-date (block_breaking, injury_backfill, deadline_buyer, deadline_seller, salary_dump, rebuild_fire_sale, win_now_overpay, gm_noise, star_demand), partner-perspective acceptance thresholds per fo_strategy with motivation-specific discounts. trade_value preserved byte-for-byte; check_deadline_and_trades signature preserved.", "artifacts": ["o27v2/trades.py"], "kind": "modified"},
+    {"description": "New o27v2/front_office.py — roll_fo, drift_fo_strategies, strategy constants. Five strategies distributed per 30-team league (win_now 4, contend 5, balanced 8, develop 8, rebuild 5); STRATEGY_MULT weights; fo_aggression Gaussian μ=0.5 σ=0.2 clamped [0,1]; fo_archetype_bias weighted 6:1:1:1; offseason drift table with 25% sticky-GM block.", "artifacts": ["o27v2/front_office.py"], "kind": "new"},
+    {"description": "CREATE TABLE teams extended with 5 FO columns; matching ALTER TABLE block appended to init_db() using the existing try/except pattern.", "artifacts": ["o27v2/db.py"], "kind": "modified"},
+    {"description": "roll_fo(rng2) call alongside roll_manager; teams INSERT extended.", "artifacts": ["o27v2/league.py"], "kind": "modified"},
+    {"description": "drift_fo_strategies(rng) called at the end of run_offseason().", "artifacts": ["o27v2/development.py"], "kind": "modified"},
+    {"description": "event_types list at /transactions extended with the 9 new trade_* types; legacy deadline_trade/inseason_trade preserved for old rows.", "artifacts": ["o27v2/web/app.py"], "kind": "modified"},
+    {"description": "New test suite with 11 tests covering trade_value signature/snapshot, check_deadline_and_trades signature, idempotent FO schema migration, injury backfill, fire sale vet shipping, win-now overpays, roster floor, gm-noise lopsidedness, strategy drift, roll_fo coverage.", "artifacts": ["o27v2/tests/test_trades.py"], "kind": "new"},
+    {"description": "Volume tuning: BASE_INITIATE_PROB {early 0.06, middle 0.10, late 0.28, post_deadline 0.01}, MOTIVATION_FLOOR 0.10; gm_noise lowered from 0.15 to 0.11 after it dominated synthetic environments (~49% of trades).", "artifacts": ["o27v2/trades.py"], "kind": "modified"},
+    {"description": "Guardrails hard-coded in _roster_floor_ok_after: every canonical hitter position keeps ≥1 healthy non-joker, ≥5 healthy non-joker pitchers, jokers filtered out of _get_tradeable_players, one trade per team per game_date via fo_last_trade_date.", "artifacts": ["o27v2/trades.py"], "kind": "new"},
+    {"description": "Fixed RV(1B) < RV(BB): linear_weights._classify_bip now returns STAY for stay-credited 2C events; derive_linear_weights carries a separate STAY weight; expected_woba + _aggregate_batter_rows route stays through the new weight.", "artifacts": ["linear_weights.py"], "kind": "modified"},
+    {"description": "Added RISP pressure mechanic (prob._resolve_risp_pressure) — two-stage talent-driven roll composing situational pressure, pitcher composure, batter clutch (_batter_clutch with stacking mental contribution).", "artifacts": ["o27/engine/prob.py"], "kind": "new"},
+    {"description": "Added leadership flare (prob._apply_leadership_lift + apply_pa_leadership_flares) — per-PA one-off ratings bump triggered by accumulated leverage conditions, side-symmetric, broad in-place mutation restored by release_pa_leadership_flares in pa._end_at_bat.", "artifacts": ["o27/engine/prob.py", "pa._end_at_bat"], "kind": "new"}
+  ],
+  "risk_posture": [
+    "`trade_value` was deliberately not touched — `valuation.py:_BANDS` maps its exact 0..1 output to salary tiers, and any drift here would silently re-tier every player's salary in the league.",
+    "Single commit by design — the plan was approved before any code was written, and the rewrite is one atomic unit."
+  ],
+  "validation_claims": [
+    {"claim": "All 11 in o27v2/tests/test_trades.py pass", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "pytest o27v2/tests/test_trades.py -v", "verified": "not_checked"},
+    {"claim": "Synthetic 183-day pre-deadline test with 30 teams produces ~395 trades = ~26 per-team-involvement, inside the user's 20–40 target band.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the synthetic volume sweep and count trade events", "verified": "not_checked"},
+    {"claim": "Two pre-existing test failures (o27v2/tests/test_phase8_db_migration.py × 2, tests/test_weather_calibration.py × 1) were confirmed unrelated via git stash baseline check.", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "Run those tests on the pre-change commit", "verified": "not_checked"},
+    {"claim": "Analytics baseline: 36 teams, 1068 games, 61592 BIP events, 2136 halves, 10.65 R/half (~22 R/G), 447 qualifying batters; league wOBA = league xwOBA = 0.408; Pythag k* = 2.887 with RMSE cut 54.2%; BaseRuns refit SSE cut 37.9%.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the /analytics dashboard against the same DB state", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "Offseason trade window", "reason": "the user chose \"high activity, concentrated in-season,\" so no offseason trade pass was added. run_offseason() is the natural place to add run_motivation_pass if a midwinter hot-stove feel is wanted later.", "category": "declined_by_owner", "status": "unknown"},
+    {"item": "Volume invariant test (test_volume_in_band, 300 ≤ trade events ≤ 700 over a 162-game season)", "reason": "too RNG-sensitive for a unit test, and the realistic way to measure is the existing post-sim SQL spot-check listed in the verification plan", "category": "declined_by_owner", "status": "unknown"},
+    {"item": "Legacy DB backfill CLI (python o27v2/manage.py backfill_fo)", "reason": "Out of scope for this commit; trivial to add.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "In-game FO surfacing on the team detail page (fo_strategy / fo_aggression / fo_archetype_bias)", "reason": "The columns are queryable but invisible. Adding a \"Front office\" row alongside the manager block is a small Flask template change.", "category": "deferred", "status": "unknown"},
+    {"item": "Star-demand narrative (\"Player X has demanded a trade\" pre-event headline)", "reason": "Would need a separate pre-trade event_type and transactions UI work.", "category": "deferred", "status": "unknown"},
+    {"item": "Counter-counter-tactics: vetoed trades / no-trade clauses, three-team deals, conditional / future-considerations trades", "reason": "Single-counterparty 1-for-1 / 1-for-2 / 1-for-3 covers the design goals.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "Trade-deadline event UI grouping (deadline week vs routine)", "reason": "A `phase` column on `transactions` would help; out of scope here.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "Repricing trade_value for the O27 run environment (contact/eye bats underpriced, leadership unpriced)", "reason": "Out of scope for this rewrite, but both are worth a follow-up pass once the trade volume baseline is set.", "category": "deferred", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "Trade behavior on a long-running save will be blander than on a fresh seed until a one-shot backfill_fo is added (existing seeds get fo_strategy='balanced' defaults).",
+    "The refit wOBA weights say walks are worth ~43% more than MLB-default pricing assumes, and HR worth ~21% less — trade_value's archetype bonuses are arguably mispriced under this environment."
+  ],
+  "open_hooks": [
+    "Verification plan steps 2–6 (reseed + season sim with SQL spot-checks, idempotent migration, web UI smoke, offseason drift inspection, analytics-diff vs the snapshot baseline) left as a post-merge plan",
+    "run_offseason() as the natural insertion point for an offseason trade pass",
+    "Follow-up pass on trade_value pricing for contact/eye and leadership"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Motivation-driven trade engine",
+    "Context",
+    "Design",
+    "Motivation framework",
+    "Front-office persona (`o27v2/front_office.py`)",
+    "Volume tuning",
+    "Guardrails",
+    "Files touched",
+    "Tests",
+    "Friction encountered",
+    "Per-date throttle starved volume tests",
+    "SQLite UPDATE … LIMIT",
+    "`injury_backfill` partners rejecting fair trades",
+    "`gm_noise` baseline dominated synthetic environments",
+    "Phase8 + weather test failures",
+    "What's deferred",
+    "Analytics baseline (pre-rewrite snapshot)",
+    "Verification plan",
+    "Commit trail",
+    "Connecting design — distribution vs. realism"
+  ],
+  "unmapped_content": "Branch: claude/add-trading-system-Drdve; Commit: 8b3ac7d (single commit; squash candidate on merge). | Motivation table details: triggers, counterparties and offer shapes for all nine motivations (e.g. block_breaking: reserve trade_value within 0.10 of same-position starter, 1-for-1; star_demand: losing streak ≥ 7 OR (games > 60 AND win_pct < .300), 1 star for 2 mid-tier). Acceptance pseudo-code: threshold per partner fo_strategy (rebuild 0.85, win_now 0.80, develop 0.90, contend 0.92, balanced 0.95) with gm_noise ×0.5, win_now_overpay ×0.7, star_demand ×0.85, injury_backfill ×0.85 (added mid-session); rebuild partners +30% incoming bonus per (avg_age_send - avg_age_recv)/10; win-now +20% when max incoming trade_value > outgoing; archetype-bias +15%. | Friction details: per-date throttle starved volume tests (fo_last_trade_date is by date not call; fixed by iterating distinct ISO dates, mirroring sim.py's once-per-calendar-date contract); SQLite rejects UPDATE … LIMIT, replaced with SELECT id … LIMIT 1 then UPDATE; injury_backfill partner discount rationale (a partner sending from depth surplus should be more willing to deal); phase8 failure cause (Task #65 cleared pitcher_role='workhorse') and weather calibration known sampling-noise flake. | Analytics baseline tables: RE24-O27 anchor values by base state and outs (e.g. ___ 10.42 @0 outs … 123 3.14 @24 outs); one-D outs-remaining curve RE 11.03 @0, 2.00 @26; linear weights table (HR +1.240/wOBA 1.623 vs MLB 2.050 −21%; BB +0.658/1.032 vs 0.720 +43%; 1B +0.457; out −0.359); Game Score base auto-tuned to 57.21 for starter GSc mean 50.44; BaseRuns refit B = 2.264·TB − 0.593·H − 3.883·HR + 0.439·(BB+HBP). | RISP pressure and leadership flare detail: stage-1 manifestation probability from situational pressure / composure / clutch; stage-2 mutually-exclusive draw between hit, error, leave_up; bases-loaded coefficient 0.35 vs 0.16 plain-RISP; flare triggers RISP +0.06, bases loaded +0.06, late game +0.04, close game +0.03, tied +0.03; magnitude uniform [0.05, 0.20] scaled by 1 + 1.5 × (leadership − 0.5); affected fields batter eye/contact/power/skill, pitcher command/pitcher_skill/movement/grit, fielding team defense_rating; \"Why both layers\" composition note. | Post-rewrite analytics-diff target table (R/half ±5%, wOBA ±0.005, k* ±0.10, RV gap narrowing, BaseRuns outliers CHW +80 / SDP −78 / BAL −73, ≥3 of top-15 xwOBA on a different team, top trade-volume teams clustering on fo_aggression > 0.7). | Connecting-design section: realism lives in STRATEGY_MULT; irrationality in relaxed acceptance thresholds and the flat gm_noise baseline; the two interlock through fo_aggression.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Long AAR mixing the trade-engine rewrite with a substantial analytics baseline section that itself records two engine fixes (STAY classification, RISP pressure + leadership flares) — one record per the one-document rule, with the analytics detail captured in actions and unmapped_content. Verification plan is mostly prospective (steps 2–6 not claimed executed)."
+}

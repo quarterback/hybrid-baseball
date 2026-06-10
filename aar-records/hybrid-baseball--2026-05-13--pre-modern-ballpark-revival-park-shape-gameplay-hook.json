@@ -1,0 +1,190 @@
+{
+ "record_id": "hybrid-baseball--2026-05-13--pre-modern-ballpark-revival-park-shape-gameplay-hook",
+ "source_path": "docs/aar-pre-modern-park-revival.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": "2026-05-13",
+ "title": "After-Action Report \u2014 Pre-Modern Ballpark Revival + Park-Shape Gameplay Hook",
+ "scope": "User came back to the spray-chart work with a design fiat: \"Imagine a revival of the original ballparks rather than there ever being an era of cookie-cutter parks. I love urban stadiums but also cavernous fields like old Cleveland Stadium, Forbes Field, Polo Grounds and others like that.\"",
+ "rationale": [
+  {
+   "item": "Design fiat: revival of original ballparks, no cookie-cutter era; Tal's Hill-style quirks wanted.",
+   "references": [
+    "thisgreatgame.com/ballparks-eras-1910s-1920s/"
+   ]
+  },
+  {
+   "item": "Mid-batch second swing: \"the idea of playing baseball in Ovals appeals to me a lot because it'd be an interesting way to reimagine how it'd impact hitting\" \u2014 added a 7th shape (oval / cricket-ground revival).",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Gameplay-hook scope: option B (no per-shape balancing) + all modifiers, no follow-ons",
+   "decided_by": "owner",
+   "quote": "User picked **option B (no per-shape balancing) + all modifiers, no follow-ons**."
+  },
+  {
+   "decision": "Oval archetype added mid-session",
+   "decided_by": "owner",
+   "quote": "Added a 7th shape (oval / cricket-ground revival) to the original 6."
+  },
+  {
+   "decision": "Hook call site after talent-flex but before Stay decision",
+   "decided_by": "agent",
+   "quote": "The \"where to call the hook\" decision (after talent-flex but before Stay) was the only non-obvious design call."
+  }
+ ],
+ "actions": [
+  {
+   "description": "7 weighted park shape archetypes driving dimension distributions, shape-tied wall heights",
+   "artifacts": [
+    "o27v2/league.py:_PARK_SHAPES",
+    "_roll_park_dimensions()",
+    "_PARK_SHAPE_WEIGHTS"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "20-item architectural quirk catalog, 0-3 per park weighted (0.38, 0.40, 0.17, 0.05), some shape-gated; persisted as JSON in new teams.park_quirks column; gold tag chips on team page and spray-chart subtitle",
+   "artifacts": [
+    "o27v2/league.py:_QUIRK_CATALOG",
+    "teams.park_quirks",
+    "o27v2/web/templates/team.html",
+    "o27v2/web/templates/game.html"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Spray chart upgrade: SVG draws the home park's real fence geometry from park_dimensions with bezier control points, wall-height stroke scaling, dimension labels; falls back to symmetric arc on legacy rows",
+   "artifacts": [
+    "o27v2/web/app.py"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Park-shape gameplay hook: new o27/engine/park_effects.py with apply_park_effects and five rewrite rules (HR upgrade, HR downgrade, picket-fence robbery, cavernous gappers, oval tweener triples); state.park_dimensions field; sim.py stamps it; prob.py calls hook after resolve_contact + talent-flex, before Stay decision",
+   "artifacts": [
+    "o27/engine/park_effects.py",
+    "o27/engine/prob.py",
+    "o27/engine/state.py",
+    "o27v2/sim.py"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Distance heuristic refactor: SVG and gameplay share _proxy_distance(ev, la); divisor tuned 36 \u2192 25 against Statcast medians; _bip_distance_ft delegates to it",
+   "artifacts": [
+    "o27/engine/park_effects.py",
+    "o27v2/web/app.py"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Additive schema: teams.park_shape, teams.park_quirks (idempotent ALTER TABLEs + SCHEMA, NULL-tolerant)",
+   "artifacts": [
+    "o27v2/db.py"
+   ],
+   "kind": "config"
+  }
+ ],
+ "risk_posture": [
+  "Identity no-op when `park_dims` is None / empty.",
+  "Both idempotent ALTER TABLEs + SCHEMA. NULL-tolerant.",
+  "Per-shape balancing intentionally absent (option B per user direction).",
+  "The 5-run R/G spread by shape is the feature, not a calibration miss.",
+  "the rules are ordered to bias the right direction (upgrade \u2192 downgrade \u2192 robbery \u2192 gapper)"
+ ],
+ "validation_claims": [
+  {
+   "claim": "120-game reseed sample by home park shape: balanced 2.28 HR/G ... cavernous 0.67 HR/G (3.4\u00d7 HR spread); bathtub 8.20 2B/G league-leading; oval 7.42 2B/G + 1.31 3B/G; league R/G holds in the 22-26 README band at every shape (20.5 to 25.5)",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "unclear",
+   "check_method": "Reseed and sim 120 games, group HR/2B/3B/R by home park shape",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Smoke test (python o27v2/smoke_test.py): 10/10 PASS after the hook",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "yes",
+   "check_method": "Run python o27v2/smoke_test.py",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Per-shape balancing",
+   "reason": "intentionally absent (option B per user direction). ... The whole point of the design fiat is that parks differ; a rebalanced surface would have ironed out the variety.",
+   "category": "declined_by_owner",
+   "status": "unknown"
+  },
+  {
+   "item": "Park-shape leaderboards",
+   "reason": "The data is there ... but no UI exists for it yet.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Quirks wired into the engine (Tal's Hill slope, Wire Basket doubles, Bullpens-in-Play errors)",
+   "reason": "Quirks are visual-only. ... None of those wired into the engine.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Physical projectile model (air resistance, altitude, wind)",
+   "reason": "Distance heuristic is shared but still non-physical.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "pitching_log / batter splits filtered by park shape",
+   "reason": "The pa_log has `game_id`, joinable to `teams.park_shape`, but no UI presents the split.",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Switch-hit batter side-of-plate decision consulting park dimensions",
+   "reason": "The engine treats `bats='S'` as handedness-flexible but doesn't currently consult park dimensions in the side-of-plate decision.",
+   "category": "deferred",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "League standings will tilt toward teams whose home parks favor their roster, which is a real strategic axis the GM layer doesn't currently model.",
+  "The hook overrides talent-flex adjustments \u2014 compounds two systems on the same BIP.",
+  "The hook fires once per BIP \u2014 the first rule that fires wins."
+ ],
+ "open_hooks": [
+  "Park-shape leaderboards (\"Best Hitter at Cavernous Parks\", \"Pitcher's Parks W-L Splits\")",
+  "Wire quirks into the engine",
+  "Real projectile model making weather effects meaningful",
+  "Park-shape splits UI over pa_log",
+  "Park-aware switch-hitter side-of-plate decision"
+ ],
+ "section_headers_original": [
+  "After-Action Report \u2014 Pre-Modern Ballpark Revival + Park-Shape Gameplay Hook",
+  "What was asked for",
+  "What was built",
+  "1. Park shape archetypes (7, weighted)",
+  "2. Architectural quirks (20-item catalog)",
+  "3. Spray chart upgrade \u2014 actual fence geometry",
+  "4. Park-shape gameplay hook \u2014 the headline feature",
+  "Schema additions (additive)",
+  "Files changed",
+  "Verification",
+  "Reused vs new",
+  "Honest gaps / what's still open",
+  "Process notes"
+ ],
+ "unmapped_content": "Branch claude/review-and-improve-NbhPy. Shape table (balanced 40%, short_porch_rf 10%, short_porch_lf 7%, cavernous 13%, bathtub 8% CF 478', triangle 10%, oval 12% lines ~380') with real-world inspirations; wall-height rules (bathtub/short-porch 45% chance 28-50 ft; ovals 60% chance 4-8 ft cricket-tin); sample seed parks (Sunset Loukas Stadium bathtub LF278/CF462/RF292; The Oval LF377/CF421/RF378 6' picket fence; Vancouver Bowl 47' wall). Quirk lists (universal and shape-gated). Five rewrite-rule details (HR upgrade LA 18-42\u00b0 clearing fence at spray angle; HR downgrade to wall doubles, \u226525 ft walls need extra carry; ~18% picket robbery on \u22647 ft walls; cavernous gappers promote singles in \u2265415 ft alleys, 440+/290+ produce triples; 22% oval tweener triples fence \u2265380 ft ball \u2265320 ft off-center). Files-changed diffstat block. Reused vs new lists. Process notes: scope iterated twice mid-session, same migration scaffold kept; distance-divisor mistake (36 vs ~25) produced 1 HR in 120 games on first calibration, fixed in one edit; refactoring _bip_distance_ft to call _proxy_distance prevents silent SVG/gameplay drift.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "Date from 'Date completed:' line. Slug shortened to 8 words from long title."
+}

@@ -1,0 +1,88 @@
+{
+  "record_id": "hybrid-baseball--2026-05-17--scoring-boost-variance-widening-fatigue-dominance",
+  "source_path": "docs/aar-scoring-variance-and-fatigue-dominance.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-17",
+  "title": "After-Action Report — Scoring Boost, Variance Widening, Fatigue Dominance",
+  "scope": "The designer opened with a 21-12 box score from a single sim and asked for ways to \"boost scoring while keeping pitchers relevant.\"",
+  "rationale": [
+    {"item": "Lower K% to ~16-18% (current sim was producing 25.5%)", "references": []},
+    {"item": "Drop weak contact, raise medium and hard contact — specifically: WEAK 0.38 → 0.18, with medium and hard both moving up", "references": []},
+    {"item": "Fatigue should be the biggest impact on decay, steep, with the biggest difference between an 81-stamina pitcher and a 73-stamina pitcher made dramatic — implied via a cocktail of personal attributes rather than stamina alone", "references": []},
+    {"item": "More wild variance in game outcomes — too many close games, the sport's fiction calls for a wider spread", "references": []},
+    {"item": "No R/G prescription — explicit pushback: \"i never set the 22-24 r/g threshold you did originally and i dont want to keep sticking to that\"", "references": []},
+    {"item": "Fix the documentation so stale targets don't mislead future agents", "references": []},
+    {"item": "Fix the formulas for the new run environment, archive the old handoff, and write an AAR", "references": []},
+    {"item": "The designer wants O27's stat lines to feel like a coherent fictional sport (cricket and pesäpallo were referenced as the right mental model — high-scoring environments where bowling/pitching still matters but ERA is a context stat, not the headline metric)", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "Halve CONTACT_WEAK_BASE and bump medium/hard contact", "decided_by": "owner", "quote": "Halved per designer call / Bumped per designer call (sums to 1.0)"},
+    {"decision": "Do not anchor to a 22-24 R/G target", "decided_by": "owner", "quote": "i never set the 22-24 r/g threshold you did originally and i dont want to keep sticking to that"},
+    {"decision": "Leave K% at 13.07% despite landing below the stated 16-18% range", "decided_by": "owner", "quote": "I'm fine with lower K% don't adjust that"},
+    {"decision": "Designer accepted higher stays as part of the new normal", "decided_by": "owner", "quote": "Designer accepted higher stays (~2/game vs old 0.3-1.0 target band) as part of the new normal."}
+  ],
+  "actions": [
+    {"description": "Calibration: PITCHER_DOM_SWINGING +0.06→+0.025, PITCHER_DOM_CALLED +0.03→+0.015, BATTER_DOM_SWINGING -0.03→-0.05, BATTER_CONTACT_SWINGING -0.05→-0.08, CONTACT_WEAK_BASE 0.38→0.18, CONTACT_MEDIUM_BASE 0.40→0.50, CONTACT_HARD_BASE 0.22→0.32", "artifacts": ["o27/config.py"], "kind": "config"},
+    {"description": "Fatigue restructure: quadratic stamina threshold with FATIGUE_THRESHOLD_BASE=10 and FATIGUE_THRESHOLD_SCALE=65, replacing linear stamina-to-threshold mapping; 81-vs-73 stamina gap is now ~8 batters, not 3", "artifacts": ["o27/engine/prob.py:307"], "kind": "modified"},
+    {"description": "Additional fatigue changes: FATIGUE_SCALE 20.0→10.0; all FATIGUE_* penalty coefficients ~1.5× stronger (BALL 0.06→0.09, CONTACT 0.06→0.10, etc.); GRIT_FATIGUE_RESIST 0.60→0.30; RELEASE_FATIGUE_SCALE 0.20→0.10", "artifacts": ["o27/config.py"], "kind": "config"},
+    {"description": "Game-to-game variance widening over two passes: TODAY_FORM_SIGMA 0.04→0.10→0.25, TODAY_FORM_MIN 0.92→0.82→0.71, TODAY_FORM_MAX 1.08→1.18→1.84", "artifacts": ["o27/config.py"], "kind": "config"},
+    {"description": "Widened TARGET_RUNS_LO/HI from 22-26 to 20-50 as permissive sanity bounds; similar widening for stays / jokers / pitcher changes; added prominent comment block that these are NOT calibration targets", "artifacts": ["o27v2/config.py:191-220"], "kind": "config"},
+    {"description": "Removed all hardcoded 'target X' strings from the metrics table; removed targets_met assertion flagging 22-24 R/G; kept sanity bounds only; updated module docstring to explain the variance-first philosophy", "artifacts": ["o27/tune.py"], "kind": "modified"},
+    {"description": "Removed \"~22 R/G\" anchors from analytics docstrings; clarified that the empirical-refit logic auto-adapts to whatever run environment the sim produces", "artifacts": ["o27v2/analytics/pythag.py", "o27v2/analytics/linear_weights.py", "o27v2/analytics/base_runs.py"], "kind": "docs"},
+    {"description": "RPW formula comment updated (still uses dynamic 9 + sqrt(R/G/4) × 3.5 calculation, but comments no longer mislead with stale \"25 R/G\" / \"24 R/G\" examples)", "artifacts": ["o27v2/web/app.py"], "kind": "docs"},
+    {"description": "Archived prior HANDOFF.md and wrote a fresh handoff leading with \"O27 is variance-first. There is no R/G calibration target.\"", "artifacts": ["HANDOFF.md", "docs/HANDOFF-archive-2026-05-03.md"], "kind": "docs"}
+  ],
+  "risk_posture": [
+    "CONTACT_MATCHUP_SHIFT (0.25) was left alone — it preserves the differentiation that lets a high-Stuff, high-Movement pitcher still pull contact toward weak even in the new offensive baseline.",
+    "The asymmetric clamp (0.29 below mean vs 0.84 above mean) is intentional and a Gaussian-sampling property: deep off-days will always be more common than transcendent days under symmetric sampling.",
+    "Kept sanity bounds only for catching catastrophic regressions (R/G under 20 or over 50, super-inning rate over 10%, etc.)."
+  ],
+  "validation_claims": [
+    {"claim": "200-game tune output after both commits: Avg total runs/game 33.73 (sanity 20–50); Median/Std/Min/Max 33.0/9.3/15/66", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run o27/tune.py over 200 games and compare scoring metrics", "verified": "not_checked"},
+    {"claim": "League K% 13.07%, BB% 8.49%, BA .386, SLG .667, HR/PA 4.18%", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the 200-game tune harness and compare rate stats", "verified": "not_checked"},
+    {"claim": "Range 15-66 runs/game on the same league with the same talent. A 51-run spread between min and max.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run tune and inspect min/max game totals", "verified": "not_checked"},
+    {"claim": "Pass 1 produced max=57; pass 2 produced max=66 — the form-clamp widening directly expanded the upper tail.", "evidence_cited": "metrics", "checkable_against_repo": "no", "check_method": "Would require re-running both intermediate configurations", "verified": "not_checked"},
+    {"claim": "Avg stays/game 1.860; super-inning frequency 2.50% (5/200 games); avg joker insertions/game 3.64; avg pitcher spell length (BF) 45.36 (median 44)", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run tune harness", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "Park geometry (o27/engine/park_effects.py); park multipliers untouched", "reason": "Geometric park effects already provide per-game variance and don't need widening to deliver the wild outcomes the designer wanted — daily form does that work.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "Weather effects (o27/engine/weather.py)", "reason": "Could be amplified for more variance but the form-sigma widening covers it.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "Stay mechanic", "reason": "Designer accepted higher stays (~2/game vs old 0.3-1.0 target band) as part of the new normal.", "category": "declined_by_owner", "status": "unknown"},
+    {"item": "Joker insertions", "reason": "Cap already removed in commit 87b7d0f before this work began.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "Analytics formula coefficients", "reason": "They self-refit at runtime; no recalibration needed.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "K% pullback", "reason": "Sim landed at 13.07% post-pass-2, below the designer's 16-18% range. Designer's response: \"I'm fine with lower K% don't adjust that\" — left at 13.07%.", "category": "declined_by_owner", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "DB migration tests (test_init_db_wipes_stale_and_reseeds, test_init_db_idempotent_on_phase8_db) fail because seeded players get empty role strings. Pre-existing, unrelated to this pass, but should be fixed.",
+    "AAR documents in docs/ reference the old 22-26 R/G target. Not load-bearing but worth opportunistic cleanup.",
+    "If the designer wants symmetric extreme upside, that needs a skewed sampling distribution, which is a bigger change than a clamp tweak."
+  ],
+  "open_hooks": [
+    "3TO (third time through order) tracking: proper per-(pitcher, batter) look-count with era_tto1/2/3 splits is on the list",
+    "Arsenal depth as a fatigue cocktail factor: pitcher.repertoire exposed but not used in the fatigue model; proposed arsenal_mult with new ARSENAL_FATIGUE_RESIST ≈ 0.05",
+    "PEFF composite and pesäpallo-style splits: pitcher table in the web UI should lead with effectiveness composite, not ERA; CCR / OS+% / TTO Decay / LDR all derivable from existing schema except TTO Decay",
+    "Form sampling shape: currently Gaussian; a skewed sampling distribution would be needed for common transcendent days"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Scoring Boost, Variance Widening, Fatigue Dominance",
+    "What was asked for",
+    "What we did",
+    "Calibration",
+    "Fatigue restructure",
+    "Game-to-game variance",
+    "Documentation hygiene — the \"future agents will believe it\" problem",
+    "What we did NOT change",
+    "Results",
+    "Design intent captured (for future agents)",
+    "Open threads inherited or surfaced",
+    "Lessons"
+  ],
+  "unmapped_content": "Design intent captured (for future agents): 1. O27 is not MLB-shaped. Stop trying to make it MLB-shaped. The previous tuning pass anchored everything to \"feels like 1990s-2000s MLB\"; the designer rejected this framing. O27 is a fictional sport with its own internal logic. 2. Variance is a feature. The 15-runs-to-66-runs game spread is not a calibration miss. It's the design. 3. ERA is a context stat in O27, not the headline. Discussed at length but not yet implemented; a proper PEFF (Pitcher Effectiveness) composite is on the open-threads list. 4. Pitcher individuality should emerge from a cocktail of attributes. 5. Future agents will read documentation and act on it; aggressive cleanup of stale prescriptions is part of any tuning pass.\n\nLessons: Don't anchor to numbers the designer didn't set (had to be corrected explicitly on 22-24 R/G). Surface uncertainty about magnitudes (walked back the K% pullback estimate once the sim ran — the relationship isn't linear). Sigma and clamps interact: proposing wide clamps without bumping sigma would have produced theoretical bounds that never fire; caught before edits by checking the sampling code at prob.py:1672-1677. Documentation cleanup is part of the work, not separate.\n\nHeader metadata: Branch claude/tune-scoring-simulator-fZr2I; Commits 7512522 (offense + K% + fatigue restructure), abfe793 (form variance widening + stale-target cleanup).\n\nVariance reasoning detail: at σ=0.10 the upper clamp at 1.84 is 8.4σ above mean — theoretical, never reachable. Bumping σ to 0.25 makes the lower clamp a ~1.2σ event (frequent) and the upper a ~3.4σ event (rare but real). Std dev of 9.3 over a 33.7 mean (CV ≈ 0.28); for context, MLB game totals have CV around 0.45-0.5.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Well-formed AAR with explicit 'What we did NOT change' section. Date from 'Date completed:' line."
+}

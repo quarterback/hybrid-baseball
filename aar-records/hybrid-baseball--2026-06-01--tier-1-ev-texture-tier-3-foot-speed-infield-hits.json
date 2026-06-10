@@ -1,0 +1,159 @@
+{
+  "record_id": "hybrid-baseball--2026-06-01--tier-1-ev-texture-tier-3-foot-speed-infield-hits",
+  "source_path": "docs/aar-footspeed-infield-hits-and-tier1-texture.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-01",
+  "title": "After-Action Report \u2014 Tier-1 EV texture + Tier-3 foot-speed infield hits",
+  "scope": "Two follow-ons to the EV-texture work, both aimed at *real* batted-ball mechanics (the user explicitly deferred the park-quirk \"gimmick\" tier).",
+  "rationale": [
+    {
+      "item": "The borderline-grounder hit/out flex (prob.py) keyed off eye/contact/command only \u2014 foot speed was ignored, which is backwards for infield hits.",
+      "references": []
+    },
+    {
+      "item": "Arm-vs-speed was well covered on the outfield/baserunning side (_resolve_runner_advance / _resolve_table, SPEED_ADVANCE_MOD \u00b10.12, ARM_ADVANCE_MOD \u00b10.11, nickel '4th outfielder' power play) and left fully intact. What was missing was the infield leg-out: the throw to first on a grounder.",
+      "references": []
+    },
+    {
+      "item": "The new term is gated to the categorical grounder hit_types (ground_out, infield_single) on purpose \u2014 EV/LA aren't sampled until later in the PA flow, and you don't leg out a fly ball.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Defer the park-quirk gimmick tier (Tier 2)",
+      "decided_by": "owner",
+      "quote": "the user explicitly deferred the park-quirk \"gimmick\" tier"
+    },
+    {
+      "decision": "Sub-0.005 BABIP wobble accepted as not significant",
+      "decided_by": "owner",
+      "quote": "the user confirmed the sub-0.005 BABIP wobble is not significant"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Tier 1: five more EV/LA rules in the park hook (rules 10-14): can-of-corn (lazy fly LA 36-48, EV \u2264 88: single/double \u2192 fly_out), legged-out tapper (EV \u2264 62, low LA: ground_out \u2192 infield_single), frozen rope (EV \u2265 102, LA 12-26: single \u2192 double), down the line (|spray| \u2265 40, LA 8-30: single \u2192 double), wall-ball carom (EV \u2265 102 into tall \u226522ft deep \u2265400ft alley: double \u2192 triple)",
+      "artifacts": [
+        "o27/engine/park_effects.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Tier 3: leg_out_dev = (batter.speed \u2212 avg_infield_arm) \u00d7 INFIELD_HIT_SPEED_SCALE term applied only to infield grounder transitions (ground_out \u2194 infield_single); new helper _avg_infield_arm() mirrors _avg_outfielder_arm()",
+      "artifacts": [
+        "o27/engine/prob.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Tuning knobs added to config: EV_TAPPER_MAX (62), EV_FROZEN (102), EV_LAZYFLY_P (0.45), EV_TAPPER_P (0.40), EV_FROZENROPE_P (0.18), EV_DOWNLINE_P (0.30), EV_WALLBALL_P (0.30), INFIELD_HIT_SPEED_SCALE (0.20)",
+      "artifacts": [
+        "o27/config.py"
+      ],
+      "kind": "config"
+    },
+    {
+      "description": "New tests: 6 Tier-1 rule tests and 4 _avg_infield_arm tests",
+      "artifacts": [
+        "o27/tests/test_park_ev_texture.py",
+        "o27/tests/test_infield_arm.py"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "10 (hit\u2192out) and 11 (out\u2192hit) pair off; 12-14 only move the extra-base mix.",
+    "fly_out / line_out / extra-base hits are deliberately untouched.",
+    "Mean-neutral across the league (symmetric in speed and arm); set to 0.0 for identity."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Tier 1 fires as designed: 2B/BIP 0.198, 3B/BIP 0.018, 124 infield singles; hits/BIP within noise of the prior layer.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Deterministic rosters, sim 300, measure batted-ball rates",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Fast batters (speed \u2265 60) leg out infield singles at 0.0101/BIP vs 0.0050 for slow batters (\u2264 40) \u2014 a clean ~2:1.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "sim 300 and split infield-single rate by batter speed",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "corr(foot speed, infield-single rate) = +0.173.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compute correlation on the sim output",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "o27/tests \u2014 81 passed (was 63 pre-feature).",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest o27/tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_stat_invariants.py \u2014 identical 5-fail/6-pass on baseline and on the new code (the 5 are pre-existing flask/full-season environmental failures); zero new invariant failures.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the invariant suite on baseline and new code",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Touching or gating the foot-speed-vs-outfielder-arm baserunning plays (first-to-third, scoring from second, bang-bang tags) or the nickel power play",
+      "reason": "those were already modeled and remain fully active",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Tier 2 (park shape / quirks)",
+      "reason": "deferred as \"gimmick\" risk per the user",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Isolating the EV rolls onto a private RNG",
+      "reason": "same compatibility call as the prior AAR",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Sweeping probabilities for an optimum",
+      "reason": "set to sensible defaults and validated once at n=300",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Probabilities not swept for an optimum; validated once at n=300."
+  ],
+  "open_hooks": [
+    "INFIELD_HIT_SPEED_SCALE and Tier-1 probability knobs in o27/config.py; set to 0.0 for identity."
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Tier-1 EV texture + Tier-3 foot-speed infield hits",
+    "TL;DR",
+    "Why foot speed was the real gap (and why it's infield-only)",
+    "Validation",
+    "Tuning knobs (all in `o27/config.py`)",
+    "What I did NOT do"
+  ],
+  "unmapped_content": "**Branch:** `claude/peaceful-thompson-ZB5UY`\n**Scope line:** `o27/engine/park_effects.py`, `o27/engine/prob.py`, `o27/config.py`, `o27/tests/test_park_ev_texture.py`, `o27/tests/test_infield_arm.py`\n\nValidation setup: \"Deterministic rosters, `sim 300` (Tier 1) / `sim 300` (Tier 3).\" A burner vs a weak-armed infield legs more out; a plodder vs rocket arms is rung up.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR; Tier-1 rules table summarized into one action entry."
+}

@@ -1,0 +1,163 @@
+{
+  "record_id": "hybrid-baseball--2026-05-06--v3-closure-attempt-continuous-talent-flow",
+  "source_path": "docs/aar-continuous-talent-flow-and-si-coverage.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-06",
+  "title": "After-Action Report — V3 closure attempt + continuous talent flow",
+  "scope": "User accepted the Phase 11 close-out and asked to revisit follow-up #3: extend talent-weighting beyond the 2C-event scope. Plus a smaller fix request: count SI stats properly in game_pa_log.",
+  "rationale": [
+    {
+      "item": "No probabilistic gates. \"We're gating talent weighting and it shouldn't be.\" The probabilistic gate (rng vs gate_p) on Path A was the wrong shape — talent should flow continuously into outcome, not as a binary probabilistic flip.",
+      "references": [
+        "aar-phase-11-closeout.md"
+      ]
+    },
+    {
+      "item": "Plausibility over spec. \"Don't keep preening on this to achieve some spec, i just want things that make sense.\" Stars distinctive, marginal players still useful, O27 feels structurally different from MLB.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Remove probabilistic gating of talent weighting",
+      "decided_by": "owner",
+      "quote": "\"We're gating talent weighting and it shouldn't be.\""
+    },
+    {
+      "decision": "Plausibility over spec compliance",
+      "decided_by": "owner",
+      "quote": "\"Don't keep preening on this to achieve some spec, i just want things that make sense.\""
+    },
+    {
+      "decision": "V3 closure via run-chosen hit talent-weighting held",
+      "decided_by": "owner",
+      "quote": "Held; the user explicitly said don't keep iterating to hit specs."
+    }
+  ],
+  "actions": [
+    {
+      "description": "SI phase coverage in game_pa_log: new phase column (default 0 regulation; N>=1 for SI round N) with migration; capture_context snapshots state.super_inning_number as phase; INSERT path threads phase through",
+      "artifacts": [
+        "o27v2/db.py",
+        "o27/render/render.py",
+        "o27v2/sim.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Continuous talent flow on 2C outcomes replacing Path A's probabilistic gate: talent_factor from eye/contact/command deviations maps to an expected advance value; rng resolves only the fractional remainder",
+      "artifacts": [
+        "o27/engine/prob.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Re-sim path: resetdb → sim 2430 → backfill_arc",
+      "artifacts": [
+        "resetdb",
+        "sim 2430",
+        "backfill_arc"
+      ],
+      "kind": "data"
+    }
+  ],
+  "risk_posture": [
+    "Talent is the deterministic anchor... That's not a \"magical RNG\" — it's deterministic-anchored stochastic resolution.",
+    "Path 2 swings_in_ab modifier preserved unchanged.",
+    "Held to avoid re-opening Path 2 work."
+  ],
+  "validation_claims": [
+    {
+      "claim": "SI gap shrunk from ~16% to a small residual (~2-3% across the population)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compare game_pa_log SI rows vs game stats on a fresh sim",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "League shape after re-sim: PAVG .278, BAVG .331, stay_rate 5.72%, HR 4,497, R/team-game 12.44, 2C-Conv% 59.4%, stay_rbi% 4.26%",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run resetdb → sim 2430 → backfill_arc and compute the same metrics",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "2C-Conv% by eye decile: 38.2% (d1) to 80.8% (d10), spread 42.7pp, monotonic, no plateau",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Decile query on a fresh sim DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Bottom-eye-decile mean stay_hits/season is 9.3, max 46; top-eye-decile mean 23.3, max 52",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Per-decile stay_hits query",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "V3 (Δ by contact decile) still flat (.050 → .057 across deciles)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Δ-by-contact-decile query",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "V3 spec match",
+      "reason": "not reachable under the talent-on-2C scope. Closing it would mean retuning run-chosen safety-hit logic (out of scope; would re-open runner_advances_for_hit in o27/engine/baserunning.py)",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Spec-band perfection on V1/V2",
+      "reason": "abandoned at user's instruction (\"ignore the spec, just do what makes sense\"); user accepted top decile 81% vs spec 60-70% for shape monotonicity",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Path 2 swings_in_ab modifier change",
+      "reason": "preserved unchanged; still applies on swing 2+ via contact_quality's matchup_shift extension",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "PA log SI residual gap ~310/12,482 (~2.5%) — likely a few special-case events not threading through pa_log capture (jokers, certain SI mid-round transitions). Not blocking.",
+    "import math added in prob.py (unused after final iteration but kept)",
+    "Orphaned config constant TALENT_2C_SHIFT_SCALE in o27/config.py no longer referenced"
+  ],
+  "open_hooks": [
+    "V3 closure via run-chosen hit talent-weighting (held)",
+    "Cleanup of orphaned TALENT_2C_SHIFT_SCALE constant",
+    "PA log SI residual gap investigation",
+    "swings_in_ab modifier in contact_quality could be simplified or removed (held)"
+  ],
+  "section_headers_original": [
+    "After-Action Report — V3 closure attempt + continuous talent flow",
+    "Context",
+    "What was built",
+    "1. SI phase coverage in `game_pa_log`",
+    "2. Continuous talent flow on 2C outcomes (replaces Path A gate)",
+    "Final league shape",
+    "Talent shape — 2C-Conv% by eye decile",
+    "V3 (Δ by contact decile)",
+    "What was NOT shipped (and why)",
+    "Files touched",
+    "Follow-ups parked",
+    "Closing read"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/fix-dark-theme-baseball-terms-7UhIv; predecessors aar-phase-11-closeout.md, aar-second-chance-hits-and-eye-command-modifier.md. Code snippet of the fractional advance model and plausibility table (marginal/average/star expected advances) included in the document. V3 analysis: Δ measures BAVG-PAVG geometry which moves slowly because stay-credited hits are ~10-15% of total H; stay_h/PA scales with contact rating but aggregate Δ doesn't because BAVG and PAVG move together. Commits in session: 06fa387 (Phase 11D per-PA event log), 1d43c7e (Phase 11 close-out AAR), 1285ef7 (continuous talent flow + SI phase coverage), plus this AAR. Closing read: architecture now matches the user's principle; 2C-Conv% spreads monotonically 38%→81%; O27 plays differently from MLB at the talent margins; V3 parked, honestly diagnosable via the PA log decomposition.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed:' line."
+}

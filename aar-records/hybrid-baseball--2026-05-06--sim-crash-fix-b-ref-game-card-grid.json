@@ -1,0 +1,64 @@
+{
+  "record_id": "hybrid-baseball--2026-05-06--sim-crash-fix-b-ref-game-card-grid",
+  "source_path": "docs/aar-sim-crash-fix-and-bref-scoreboard.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-06",
+  "title": "After-Action Report — Sim Crash Fix + b-ref Game-Card Grid",
+  "scope": "Three messages from the user, escalating from \"the engine is broken\" to \"the UI is wrong\": no games generate on any league types (days advance but no games play), and the daily-sim scoreboard UI was confusing with the actual game date hidden.",
+  "rationale": [
+    {"item": "\"i realie now that i'm simming that the simulation engine does not load, you can click everything but no games generate on any of the league types, it just advances days and no games play\"", "references": []},
+    {"item": "\"the UI needs work too, the all-star break and end of season dates are not necessary to be prominent like that because i have no idea what the actual game date is...\"", "references": []},
+    {"item": "User re-shared three reference screenshots: Fangraphs scoreboard, Baseball Reference scores+standings, MLB.com top game-tile strip; the b-ref pattern fits O27 best — compact, dense, no chrome, every game's full state legible at a glance", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "In-progress status notation for O27's single-inning format", "decided_by": "owner", "quote": "since there's only one innings in O27, i think it'd be rendered T1/B1, O16 telling you what out we're on and where it's top of the bottom. supper inning would be S1,23"},
+    {"decision": "Model the scoreboard on Baseball Reference's layout among the three shared references", "decided_by": "agent", "quote": "The b-ref pattern fits O27 best — compact, dense, no chrome, every game's full state legible at a glance."}
+  ],
+  "actions": [
+    {"description": "Sim crash fix (commit e9a42d1): _extract_batter_stats accepts engine_team parameter and builds an engine-player lookup so game_position is pulled off the actual Player object; simulate_game passes visitors_team/home_team in", "artifacts": ["o27v2/sim.py"], "kind": "modified"},
+    {"description": "Joker J tag fix: every joker now gets stamped explicitly with game_position = \"J\" after _pick_jokers, regardless of which pool they came from", "artifacts": ["o27v2/sim.py"], "kind": "modified"},
+    {"description": "PH inheriting position: mgr.pinch_hit now copies the replaced player's game_position to the substitute", "artifacts": ["o27/engine/manager.py"], "kind": "modified"},
+    {"description": "Promote current date (commit d4c1b7a): header strip leads with current date as a 1.6rem bold headline; All-Star Break and Season End dates collapse into a single 0.78rem grey reference line", "artifacts": ["o27v2/web/templates/index.html"], "kind": "modified"},
+    {"description": "b-ref game-card grid (commit f71c744): _attach_decisions(games) helper stamps w_pitcher/l_pitcher dicts (last name + season W-L); W: SP if ≥12 outs else most-effective reliever; L: most ER, tiebreak earliest appearance", "artifacts": ["o27v2/web/app.py"], "kind": "new"},
+    {"description": "Date navigation: index route reads ?date= query param overriding get_current_sim_date(); helpers compute nearest prev/next dates with scheduled games; « / » arrows flank the date headline, greyed-out span when no prev/next", "artifacts": ["o27v2/web/app.py", "o27v2/web/templates/index.html"], "kind": "new"},
+    {"description": "game_card(g) macro: one small bordered box per game, three-line content (teams+scores, status, W/L pitcher lines); winner bold; \"Final\" links to box score; super-inning games render as \"Final/SI\"; 6-up CSS Grid auto-fill (minmax(220px,1fr)); same treatment for \"Last Played\" block; wide tables removed", "artifacts": ["o27v2/web/templates/index.html"], "kind": "new"}
+  ],
+  "risk_posture": [
+    "None of the schema, route, or template changes touch the realism axes pinned by the contract.",
+    "One round-trip per page load; cheap."
+  ],
+  "validation_claims": [
+    {"claim": "tests/test_realism_identity.py still passes 6/6 across all three commits.", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "pytest tests/test_realism_identity.py", "verified": "not_checked"},
+    {"claim": "After the fix: simulate_next_n(n=10, seed_base=1) produces 10 final games with proper score/winner data.", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Seed a fresh DB and call simulate_next_n(n=10, seed_base=1)", "verified": "not_checked"},
+    {"claim": "Index page renders 200, headline reads 2026-04-01, first game card shows MON Expos 10 / MIA Marlins 3 / Final, both team abbrevs as team-page links.", "evidence_cited": "render/smoke", "checkable_against_repo": "yes", "check_method": "Run the web app against a seeded DB and load the index", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "In-progress status format (T1/B1, O16 for regulation, S1,23 for super-innings)", "reason": "Since O27 currently sims games to completion in one pass — there's no concept of pause/resume mid-game — there are no in-progress games to display. The card status line collapses to \"Scheduled\" or \"Final\" today.", "category": "blocked", "status": "unknown"}
+  ],
+  "residual_risks": [],
+  "open_hooks": [
+    "The status logic is a single ternary in the macro, so when live-sim support lands, swapping in a _status_label(g) helper that returns the T/B/O notation is a one-line change."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Sim Crash Fix + b-ref Game-Card Grid",
+    "What was asked for",
+    "Diagnosis",
+    "Sim crash",
+    "UI / scoreboard",
+    "What was built",
+    "Commit `e9a42d1` — sim crash fix",
+    "Commit `d4c1b7a` — promote current date",
+    "Commit `f71c744` — b-ref game-card grid + day navigation",
+    "What didn't ship",
+    "Identity / regression check",
+    "Files touched"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/decouple-hits-runs-rGteJ; Commits e9a42d1 (sim crash fix), d4c1b7a (date headline), f71c744 (b-ref game-card grid).\n\nDiagnosis detail: simulate_next_n had silently been swallowing per-game exceptions, so days advanced (the schedule cursor moved) but no games produced finals (played stayed 0). Reproducing locally surfaced {'game_id': 1, 'error': \"name 'player' is not defined\"} — a dropped-on-the-floor regression from a prior commit in o27v2/sim.py:_extract_batter_stats, which referenced an undefined player variable; the function only had access to engine_pid and bstat. Second related bug: box score showed UT for some players — _assign_game_positions only marks dhs with \"J\"; jokers picked from bench_pool = list(dhs) + list(fielders[8:]) meant bench fielders never got game_position and the box-score COALESCE fell back to players.position (UT for utility players).\n\nUI diagnosis: All-Star Break / Season-end rendered as a prominent accent-colored row; current sim date hidden in a tiny date input; today's games as a wide table (Away | R | H | Home | R | H | Status) — same database-dump problem the user already called out for the box score. Reference patterns described: Fangraphs compact one-line-per-game; Baseball Reference 6-column grid of small boxes with W/L pitchers inline and prev/next date arrows; MLB.com horizontal tile strip.\n\nTotal diff: ~205 insertions, ~64 deletions across 3 files for the UI work; ~33 insertions, ~4 deletions for the sim crash fix.\n\nUser quote also recorded: \"did you review anty of the influences i shared designwise\"",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": false
+  },
+  "parser_notes": "Clear AAR. Date from 'Date completed:' line."
+}

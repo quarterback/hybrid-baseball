@@ -1,0 +1,56 @@
+{
+  "record_id": "hybrid-baseball--undated--sqlite-connection-leak-disk-io-error",
+  "source_path": "docs/aar-sqlite-connection-leak-disk-io-error.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": null,
+  "title": "AAR — SQLite connection leak surfacing as `disk I/O error`",
+  "scope": "Production logs (2026-06-07) showed sqlite3.OperationalError: disk I/O error 500s across unrelated routes.",
+  "rationale": [
+    {"item": "One failure fires on a bare PRAGMA immediately after connect(), and another on the first SELECT of a freshly opened connection — the classic signature of the process having run out of file descriptors: SQLITE_IOERR is what SQLite raises when it cannot open the file handles it needs.", "references": []},
+    {"item": "The errors hitting multiple routes at once (the almanac uses its own sqlite3.connect, which already closes in a finally) confirmed the almanac was a victim, not the source — something else was exhausting the process-wide fd budget.", "references": []},
+    {"item": "Root cause: Python's sqlite3 context manager only manages the transaction — __exit__ commits or rolls back and then deliberately leaves the connection open. So every db.fetchone/fetchall/execute — and the ~30 fantasy write paths that did conn = db.get_conn() with no close at all — leaked the connection's file descriptors until CPython's GC happened to finalize the object.", "references": []}
+  ],
+  "delegation_events": [],
+  "actions": [
+    {"description": "get_conn now builds its connection from a sqlite3.Connection subclass, _ManagedConnection, whose __exit__ runs the normal commit/rollback and then closes; covers every with get_conn() call site (db.fetchone/fetchall/execute/executemany, plus sim, trades, streaks, injuries, init backfills, and the fantasy fdb helpers); fdb.get_conn opts in via the same factory=", "artifacts": ["o27v2/db.py", "fdb.py"], "kind": "modified"},
+    {"description": "The ~29 bare conn = db.get_conn() fantasy write sites (which never used with at all) got an explicit conn.close() after their final commit(); for settle paths calling wallet.credit() afterward, the close lands before the credit", "artifacts": [], "kind": "modified"}
+  ],
+  "risk_posture": [
+    "Two changes, both about closing connections; no query or schema logic touched.",
+    "Transaction semantics are preserved — a with get_conn() as conn: block still commits on success / rolls back on error; it just also closes now.",
+    "Audited all 25 with get_conn() sites first to confirm none reuse the connection after the block (which auto-close would break).",
+    "Left as-is to keep the diff a minimal, reviewable set of one-line additions rather than re-indenting every multi-line SQL literal."
+  ],
+  "validation_claims": [
+    {"claim": "Reproduced in a sandbox: OLD pattern (with conn:, no close): fd delta over 200 conns = +401 (~2 fds each, leaked); NEW db.fetchone (fixed): fd delta over 200 calls = +1 (flat)", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Run a loop of connection opens under each pattern and count /proc/self/fd", "verified": "not_checked"},
+    {"claim": "All 12 changed files py_compile clean.", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "python -m py_compile on the changed files", "verified": "not_checked"},
+    {"claim": "Per-file conn = db.get_conn() count == conn.close() count (4/4, 3/3, …).", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "grep-count get_conn vs close per file", "verified": "not_checked"},
+    {"claim": "Runtime fd test (temp DB via O27V2_DB_PATH): the subclass's __exit__ closes the connection, and 500 iterations of fetchall + fetchone + execute produce a net fd delta of 0 (was +1500-ish before).", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Run the same fd-accounting loop against a temp DB", "verified": "not_checked"},
+    {"claim": "Not run: the Flask route smoke test and pytest — flask/pytest are absent in this sandbox (expected per CLAUDE.md).", "evidence_cited": "none", "checkable_against_repo": "yes", "check_method": "Run pytest and the route smoke test in an environment with flask installed", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "try/finally-wrapping the exception path on the bare write sites", "reason": "if one of those rare writes raises before its close(), that single connection still leaks until GC. The steady-state leak (every successful read/write) is the one that exhausted fds, and that is closed. Left as-is to keep the diff a minimal, reviewable set of one-line additions rather than re-indenting every multi-line SQL literal.", "category": "declined_by_owner", "status": "unknown"},
+    {"item": "Addressing potential genuine disk pressure (a -wal that never checkpoints, a full volume)", "reason": "that is a separate ops issue; watch the volume's free space and WAL size after this lands. The fd leak was, however, sufficient on its own to produce exactly the observed errors.", "category": "out_of_scope", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "The exception path on the bare write sites is not try/finally-wrapped: if one of those rare writes raises before its close(), that single connection still leaks until GC.",
+    "If the live box also has genuine disk pressure, that is a separate ops issue; watch the volume's free space and WAL size after this lands."
+  ],
+  "open_hooks": [],
+  "section_headers_original": [
+    "AAR — SQLite connection leak surfacing as `disk I/O error`",
+    "Symptom",
+    "Root cause",
+    "Fix",
+    "Validation",
+    "Notes / not changed"
+  ],
+  "unmapped_content": "Symptom detail: GET /almanac/players/lad_achille_gonzález.html -> 500 at o27/almanac/loader.py:123 and GET /college/game/4848 -> 500 at o27v2/db.py:76 (PRAGMA synchronous = NORMAL), both sqlite3.OperationalError: disk I/O error. Each page render fans out into many calls; fantasy fdb connections are doubly expensive: they ATTACH the sim DB, so ~2 db handles + WAL/SHM each. Under sustained load the open-file count drifted up against the process RLIMIT_NOFILE, after which any new connection — even one only running a PRAGMA — failed to open its files.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": false,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "No explicit document date line; '2026-06-07' is the date of the production logs (the incident), not stated as the document/completion date, so record is undated per instructions. Non-action 'left as-is' categorized declined_by_owner is debatable; it was the author's minimal-diff choice."
+}

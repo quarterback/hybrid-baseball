@@ -1,0 +1,165 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--war-oaa-fix-position-neutral-oaa-regressed-field-runs",
+  "source_path": "docs/aar-war-oaa-fix-and-fielding-regression.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — WAR/OAA fix: position-neutral OAA + reliability-regressed Field Runs into WAR",
+  "scope": "Scope: o27v2/analytics/expanded.py (OAA/Field Runs), o27v2/web/app.py (WAR defensive input + baselines), o27v2/web/templates/o27i_player.html, o27v2/web/templates/o27i_advanced.html, tests/test_stat_invariants.py.",
+  "rationale": [
+    {
+      "item": "The season card's WAR read a rating-derived scout DRS while the Savant page showed event-based OAA/Field Runs — two independent defensive pipelines that never reconciled (a Memphis Koalas CF showed WAR 3.65 with a +0.1 scout-defense term next to a −19.9 Field Runs on the other surface).",
+      "references": [
+        "docs/aar-war-oaa-reconciliation-koalas.md",
+        "docs/aar-stat-surface-reconciliation-comprehensive.md"
+      ]
+    },
+    {
+      "item": "The positional artifact was real: infielders systematically positive, outfielders systematically negative — OF regulars absorb every extra-base hit in their zone while being measured against an EV/LA out-rate inflated by easy infield outs in the same bin.",
+      "references": []
+    },
+    {
+      "item": "OAA barely tracks skill: correlation of de-biased OAA to the player's actual defense rating ≈ 0.10; defense enters only as a team-level range shift plus sparse individual gems. Feeding raw OAA into WAR would inject ±1.8 wins of fielding noise per player.",
+      "references": [
+        "o27/engine/batted_ball.py"
+      ]
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "build_fielding_value made two-pass: out_rate[zone, EV, LA] baseline (with (EV, LA) fallback) over all non-HR BIP; output gains reliability; frv is the regressed run value (oaa × 0.78 × reliability); leaderboards sort by frv",
+      "artifacts": [
+        "o27v2/analytics/expanded.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "_league_baselines_compute publishes fielding_runs and fielding_chances maps so every WAR consumer sees the displayed Field Runs without touching ~18 _aggregate_batter_rows call sites",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "WAR block: def_runs is the regressed Field Runs for fielders with ≥ _WAR_FIELDING_MIN_CHANCES (25) chances, else scout DRS projection; def_runs_source records which; dwar = def_runs / rpw",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Tooltips updated to explain position-neutrality, HR exclusion, the reliability regression, and that FRV is the WAR-bound figure",
+      "artifacts": [
+        "o27v2/web/templates/o27i_player.html",
+        "o27v2/web/templates/o27i_advanced.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Invariant 11 added: WAR def_runs == displayed FRV (source must be field) for qualified fielders, plus WAR == war_off + dwar",
+      "artifacts": [
+        "tests/test_stat_invariants.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Scout DRS is retained as its own column and used only as the small-sample fallback.",
+    "Attribution unchanged (exact engine fielder on outs; trajectory-zone → regular on hits).",
+    "K is a documented, tunable constant (`_FIELDING_REGRESSION_K`).",
+    "Did not touch ratings or the sim engine. … out of scope and deliberately left alone."
+  ],
+  "validation_claims": [
+    {
+      "claim": "After conditioning expected-out on zone + dropping HRs: every position centers at ~0 (CF −2.4, SS −0.5, LF −3.4, …), stdev drops to 23 (from 31)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Rebuild a 12-team 396-game sim DB and recompute OAA by position",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "WAR def_runs equals displayed frv to <0.05 runs for every qualified fielder (invariant 11, plus a direct end-to-end check on real route rows)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run tests/test_stat_invariants.py against a seeded DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "o27/tests o27v2/tests → 235 passed, 1 skipped; tests/test_stat_invariants.py → 12 passed (was 11)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/tests o27v2/tests and the invariant suite",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Pages /player/<id>/o27i, /o27i/advanced, /leaders, /players, /player/<id> all render 200",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Request the routes via test client",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Verified on a fresh initdb 12teams + 396-game sim (O27V2_DB_PATH=/tmp/recon.db)",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Repeat the initdb + sim setup",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Regression K=400 narrows FRV p10/p90 from −26.4/+23.2 to −7.6/+3.9, dWAR span from −1.84…+1.86 to −0.75…+0.39",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Recompute FRV distribution on the sim DB with and without regression",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Did not touch ratings or the sim engine (per-fielder catch influence in resolve_contact)",
+      "reason": "The weak individual-fielder signal is an engine property (defense is largely team-level) … out of scope and deliberately left alone",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Rating→OAA sample-growth continuous blend (vs hard switch at 25 chances)",
+      "reason": "is the natural next step and would smooth the boundary",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Did not add baserunning (BSR) to WAR",
+      "reason": "Still surfaced-but-not-summed; a separate mitigation. … BSR is the remaining gap",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "K = 400 is calibrated, not derived — set from one 396-game DB to land a believable fielding band.",
+    "Display nuance: sub-25-chance fielders still show an OAA/FRV on their o27i page while their WAR uses the scout projection; the invariant scopes to qualified fielders accordingly."
+  ],
+  "open_hooks": [
+    "_FIELDING_REGRESSION_K exposed for tuning like the engine's RES_* knobs.",
+    "Continuous rating/OAA blend as chances grow.",
+    "Adding BSR to WAR."
+  ],
+  "section_headers_original": [
+    "After-Action Report — WAR/OAA fix: position-neutral OAA + reliability-regressed Field Runs into WAR",
+    "TL;DR",
+    "Why — the verification that drove the design",
+    "What changed, precisely",
+    "Validation",
+    "What I did NOT do / follow-ups"
+  ],
+  "unmapped_content": "Before-fix positional mean OAA table: 1B +2.2, 2B +3.3, 3B +5.5, SS +11.5, LF −17.5, CF −16.6, RF −9.2; spread stdev 31, range −72.6…+49.9; the Koala's −25.5 was mild. Engine constants: DEFENSE_RANGE_SHIFT_SCALE = 0.15 (max ~10% single↔out flip), GEM_BASE_* ≈ 0.05–0.075; post-inversion corr EV→hit 0.364. reliability = chances / (chances + K), K = 400; full-season qualified fielder lands at 0.2–0.46 weight. The Koala reconciled: OAA −25.5 at ~250 chances → reliability ≈ 0.39 → regressed ≈ −7.7 Field Runs → ≈ −0.4…−0.5 dWAR; WAR 3.65 → ~3.1. Branch claude/war-oaa-reconciliation-koalas-7t0pG. Predecessors: docs/aar-war-oaa-reconciliation-koalas.md (the finding), docs/aar-stat-surface-reconciliation-comprehensive.md (the deep-dive); this AAR is the fix.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date:' header (2026-06-06). No explicit delegation/owner-decision sentences; decisions are agent-side design choices recorded under risk_posture/non_actions."
+}

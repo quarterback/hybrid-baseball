@@ -1,0 +1,135 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--war-oaa-reconciliation-memphis-koalas",
+  "source_path": "docs/aar-war-oaa-reconciliation-koalas.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — WAR / OAA reconciliation (Memphis Koalas)",
+  "scope": "Scope: read-only audit. No engine, rating, or stat changes in this commit — this is the *finding* record written **before** any mitigation, per the \"document the ask and the honest gaps first\" convention.",
+  "rationale": [
+    {
+      "item": "A Memphis Koalas center fielder shows WAR 3.65 on the season card but OAA −25.5 / Field Runs −19.9 on the O27 Index page. The owner asked: does the WAR actually consume the OAA/Field-Runs penalty, or is it reading a different (lighter) fielding input? If the two surfaces pull defense from different sources, that's the bug.",
+      "references": []
+    },
+    {
+      "item": "Root cause (owner's context): these stats were built early in development; new metrics were layered in, but the WAR aggregation was never re-pointed at them. The breakage is drift, not a single bad edit.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Audit only; mitigations in a subsequent commit",
+      "decided_by": "owner",
+      "quote": "No engine, rating, formula, or stat changes — audit only, as directed."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Read-only audit tracing the WAR formula (two terms only: VORP_bat + scout DRS), the Koalas arithmetic, OAA attribution artifacts in build_fielding_value(), the xwOBA luck-gap check, and invariant coverage; this finding record written",
+      "artifacts": [
+        "o27v2/web/app.py:1626-1648",
+        "o27v2/web/app.py:697-725",
+        "o27v2/analytics/expanded.py:356-436",
+        "o27v2/analytics/expected_woba.py",
+        "tests/test_stat_invariants.py",
+        "docs/aar-stat-surface-reconciliation-comprehensive.md"
+      ],
+      "kind": "docs"
+    }
+  ],
+  "risk_posture": [
+    "read-only audit. No engine, rating, or stat changes in this commit",
+    "The honest statement: 3.65 WAR is correct given the inputs it actually uses — it simply does not incorporate the simulated fielding at all, so it cannot be \"wrong\" about a penalty it never applied."
+  ],
+  "validation_claims": [
+    {
+      "claim": "The season-card WAR's defensive term is a scout-rating-derived DRS; it never reads the batted-ball event log that OAA/Field Runs are built from",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Read the WAR block at o27v2/web/app.py:1626-1648 and _position_defense_for_row",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "3.65 ≈ +3.5 bat + ~+0.1 scout-defense; feeding −19.9 Field Runs through /rpw would give dWAR ≈ −1.3 to −2.0 and WAR near 1.6–2.3",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "unclear",
+      "check_method": "Run the comprehensive report's query on the live DB (exact VORP/rpw split needs the live DB)",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Post-inversion (2026-06-01) 100% of batted balls are physics-decided; this player's +0.108 wOBA−xwOBA gap across 155/155 physics-decided batted balls is genuine over-performance",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Check build_xwoba_ev_table and the physics-first inversion AAR; query the player's batted balls",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_stat_invariants.py has 10 invariants; none checks WAR against its own components",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Read tests/test_stat_invariants.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Only ~41% of chances are exactly attributed",
+      "evidence_cited": "none",
+      "checkable_against_repo": "unclear",
+      "check_method": "Per docs/aar-expanded-metrics-and-prospect-index.md",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "No engine, rating, formula, or stat changes",
+      "reason": "audit only, as directed",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Did not pin the exact VORP/rpw numeric split",
+      "reason": "no live DB in the sandbox; the comprehensive report supplies the exact query to run on the owner's DB",
+      "category": "blocked",
+      "status": "unknown"
+    },
+    {
+      "item": "Mitigations deferred",
+      "reason": "Mitigations follow in a subsequent commit, after this record lands.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Neither WAR's scout-DRS term nor OAA is a trustworthy fielding truth: the rating prior structurally cannot see range; event-based OAA over-charges everyday regulars.",
+    "OAA miscalibration vectors: HRs and extra-base hits counted as fielding chances; out-vs-hit attribution asymmetry (spray-blind _select_fielder for outs vs actual trajectory zone for hits); only ~41% of chances exactly attributed.",
+    "A \"surfaced component must equal the value that flows into WAR\" invariant would fail immediately today (WAR omits baserunning, omits a standalone positional term, reads fielding from scout DRS).",
+    "Luck-gap caveat: games predating the 2026-06-01 inversion carry echo-EV and should be excluded before trusting the gap on those rows."
+  ],
+  "open_hooks": [
+    "The comprehensive companion report carries the mitigation roadmap and the proposed invariant.",
+    "Exact VORP/rpw query to run on the owner's DB."
+  ],
+  "section_headers_original": [
+    "After-Action Report — WAR / OAA reconciliation (Memphis Koalas)",
+    "The ask",
+    "TL;DR — they pull defense from different sources. That's the bug.",
+    "What the WAR actually is (`o27v2/web/app.py:1626-1648`)",
+    "The Koalas arithmetic",
+    "Is OAA −25.5 even real? Suspect — an attribution artifact, not a range grade.",
+    "Which number is right?",
+    "The luck gap is real (lower-priority question)",
+    "Invariant coverage",
+    "Root cause (owner's context)",
+    "What I did NOT do (this commit)"
+  ],
+  "unmapped_content": "WAR formula: WAR = VORP_bat/rpw + DRS_scout/rpw; VORP_bat = (wOBA − 0.85·league_wOBA) × PA / 1.20; DRS_scout = (pos_def − 0.5) × 2 × (G/162) × range[pos] (CF range 8.0); pos_def = 0.6·sub_grade + 0.4·general_grade. Of the owner's five components only two are in this WAR (no OAA/Field Runs, no BSR term, no standalone positional adjustment — folded into _POSITION_DRS_RANGE). Koalas arithmetic: DRS = (pos_def − 0.5) × 6.12 runs; dWAR ≈ +0.04…+0.12 (rpw ≈ 13–18). −25.5 over 62 G ≈ −0.41 OAA/game vs worst qualified MLB defender ~−0.13/game. FldPct .989 and OAA −25.5 can both be \"true\" because they measure different things. Branch claude/war-oaa-reconciliation-koalas-7t0pG.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Finding-only AAR (audit, no code changes); companion to docs/aar-stat-surface-reconciliation-comprehensive.md and predecessor of docs/aar-war-oaa-fix-and-fielding-regression.md. Date from 'Date:' header."
+}

@@ -1,0 +1,78 @@
+{
+  "record_id": "hybrid-baseball--2026-05-07--match-day-waivers-bad-day-variance",
+  "source_path": "docs/aar-match-day-waivers-and-bad-day-variance.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-07",
+  "title": "After-Action Report — Match-Day Waivers + Bad-Day Variance",
+  "scope": "Phase 1 (snake-draft talent dispersion) collapsed the team-talent spread from 55 grade points to ~1, and a 14-team / 30-game season went from 155-7 / 7-155 to 20-10 / 8-22. The user signed off on Phases 2 and 3 with two specific scopes.",
+  "rationale": [
+    {"item": "\"the match day sweep (like a bank sweep of pennies) runs weekly on sunday and the new player are placed immediately and you run as many rounds as needed up to 5 rounds but teams can just defer a pick in any round (defer 1-3 pick in round 4)\"", "references": []},
+    {"item": "\"phase 3 is a must, i want everyone to have bad days possible especially influenced by weather or other conditions along with tired and talent.\"", "references": []},
+    {"item": "The first smoke test of Phase 2 made 0 claims. Reason: Phase 1's strict-order snake draft leaves the FA pool as the bottom slice of every position's talent distribution. Best FA at any position is always strictly worse than every team's worst at that position, so no positive-delta upgrade ever existed.", "references": ["aar-single-div-schedule-and-snake-draft.md"]},
+    {"item": "The diagnostic before Phase 1 confirmed: the engine has today_form (gaussian N(1.00, 0.04), clamped [0.92, 1.08]) for pitchers only, re-rolled per appearance. No batter analog exists. Weather already flows into per-PA outcomes via 5 hooks in prob.py — but uniformly across all players, not as differential per-player off-days.", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "Proceed with Phases 2 and 3 without waiting for a Fly-side test of Phase 1", "decided_by": "owner", "quote": "\"no reason to wait\" — proceed with both without waiting for a Fly-side test of Phase 1."},
+    {"decision": "Banking via single counter for waiver picks", "decided_by": "agent", "quote": "The user's spec (\"defer 1-3 pick in round 4\") implied accumulating banked picks. Implemented as a single `picks_available[tid]` counter that goes +1 per round and -1 per claim — banking falls out for free."},
+    {"decision": "Symmetric batter condition scaling rather than positive-only", "decided_by": "agent", "quote": "Rejected: symmetry is what produces \"everyone has bad days,\" including replacement-level guys getting even worse. That's the user's stated intent."},
+    {"decision": "Draft-sort noise (±6) over restoring the 0.001 floor", "decided_by": "agent", "quote": "The floor bump would degrade elite-vs-replacement outcome separation league-wide, which the user has explicitly fought *against* before (see `aar-xra-2c-and-talent-spread.md`)."},
+    {"decision": "No fatigue-threshold change", "decided_by": "agent", "quote": "Diagnostic flagged it but Phase 3's per-game variance already moved score-diff distribution into a healthy MLB-ish shape."}
+  ],
+  "actions": [
+    {"description": "New module o27v2/waivers.py — run_match_day, maybe_run_sweep, _pick_best_claim, _apply_claim, get_free_agents, helpers. Sunday match-day waiver sweep: up to 5 rounds, worst record first, picks_available counter banking, positive-delta auto-claim policy, early end after a claimless round.", "artifacts": ["o27v2/waivers.py"], "kind": "new"},
+    {"description": "Hooked sweep into simulate_date, simulate_through, simulate_next_n so it auto-fires before any games on a Sunday game date (idempotent via sim_meta.last_match_day). Added _condition_mu_for_weather + _roll_today_condition invoked right after state.weather stamp in simulate_game.", "artifacts": ["o27v2/sim.py"], "kind": "modified"},
+    {"description": "Roster maintenance on a claim: FA joins at is_active=1, worst same-position player cut to FA pool, bucket re-sorted by snake-draft composite rating with top-N active, both halves logged to transactions table (waiver_claim + waiver_release).", "artifacts": ["o27v2/waivers.py", "transactions"], "kind": "new"},
+    {"description": "Added ±6 grade-points of jitter on the snake-draft rank sort (_DRAFT_SORT_NOISE = 6) so the FA pool overlaps team-roster talent at the margins; persisted skill/pitcher_skill values unchanged, only pick order fuzzed.", "artifacts": ["o27v2/league.py", "_run_snake_draft"], "kind": "modified"},
+    {"description": "New /free-agents route + free_agents.html template listing the unsigned pool with position / kind / sort filters, per-position count chips, and the last-sweep date; wired into the topbar nav. Transactions page stat strip extended with waiver_claim and waiver_release event types.", "artifacts": ["o27v2/web/app.py", "o27v2/web/templates/free_agents.html", "o27v2/web/templates/base.html", "o27v2/web/templates/transactions.html"], "kind": "new"},
+    {"description": "Added today_condition: float = 1.0 field on Player; rolled once per game for both rosters, every player, gaussian draw N(μ_weather, σ=0.07) clamped to [0.85, 1.15], with weather modulation of μ (hot -0.025, cold -0.020, heavy precip -0.030, light precip -0.010, stacking).", "artifacts": ["o27/engine/state.py", "o27v2/sim.py"], "kind": "modified"},
+    {"description": "Read today_condition in _pitch_probs (around line 222) and contact_quality (around line 418) in prob.py. Pitcher: stacks multiplicatively with today_form. Batter: scales every batter-rating-driven dominance term via (rating - 0.5) * 2 * cond shape.", "artifacts": ["o27/engine/prob.py"], "kind": "modified"}
+  ],
+  "risk_posture": [
+    "The persisted `skill`/`pitcher_skill` values are unchanged — only pick **order** gets fuzzed, so the FA pool ends up overlapping team-roster talent at the margins. Net team-mean parity is preserved (jitter cancels across ~55 picks).",
+    "The per-PA noise floor at `prob.py:356-360` and `prob.py:445-450` (0.001 floor, deliberately lowered from 0.01 to \"let transcendent talent transcend\") was **not** touched.",
+    "The clamp prevents extreme outliers (like an elite pitcher with cond=0.4) from running wild — even on the worst possible day, no player loses more than 15% of their effective rating to wellness.",
+    "Compressing the threshold could over-correct toward MLB-tighter stat lines, which the league's AARs explicitly say no to."
+  ],
+  "validation_claims": [
+    {"claim": "Same config as Phase 1 (14 teams / 1 league / 1 div, 30 games, seed 42), full-season sim'd: 210 games sim'd in all phases, 0 sweep errors.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the 14-team / 30-game seed-42 season sim and compare counts", "verified": "not_checked"},
+    {"claim": "Phase 1+2+3: top record 18-12 (.600), bottom record 10-20 (.333), win spread 8 games.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the same seeded season and inspect standings", "verified": "not_checked"},
+    {"claim": "Post-fix, opening Sunday produced a 5-round sweep with 53 claims across 14 teams; subsequent Sundays produced 0.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run sim and count transactions rows by week", "verified": "not_checked"},
+    {"claim": "Score-differential distribution post-Phase-3 (210 games): 1-2 runs 62 (29.5%), 3-4 51 (24.3%), 5-7 45 (21.4%), 8-10 30 (14.3%), 11+ 22 (10.5%); total runs/game mean 21.8 with σ=6.3; max single-game diff 19.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run the seeded season and compute score-diff histogram from games rows", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "Fatigue-threshold compression (fatigue_threshold = 24 + stamina*40 BF in o27/engine/prob.py)", "reason": "left alone since Phase 3 already adds enough per-game variance. Lever for later if the user wants more bullpen action mid-game.", "category": "deferred", "status": "unknown"},
+    {"item": "Per-PA noise floor (0.001 → 0.005 or 0.01)", "reason": "blunt knob, held in reserve", "category": "deferred", "status": "unknown"},
+    {"item": "Sweep visualisation — per-Sunday \"match day report\" page summarising the sweep as a unit (rounds, total claims, biggest delta)", "reason": "Could be a future addition.", "category": "deferred", "status": "unknown"},
+    {"item": "FA-pool churn metric", "reason": "Worth measuring once a full multi-month season runs on Fly.", "category": "deferred", "status": "unknown"},
+    {"item": "Playoffs + awards", "reason": "Still on the original list. Out of scope for this PR; will need their own pass.", "category": "out_of_scope", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "Match-day claims week 2+ are 0 (FA pool mined of upgrades — will reactivate when Phase 3 / future injury churn introduces fresh roster moves).",
+    "Slightly fatter blowout tail than MLB-shaped distribution — which is the bad-day mechanic firing as designed."
+  ],
+  "open_hooks": [
+    "Fatigue-threshold compression as a lever for more bullpen action mid-game",
+    "Per-PA noise floor bump held in reserve as a follow-up knob if standings still don't have enough texture",
+    "Per-Sunday match day report page",
+    "FA-pool churn metric once injuries cut players mid-season"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Match-Day Waivers + Bad-Day Variance",
+    "What was asked for",
+    "What was built",
+    "Phase 2 — Sunday match-day waiver sweep",
+    "Phase 3 — Per-game `today_condition` multiplier",
+    "Verification numbers",
+    "What's still on the table",
+    "Files touched",
+    "Decision log"
+  ],
+  "unmapped_content": "The `(rating - 0.5) * 2 * cond` shape preserves identity at `cond=1.0` and **symmetrically** shrinks both positive and negative dominance toward league-average on bad days (`0.85`) or amplifies it on hot days (`1.15`). So an .80 bat on a 0.85 day reads as effective .68 (still good, not great); a .30 bat on a 0.85 day reads as .255 (worse than already bad). Everyone has bad days. | Diagnostic agent's recommendation: condition variance is a more targeted lever than the floor, which is a blunter, league-wide noise injection that also re-caps elite separation. | Decision log: Positive-only deltas — A claim only fires if the delta is strictly > 0. No-op swaps (e.g., team's CF rated 50, FA CF also rated 50) get skipped so the league's player IDs don't churn every Sunday for no roster strength change. | σ=0.07, clamp [0.85, 1.15] for today_condition — Tighter than would feel \"wild\" to the user but wide enough that ~16% of players have a noticeable off day in mild weather, ~30% on a bad-weather day. | Branch: claude/fix-machine-limit-error-KtDSp. Builds on: aar-single-div-schedule-and-snake-draft.md (Phase 1).",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Well-formed AAR with explicit decision log; user quotes preserved in rationale and delegation."
+}

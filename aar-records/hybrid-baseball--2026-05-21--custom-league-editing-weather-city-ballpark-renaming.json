@@ -1,0 +1,162 @@
+{
+  "record_id": "hybrid-baseball--2026-05-21--custom-league-editing-weather-city-ballpark-renaming",
+  "source_path": "docs/aar-custom-league-editing.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-21",
+  "title": "After-Action Report — Custom League Editing: Coordinate Weather, City Catalogue, Live Ballpark Editor, League Renaming",
+  "scope": "The user wanted to push league/team customization further so they can build \"weirder and more expansive\" leagues.",
+  "rationale": [
+    {
+      "item": "\"I want to have a better way to edit league names and team names if I want to … create more custom leagues that I can set the geography of teams and stuff.\"",
+      "references": []
+    },
+    {
+      "item": "\"Add more Finnish cities too and far more metro and micropolitan markets so I can get weirder and more expansive.\"",
+      "references": []
+    },
+    {
+      "item": "\"Weather geography just would pick the closest city to them, it doesnt need to be exact.\"",
+      "references": []
+    },
+    {
+      "item": "\"Also this would let me make ballpark dimensions on the fly so I can get weird then too in real time if i want to.\"",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "All four capabilities wanted; edits allowed at any time (played games keep stamped weather; unplayed home games re-roll)",
+      "decided_by": "owner",
+      "quote": "A scoping question confirmed all four capabilities were wanted, and that edits should be allowed **at any time** (played games keep their stamped weather; unplayed home games re-roll)."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Coordinate-based nearest-city weather: lat/lon columns on teams (schema + idempotent ALTER migration), seed_league persists coords, weather.py gains coordinate gazetteer (_BASE_COORDS, _EXTRA_CITIES, _CLIMATE_ANCHORS), nearest_city / archetype_for_coords / city_gazetteer, draw_weather lat/lon params (backward compatible, RNG-consumption unchanged); coords flow into schedule.py and playoffs.py weather draws",
+      "artifacts": [
+        "o27v2/db.py",
+        "o27/engine/weather.py",
+        "o27v2/league.py",
+        "o27v2/schedule.py",
+        "o27v2/playoffs.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "City catalogue grown from ~150 to 362 cities with coordinates + archetype: ~40 more Finnish towns (all subarctic), ~120 US metro/micropolitan markets tagged by climate region, global anchor spread",
+      "artifacts": [
+        "o27/engine/weather.py"
+      ],
+      "kind": "data"
+    },
+    {
+      "description": "Live ballpark editor on /team/<id>/edit: park name, all 12 shapes, six dimensions, HR/hits park factors, 25-entry quirk checkbox list (shape-fit hints shown but not enforced), Re-roll ballpark button; new public helpers get_park_shapes, get_quirk_catalog, get_park_shape_meta, quirk_meta, roll_park",
+      "artifacts": [
+        "o27v2/web/templates/team_edit.html",
+        "team_edit_post",
+        "o27v2/league.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Relocation with a coordinate-aware city picker: datalist of all 362 gazetteer cities, auto-fill lat/lon + archetype preview, manual lat/lon override; server-side resolution order explicit lat/lon → gazetteer match → existing team coords",
+      "artifacts": [
+        "o27v2/web/templates/team_edit.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Rename leagues & divisions: new /league/edit page linked via a Rename button; display-only renames of league/division columns on teams",
+      "artifacts": [
+        "o27v2/web/templates/league_edit.html",
+        "o27v2/web/templates/league.html",
+        "o27v2/web/app.py"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "**Backward compatibility.** `draw_weather`'s new params default to `None`; the name-lookup path and RNG sequence are unchanged, so existing seeds reproduce bit-for-bit.",
+    "Renaming is **display-only** — it updates the `league` / `division` columns on `teams`; records, rosters, and the schedule are untouched.",
+    "**Quirks are not shape-gated in the editor.** Generation still gates quirks by shape, but manual editing intentionally allows any combination — the whole point was to \"get weird.\"",
+    "**League renaming is display-only and independent per name.** Avoids magic prefix-rewriting that could clobber a division the user is also renaming in the same submit."
+  ],
+  "validation_claims": [
+    {
+      "claim": "End-to-end pipeline on a fresh temp DB: seed → schedule → relocate to Helsinki → reshape park → re-roll → rename leagues/divisions; teams carry coords, games stamp weather, all writes verified",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Repeat the pipeline on a temp DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Web layer via Flask's test client: /team/<id>/edit and /league/edit GET (200), save/re-roll/rename POST (302) with DB assertions",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the Flask-test-client checks",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Edge cases: legacy row with NULL coords + empty park renders and saves; \"Nuuk GRL\" with manual coordinates persists and resolves to the nearest anchor",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Reproduce edge-case flows",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "nearest_city spot-checks: Seinäjoki → subarctic, Boise → arid_steppe, Miami → tropical, Lapland point → Sodankylä/subarctic, Tokyo point → subtropical_humid",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Call nearest_city/archetype_for_coords with these points",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Test suite matches the pristine baseline (120 passed, 7 skipped); two pre-existing issues reproduce identically on the unchanged tree",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the full suite and compare to baseline",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "No real-browser click-through",
+      "reason": "the work was done in a headless container, so the editor UI was exercised via the Flask test client and DB assertions rather than a live browser session",
+      "category": "blocked",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Editor UI not exercised in a real browser"
+  ],
+  "open_hooks": [
+    "After renaming a league (AL → Atlantic) the user may also want to rename matching divisions independently (AL West → Atlantic West)"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Custom League Editing: Coordinate Weather, City Catalogue, Live Ballpark Editor, League Renaming",
+    "What was asked for",
+    "Starting state",
+    "What shipped",
+    "1. Coordinate-based \"nearest city\" weather",
+    "2. Far bigger city catalogue",
+    "3. Live ballpark editor",
+    "4. Relocation with a coordinate-aware city picker",
+    "5. Rename leagues & divisions",
+    "Files touched",
+    "Testing",
+    "Not verified",
+    "Design notes / trade-offs"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/custom-league-editing-Vp67c; commit 15eda4e. Starting state: teams from o27v2/data/teams_database.json (86 franchises with name/city/lat/lon/level), coordinates used once at seed time then discarded; weather mapped city → archetype by exact name match with trailing country-code fallback, unknown cities silently fell back to continental_warm (~150 world cities, 20 Finnish); team editor edited name/abbrev/city as free text; ballpark dimensions rolled once at seed and not editable; league/division names fixed at seed. Design notes: squared equirectangular distance, not haversine — monotone in true distance so nearest-neighbour ranking is identical, and the user explicitly said exactness doesn't matter; single source of truth for climate — the gazetteer lives in the engine (weather.py) so the lower-layer engine stays self-contained and the editor reads its pick-list from the same place the weather draw does. Files-touched table enumerates per-file changes including app.py helpers _team_climate, _parse_park_dims, _reroll_weather_for_team. Pre-existing test issues: test_weather_calibration K-rate envelope (sampling-flaky) and test_stat_invariants errors (need a DB setup absent in this container).",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed:' line."
+}

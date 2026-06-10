@@ -1,0 +1,130 @@
+{
+ "record_id": "hybrid-baseball--2026-06-07--postseason-format-choice-and-table-winner-crown",
+ "source_path": "docs/aar-postseason-format-choice-and-table-winner-crown.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": "2026-06-07",
+ "title": "After-Action Report \u2014 Postseason format choice + table-winner crown",
+ "scope": "Status: Shipped & functionally validated against a temp DB. No Flask in the sandbox, so the route/template were verified by Jinja parse + logic test, not a live request.",
+ "rationale": [
+  {
+   "item": "No choice. Whether a league runs a bracket was dictated entirely by which config you picked, with no UI to choose. Universe/region configs hard-disable the postseason; presets/custom default to a bracket.",
+   "references": []
+  },
+  {
+   "item": "No crown. In the table-winner (soccer) model the page named nobody. The champion banner reads only from `playoff_series`, which is empty when there's no bracket.",
+   "references": []
+  },
+  {
+   "item": "The owner's framing was \"the templates aren't built for this new structure, so they lack the schema to generate playoffs.\" That turned out to be the wrong mechanism but the right instinct.",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Backfill UI for existing saves deliberately out of scope",
+   "decided_by": "agent",
+   "quote": "Deliberately out of scope here."
+  }
+ ],
+ "actions": [
+  {
+   "description": "Per-save override: new sim_meta key postseason_format (\"bracket\" | \"none\"); postseason_disabled() reads it first, falls back to config field",
+   "artifacts": [
+    "o27v2/playoffs.py"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Choice at creation on every path: Postseason format select on /new-league (default bracket) and /universe/new (default table winner); build_universe_config gained a postseason param; both POST handlers stamp the key",
+   "artifacts": [
+    "o27v2/web/app.py",
+    "o27v2/league.py",
+    "o27v2/web/templates/new_league.html",
+    "o27v2/web/templates/universe_new.html"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Crown the table winner: new playoffs.table_winner_champions() (best-record team per league, ties \u2192 more wins, only when postseason disabled and regular season complete); playoffs.html renders champion banner with Advance to Next Season button",
+   "artifacts": [
+    "o27v2/playoffs.py",
+    "o27v2/web/app.py",
+    "o27v2/web/templates/playoffs.html"
+   ],
+   "kind": "new"
+  }
+ ],
+ "risk_posture": [
+  "old saves with no key keep their previous config-driven behavior (back-compat, including the owner's already-loaded universe, which now falls through to `postseason: none` and finally shows its table winners)"
+ ],
+ "validation_claims": [
+  {
+   "claim": "postseason_disabled() / table_winner_champions() exercised on a temp DB: no key \u21d2 bracket; none \u21d2 disabled + correct per-league table winners; bracket \u21d2 enabled + empty champion list",
+   "evidence_cited": "manual verification",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the two functions against a temp DB with each sim_meta key state",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "All three templates parse under Jinja2",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "yes",
+   "check_method": "Jinja2-parse the edited templates",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Python syntax check on all edited modules",
+   "evidence_cited": "manual verification",
+   "checkable_against_repo": "yes",
+   "check_method": "py_compile the edited modules",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Backfill UI / per-save \"change postseason format\" control on the league-edit page for existing saves",
+   "reason": "Existing custom/preset saves created before this change still have no override key, so they keep config-driven behavior. ... Deliberately out of scope here.",
+   "category": "out_of_scope",
+   "status": "unknown"
+  },
+  {
+   "item": "Per-division table winners (for multi-division single-league worlds)",
+   "reason": "The table-winner crown is per league, mirroring the season-archive logic in app.py.",
+   "category": "out_of_scope",
+   "status": "unknown"
+  },
+  {
+   "item": "Live browser verification",
+   "reason": "no Flask in the sandbox",
+   "category": "blocked",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "Not verified in a live browser (no Flask in the sandbox)."
+ ],
+ "open_hooks": [
+  "A per-save \"change postseason format\" control on the league-edit page would let owners flip an existing league without recreating it."
+ ],
+ "section_headers_original": [
+  "After-Action Report \u2014 Postseason format choice + table-winner crown",
+  "1. The complaint",
+  "2. Root-cause findings",
+  "3. What changed",
+  "4. Files touched",
+  "5. Validation",
+  "6. What I did NOT change / follow-ups"
+ ],
+ "unmapped_content": "Branch: claude/jolly-shannon-6mf74. Root-cause findings: there is no DB schema for postseason format \u2014 a single config field `postseason` read at runtime by playoffs.postseason_disabled() (\"none\" \u21d2 soccer model). _active_config() persists only the config_id string in sim_meta (league_config); for custom saves the id is \"custom\" with no JSON on disk, so the field is unreadable after creation \u2014 a per-save field that survives reload was needed. The loaded save was a universe config (giveaway: generic \"Hitter/Pitcher of the Year\" award names set only by build_universe_config()) which hardcoded \"postseason\": \"none\"; the page behaved correctly for that config.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "Date from 'Date:' line. Scope taken from the Status line; document has no single summary sentence beyond the complaint section."
+}

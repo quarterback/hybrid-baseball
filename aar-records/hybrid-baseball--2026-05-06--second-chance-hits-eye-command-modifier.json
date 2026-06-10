@@ -1,0 +1,90 @@
+{
+  "record_id": "hybrid-baseball--2026-05-06--second-chance-hits-eye-command-modifier",
+  "source_path": "docs/aar-second-chance-hits-and-eye-command-modifier.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-06",
+  "title": "After-Action Report — Second-Chance Hits column + eye-vs-command second-swing modifier",
+  "scope": "Closing notes documented that the conversion mechanic itself wasn't measurable from the schema — stays and total hits were tracked but \"hits credited on a 2C event\" was folded into total hits with no separate counter. User then articulated a target: top hitters should convert ~60–70% of 2C events into hits, marginal hitters 30–40%.",
+  "rationale": [
+    {"item": "Phase 11A/B/C shipped: surfaced 2C-RBI / 2C-RBI% analytics, added the medium-contact [2,2,2] runner advancement, found that the per-player shape-correction signal at the contact-rating level was weak (Δ-by-contact decile slope was nearly flat)", "references": ["aar-stay-advancement-and-2c-rbi.md"]},
+    {"item": "User target: top hitters should convert ~60–70% of 2C events into hits, marginal hitters 30–40%. Worth measuring against.", "references": []}
+  ],
+  "delegation_events": [
+    {"decision": "Implementation path locked: competing eye/command modifiers on subsequent swings only; do not touch should_stay_prob or the 2C gate", "decided_by": "owner", "quote": "Don't touch should_stay_prob. Don't add anything that changes who CAN take second-chance ABs or how often they're decided. The only thing changing is the OUTCOME quality on second and third swings within a PA, modulated by talent."},
+    {"decision": "Extend the architecture to swing 1 (Path A)", "decided_by": "owner", "quote": "After Path 2's spec-miss diagnosis, user confirmed the architecture needed extending to swing 1."},
+    {"decision": "stay_rbi_pct target shape for Path A", "decided_by": "owner", "quote": "stay_rbi_pct should still be elevated vs pre-11C league (~10%), but slightly lower than current 10.68% because some weak-contact stays now produce outs instead of hits"}
+  ],
+  "actions": [
+    {"description": "Added stay_hits INTEGER DEFAULT 0 to game_batter_stats schema and migration ALTER list, symmetric with stay_rbi and multi_hit_abs", "artifacts": ["o27v2/db.py"], "kind": "modified"},
+    {"description": "BatterStats.stay_hits: int = 0 field", "artifacts": ["o27/stats/batter.py"], "kind": "modified"},
+    {"description": "Increment s.stay_hits += 1 next to existing s.hits += 1 when stay_hit_credited fires (line 865); added stay_hits to _stat_delta field list and team-totals propagation in _totals", "artifacts": ["o27/render/render.py"], "kind": "modified"},
+    {"description": "_extract_batter_stats carries stay_hits from bstat; both INSERT call-sites write the column", "artifacts": ["o27v2/sim.py"], "kind": "modified"},
+    {"description": "Bulk-added COALESCE(SUM(bs.stay_hits),0) to all 9 SELECT queries that already SUM stay_rbi; added stay_hits to both _BAT_NUM consolidation tuples; _aggregate_batter_rows derives stay_conv_pct = stay_hits / stays", "artifacts": ["o27v2/web/app.py"], "kind": "modified"},
+    {"description": "Eye-vs-command swing-2+ modifier: new GameState field current_at_bat_swings; bumped at top of _resolve_contact, reset in _end_at_bat; contact_quality() accepts swings_in_ab and when >= 1 augments matchup shift with eye_dev * SECOND_SWING_EYE_SCALE - cmd_dev * SECOND_SWING_COMMAND_SCALE", "artifacts": ["o27/engine/state.py", "o27/engine/pa.py", "o27/engine/prob.py", "o27/config.py"], "kind": "new"},
+    {"description": "New config constants SECOND_SWING_EYE_SCALE = 0.20 and SECOND_SWING_COMMAND_SCALE = 0.20", "artifacts": ["o27/config.py"], "kind": "config"},
+    {"description": "UI surfacing: 2C-H counting column and 2C-Conv% rate column on Advanced + All batting; leaderboard cards; player Advanced batting row; stay_conv_pct histogram", "artifacts": ["o27v2/web/templates/stats_browse.html", "o27v2/web/templates/leaders.html", "o27v2/web/templates/player.html", "o27v2/web/templates/distributions.html"], "kind": "modified"},
+    {"description": "Path A: removed Phase 11C [2,2,2] from pa.py (superseded); all 2C-event outcome resolution moved upstream to prob.py where rng is in scope; new talent-gate block after the stay decision (prob.py:1117-ish) with weak-contact hit-credit gate and medium-contact advancement-magnitude gate; new TALENT_2C_SHIFT_SCALE = 1.0", "artifacts": ["o27/engine/pa.py", "o27/engine/prob.py", "o27/config.py"], "kind": "new"}
+  ],
+  "risk_posture": [
+    "should_stay_prob deliberately untouched — the gate on WHO can take 2C remains universal per the user's lock.",
+    "all 2C-event outcome resolution happens upstream in prob.py where rng is in scope (preserves backfill_arc seed-determinism)",
+    "None of these is appropriate to ship without an explicit green light."
+  ],
+  "validation_claims": [
+    {"claim": "Verification 1 (Path 2) — 2C-Conv% by eye decile: top eye decile (~72) 71.8%, bottom (~22) 75.4%; conversion rate ~74% league-wide and essentially flat across the eye spectrum, slightly inverted at the extremes. Spec NOT met.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim (resetdb → sim 2430 → backfill_arc) and query stay_hits/stays by eye decile", "verified": "not_checked"},
+    {"claim": "Verification 2 (Path 2) — Δ (BAVG-PAVG) by contact decile: slope still essentially flat (.0527 → .0606). Spec NOT met (target top decile ≥ .080, bottom decile ≤ 0).", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and compute Δ by contact decile", "verified": "not_checked"},
+    {"claim": "Verification 3 — League stay_rate stable: post-fix 5.51% (pre-fix 5.47%), inside the 4-8% target band. Spec met.", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and compute league stay rate", "verified": "not_checked"},
+    {"claim": "Side measurements: League PAVG .2837; BAVG .3369; hits/team-game 12.80; runs/team-game 12.67; HR total 4549; 14/14 routes return 200; 7/7 redistribute tests pass", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "Run route smoke checks and redistribute test suite", "verified": "not_checked"},
+    {"claim": "Path A V1: aggregate 2C-Conv% by eye decile top 63.3%, bot 35.0%; spread 28.3pp — spec met", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and query conversion by eye decile", "verified": "not_checked"},
+    {"claim": "Path A V2: first-event hit conversion not directly measurable from schema; aggregate is swing-1-dominant so V1 serves as proxy — met (proxy)", "evidence_cited": "none", "checkable_against_repo": "no", "check_method": "Would require a per-PA event log (Phase 11D)", "verified": "not_checked"},
+    {"claim": "Path A V3: Δ by contact flat .048-.059 — persistent fail (target top decile ≥ .080, bot ≤ 0)", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and compute Δ by contact decile", "verified": "not_checked"},
+    {"claim": "Path A V4: league stay_rate 5.62% (pre-fix 5.51%) — stable, met", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and compute stay rate", "verified": "not_checked"},
+    {"claim": "Path A V5: R/G under 30 — 12.62 R/team-game, met", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and compute runs per team-game", "verified": "not_checked"},
+    {"claim": "Path A V6: HR rate stable (HR 4652); redistribute tests 7/7 pass — met", "evidence_cited": "tests", "checkable_against_repo": "yes", "check_method": "Run redistribute test suite", "verified": "not_checked"},
+    {"claim": "Path A V7: stay_rbi% 7.52% — elevated vs pre-11C ~5.7%, below pre-Path-A 10.68%, exactly per spec", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-sim and compute stay_rbi%", "verified": "not_checked"},
+    {"claim": "6 of 7 spec criteria met (post Path A, scale=1.0).", "evidence_cited": "metrics", "checkable_against_repo": "unclear", "check_method": "Re-run all seven verifications", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "The eye-driven conversion spread the spec called for (under Path 2's architecture)", "reason": "Architecture prescribed by the user (modifier scoped to subsequent swings) does not have enough surface area to produce a 30-pp top-vs-bottom spread, because the bulk of 2C events are swing 1.", "category": "blocked", "status": "unknown"},
+    {"item": "Extending the eye/command modifier to swing 1 (initially)", "reason": "explicitly scoped out by the user", "category": "declined_by_owner", "status": "unknown"},
+    {"item": "Extending talent-weighting to run-chosen safety hits to clear V3", "reason": "means revisiting runner_advances_for_hit in o27/engine/baserunning.py and resolve_contact's post-table coordination. Out of scope for Phase 11.", "category": "out_of_scope", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "V3 (Δ by contact decile) remains flat across four engine iterations; the V3 target may be unrealistic for the current architecture — contact ratings already drive overall hit rate elsewhere in the pipeline, and pinning them additionally to a per-AB stay-credit lift would double-count the contact signal.",
+    "Offense moderately lower post-Path-A (PAVG -.014, BAVG -.015 from Path 2 baseline) because some weak-contact stays now produce outs instead of automatic credits — intentional per the user's spec."
+  ],
+  "open_hooks": [
+    "Per-PA event log (Phase 11D, still parked): would unlock directly-measurable swing-1 vs swing-2+ conversion (V2), Δ decomposition (V3), high-leverage slugger 2C usage, and the IBB-as-distinct-from-BB joker-mechanic check from Phase 11A",
+    "V3 (Δ by contact) re-spec — if the user wants V3 cleared, the lever would be to extend talent-weighting to run-chosen safety hits too"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Second-Chance Hits column + eye-vs-command second-swing modifier",
+    "Context",
+    "What was built",
+    "1. `stay_hits` column",
+    "2. Eye-vs-command swing-2+ modifier",
+    "3. UI surfacing",
+    "Verification",
+    "Verification 1 — 2C-Conv% by eye decile",
+    "Verification 2 — Δ (BAVG-PAVG) by contact decile",
+    "Verification 3 — League stay_rate stable",
+    "Side measurements (informational, not part of spec gate)",
+    "Why the spec wasn't met (root cause)",
+    "What shipped vs what didn't",
+    "Files touched",
+    "Path A — talent-weighted swing-1 outcome (continuation)",
+    "Implementation",
+    "Verification (post Path A, scale=1.0)",
+    "Verification 3 (Δ by contact decile) — why it doesn't clear",
+    "League shape post-Path-A",
+    "Follow-ups parked"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/fix-dark-theme-baseball-terms-7UhIv; Predecessor aar-stay-advancement-and-2c-rbi.md (Phase 11A/B/C); Commits 13fcf86.\n\nRoot-cause analysis (why Path 2 spec wasn't met): Most 2C events happen on swing 1 of an AB. A 2C event = the batter chose stay after a contact. The chain caps at 3 swings; chains of 2 or 3 stays are rare, so the bulk of the stay_hits/stays denominator is swing-1 2Cs which the modifier explicitly does not touch. For swing-1 2Cs the conversion is dominated by Phase 11C's medium-contact [2,2,2] advancement (basically always credits a hit). Three candidate fixes enumerated: (1) extend modifier to swing 1 — scoped out; (2) revisit Phase 11C base conversion to lower the floor; (3) separate eye-driven conversion gate modifying stay_hit_credited directly. Both (2) and (3) re-open Phase 11C's design.\n\nLeague shape post-Path-A table: League 2C-Conv% ~74% → 73.92% → 50.40%; top eye decile 71.8% → 63.3%; bot 75.4% → 35.0%; stay_rbi% 10.68% → 7.52%; PAVG .2865/.2837/.2727; BAVG .3394/.3369/.3243; HR 4453/4549/4652; stay_rate 5.47%/5.51%/5.62%. \"Path A reads as a clean talent gate with the headline conversion landing exactly where the spec called for.\"\n\nV3 persistence detail: Δ measures (stay_hits + multi_hit_extras)/AB divergence from H/PA; run-chosen safety hits' matchup_shift is already talent-weighted by batter.skill vs pitcher.pitcher_skill but BAVG and PAVG move together; per-decile Δ shift is 1-2pp, not the 8+pp the spec asks for.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Document covers two iterations (Path 2 and Path A continuation) in one record per the one-document rule. Honest about spec misses (Path 2 V1/V2 NOT met; Path A V3 persistent fail). Date from 'Date completed:' line."
+}

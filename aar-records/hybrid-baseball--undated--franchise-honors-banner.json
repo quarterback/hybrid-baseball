@@ -1,0 +1,129 @@
+{
+  "record_id": "hybrid-baseball--undated--franchise-honors-banner",
+  "source_path": "docs/aar-franchise-honors-banner.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": null,
+  "title": "AAR \u2014 Franchise honors banner (division titles, wild cards, pennants, championships)",
+  "scope": "On the team page, show a banner of franchise accolades across seasons \u2014 each with the years won \u2014 once a save has simmed past season 1. Four honors, using the game's canonical playoff names.",
+  "rationale": [
+    {
+      "item": "`playoff_series` is wiped at rollover (season_archive._reset_for_next_history_season), and `seasons` persists only the single overall champion_abbrev per season \u2014 so pennants and wild-card berths are not recoverable for past seasons; the only way to track all four going forward is a small capture at archive time, while the bracket still exists.",
+      "references": []
+    },
+    {
+      "item": "Design reference was a Viperball team page: a small filled pill under the team's record line, all inside the hero banner.",
+      "references": []
+    },
+    {
+      "item": "Why not the literal MLB spec from the request: same reasoning as the standings change \u2014 the honor set is config-driven; no hardcoded two-league shape.",
+      "references": []
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "New season_team_honors table in SCHEMA (one row per team per season that earned an honor; flags for four accolades plus year/season_number); existing saves pick it up on next boot via executescript",
+      "artifacts": [
+        "o27v2/db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "_snapshot_team_honors(season_id, season_number, year) called from archive_current_season right after _snapshot_standings, before the bracket is wiped; reads live teams, playoff_series, and playoffs.champion()",
+      "artifacts": [
+        "o27v2/season_archive.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "backfill_team_honors() reconstructs division titles and overall champion for archived seasons with no honors rows; pennants/wild cards stay 0 (unrecoverable); _ensure_team_honors_backfilled() one-time lazy backfill guarded by a sim_meta flag",
+      "artifacts": [
+        "o27v2/season_archive.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "_team_honors(team) aggregates the table into per-honor year lists, picks the canonical series label by league count, passed to team.html",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "honors-banner row of pills under the hero record: label, \u00d7N count, years; scoped CSS, colour-coded per honor (gold / indigo / green / blue)",
+      "artifacts": [
+        "o27v2/web/templates/team.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "backfill_honors subcommand (mirrors existing backfill_* commands) for an explicit run",
+      "artifacts": [
+        "o27v2/manage.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "The \"League Champion\" pill is suppressed in single-league universes (where the league final *is* the title), and the overall-title label switches between \"World Series Champion\" and \"Champion\" by league count \u2014 no hardcoded two-league shape.",
+    "The lazy backfill writes on first team-page view of an un-migrated save; it is idempotent and flag-guarded."
+  ],
+  "validation_claims": [
+    {
+      "claim": "py_compile clean across all four modules; team.html and standings.html parse.",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run py_compile and template parse",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Fresh-DB init_db() creates season_team_honors with the expected columns.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "init_db and inspect schema",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "End-to-end test on a seeded 8-team / 2-league DB with two archived seasons and a live bracket: capture produced the correct division winners, the single correct wild card, both pennant winners, and the World Series champion; backfill reconstructed division titles and overall champions for the two prior seasons (pennants/wild cards correctly left empty). Example output \u2014 ALA: Series 2027 \u00b7 League 2027 \u00b7 Division 2025\u00b72026\u00b72027; ALB: Wild Card 2027 only.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the seeded end-to-end capture/backfill scenario",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Almanac team pages",
+      "reason": "this is the o27v2 live app team page, where the playoff data lives. A bundle-independent version could follow.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Pennants and wild-card berths are not recoverable for past seasons \u2014 the bracket is gone; backfilled seasons leave them 0."
+  ],
+  "open_hooks": [
+    "A bundle-independent (almanac) version of the honors banner could follow."
+  ],
+  "section_headers_original": [
+    "AAR \u2014 Franchise honors banner (division titles, wild cards, pennants, championships)",
+    "Goal",
+    "The constraint that shaped the design",
+    "What changed",
+    "Why not the literal MLB spec from the request",
+    "Validation",
+    "Notes / scope"
+  ],
+  "unmapped_content": "Honor definitions: Division Title \u2014 finished 1st in its (league, division). Wild Card \u2014 reached the playoff field as a non-division-winner. League Champion \u2014 won its league final (series_kind = 'championship'). World Series Champion (or Champion in a single-league universe) \u2014 the overall title (world_series winner, or the lone league's champion). No season filter on playoff_series is needed \u2014 only the current bracket is ever present. Franchise identity is the stable team_id across seasons within a save, with team_abbrev as the fallback for backfilled rows.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "No date anywhere in document; marked undated (checked headings and body)."
+}

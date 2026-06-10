@@ -1,0 +1,169 @@
+{
+  "record_id": "hybrid-baseball--2026-05-07--baseruns-cluster-luck-decomposition",
+  "source_path": "docs/aar-base-runs-cluster-luck.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-07",
+  "title": "After-Action Report — BaseRuns / Cluster-Luck Decomposition",
+  "scope": "Follow-up to the SABR analytics suite. Two ships back-to-back: BsR with default coefficients, then the shape refit on top.",
+  "rationale": [
+    {
+      "item": "\"Together they give you a full luck decomposition: BABIP luck (xwOBA), sequencing luck (BsR), and Pythag formula error (k* refit). Three cleanly separated luck dimensions.\"",
+      "references": ["docs/aar-sabermetric-analytics-suite.md"]
+    },
+    {
+      "item": "MLB-fit `c = (1.4, −0.6, −3.0, 0.1)` underpredicts in O27's ~22 R/G environment by ~55%.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Add BsR",
+      "decided_by": "owner",
+      "quote": "\"do we already have BsR? IF NOt, let's add it\""
+    },
+    {
+      "decision": "Do the B-coefficient shape refit immediately",
+      "decided_by": "owner",
+      "quote": "\"add that now and yeah don't leave it\""
+    }
+  ],
+  "actions": [
+    {
+      "description": "New o27v2/analytics/base_runs.py — Smyth standard form with HBP (Tango variant), applied to offense and defense (opponent batting); residual actual − predicted is sequencing/cluster luck",
+      "artifacts": ["o27v2/analytics/base_runs.py", "e4ba41c"],
+      "kind": "new"
+    },
+    {
+      "description": "League-mean re-center: multiplicative scale on each side so SUM(pred) == SUM(actual); live values B_off ×1.553, B_def ×1.590",
+      "artifacts": ["o27v2/analytics/base_runs.py", "e4ba41c"],
+      "kind": "new"
+    },
+    {
+      "description": "Joint coordinate-descent shape refit: _refit_coeffs() minimises team-level SSE jointly across offense and defense (60 datapoints, 4 parameters, warm-started from MLB defaults; 8 outer × 4 coordinates × 50 inner iterations; ~0.4s)",
+      "artifacts": ["o27v2/analytics/base_runs.py", "b94c774"],
+      "kind": "new"
+    },
+    {
+      "description": "Widened coefficient bounds after c1 hit the 3.0 upper bound (c1 ∈ [0.5, 6.0], c2 ∈ [-3, 1], c3 ∈ [-8, 2], c4 ∈ [-1, 1.5])",
+      "artifacts": ["o27v2/analytics/base_runs.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Post-fit multiplicative rescale so fitted residuals are mean-zero and SSE figures apples-to-apples",
+      "artifacts": ["o27v2/analytics/base_runs.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "/analytics BsR panel (dual-column, MLB-default vs Refit coeffs, sorted by |Net (refit)|, color cues mirroring the Pythag panel); export build_base_runs_table; route passes base_runs to template",
+      "artifacts": ["o27v2/web/templates/analytics.html", "o27v2/analytics/__init__.py", "o27v2/web/app.py"],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "No engine changes. No schema changes. Pure analytics layer on top of existing `game_batter_stats` + `games`.",
+    "Reverted before commit; not in tree. (the discarded Pythag-on-BsR-predicted-RS/RA refit)",
+    "Default-coefficient pass is now somewhat redundant given the refit pass is strictly better. Kept it because the *gap* between the two columns is itself the headline finding"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Joint SSE: 345,426 (default) → 205,226 (refit) — 40.6% reduction",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Run build_base_runs_table on the demo-season DB and compare SSEs",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Sanity checks: SUM(off_luck) ≈ 0 within ±0.2 R; SUM(def_luck) ≈ 0 within ±0.2 R; league_actual_rs ≈ league_actual_ra",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Sum residual columns from the BsR table",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "corr(e_BsR_net_fit, e_pythag_actual_fitted_kstar) = −0.052 (0.3% shared variance) across 30 teams",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compute correlation between BsR-net and Pythag-fitted residuals on the live DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Perturbed the initial point ±20% on each axis and confirmed convergence to within ±0.05 on every coefficient",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run _refit_coeffs with perturbed warm starts",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Empirical correlation between BsR-net and the BsR-input Pythag residual came back at +0.785",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "no",
+      "check_method": "The parallel refit was discarded uncommitted; would need re-implementation to check",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Combined three-bucket luck panel (stacked bar of W% surplus split into BABIP / clustering / leverage with unattributed remainder)",
+      "reason": "A natural follow-on (left for later)",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Pythag-on-BsR-predicted-RS/RA refit",
+      "reason": "It does the opposite ... captures sequencing + leverage combined ... Reverted before commit; not in tree.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Hard clip on B during ternary search",
+      "reason": "In practice the fit doesn't visit that region from the warm start, but a hard clip on B would be cleaner.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Final Nelder-Mead polish",
+      "reason": "Could add a final Nelder-Mead polish if precision matters more later.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "30 teams × 2 sides = 60 points fitting 4 parameters is 15:1 DoF ... the fitted coefficients will jitter season-to-season. The structural fit (multiple seasons pooled) is the more durable answer.",
+    "No B+C > 0 guard during ternary search ... `_bsr` falls back to `D` (HR-only) if `B+C ≤ 0`.",
+    "Coordinate descent isn't gradient descent. It can stall in saddle regions if two parameters are highly correlated.",
+    "Default-coefficient pass is now somewhat redundant given the refit pass is strictly better."
+  ],
+  "open_hooks": [
+    "Single combined panel showing each team's W% surplus split into the three luck buckets as a stacked bar",
+    "Multiple-seasons pooled structural fit",
+    "Closing-thought process pattern: ship the good as a checkpoint, surface the upgrade path, finish the better in the same session"
+  ],
+  "section_headers_original": [
+    "After-Action Report — BaseRuns / Cluster-Luck Decomposition",
+    "What was asked for",
+    "What was built",
+    "1. `o27v2/analytics/base_runs.py` — module + dual-pass output",
+    "2. League-mean re-center",
+    "3. Joint coordinate-descent shape refit",
+    "4. The bounds story (dev anecdote)",
+    "5. Post-fit rescale (consistency fix)",
+    "6. `/analytics` panel (dual-column layout)",
+    "Numbers from the demo season",
+    "Fitted coefficients",
+    "Top sequencing-luck movers",
+    "Sanity checks (both passes)",
+    "What this unlocks",
+    "Corrected math: BsR ↔ Pythag are already orthogonal",
+    "Caveats / known issues",
+    "Files touched",
+    "Closing thought"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/sabr-baseball-analysis-uOD6J; commits e4ba41c (initial BsR), b94c774 (B-coefficient shape refit). | BsR formula: A = H + BB + HBP − HR; B = c1·TB + c2·H + c3·HR + c4·(BB+HBP); C = AB − H; D = HR; BsR = A·B/(B+C) + D. | Demo-season numbers: 162-game season, 30 teams, 56,487 RS = 57,843 RA (~3% gap from playoff exclusions / unfinished games); fitted coefficients table (c1 +1.400→+3.271, c2 −0.600→−0.582, c3 −3.000→−3.858, c4 +0.100→+0.387); intuition — total bases ~2.3× more advancement-valuable in O27, HR double-counts more in a denser environment, walks in front of hits convert. | Top sequencing-luck movers table (PHI −334.5→−235.8 ~30% compression; MIN, OAK, NJC compress; CIN and CHW grow — expected signature of real sequencing variance). | Three-axis luck decomposition table (xwOBA residual = event-level; BsR refit residual = game-level; Pythag k* residual = season-level). | 'Corrected math' section: first draft suggested partial correlation and a wrong fix; Pythag residual is sequencing-free by construction (conditions on RS/RA); recorded so future work doesn't re-walk into it. | Convexity argument: BsR monotone in B, B linear in each c_i, so per-axis SSE map convex; joint problem non-convex but warm start keeps it near a sensible basin.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Includes a self-correcting 'Corrected math' section documenting a wrong first draft and a discarded uncommitted experiment; recorded in unmapped_content with the discarded fix also under non_actions."
+}

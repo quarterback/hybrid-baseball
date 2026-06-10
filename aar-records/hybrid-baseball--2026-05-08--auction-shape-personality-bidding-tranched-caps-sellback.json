@@ -1,0 +1,242 @@
+{
+  "record_id": "hybrid-baseball--2026-05-08--auction-shape-personality-bidding-tranched-caps-sellback",
+  "source_path": "docs/aar-auction-shape-and-sellback.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-08",
+  "title": "After-Action Report — Auction Shape: Personality-Driven Bidding, Tranched Caps, Snake-Draft Fill, Sellback Trades",
+  "scope": "This AAR picks up where `aar-live-auction-replay.md` left off — the live page and the guilder rescale were already in. The brief here was different: make the auction *feel right* before shipping, not just render correctly.",
+  "rationale": [
+    {
+      "item": "The previous PR (`1dbd273`) produced a flat IPL-shape under the guilder rescale: top 10 sales clustered at ƒ54-57 cr, mid-tier 60-OVR clearings at ƒ42-51 cr. A 7-OVR talent gap was only producing a 12% price gap, and Vickrey was collapsing at the per-team cap because every team's max-bid sat near the same ceiling.",
+      "references": ["aar-live-auction-replay.md", "1dbd273"]
+    },
+    {
+      "item": "\"There's no salary floor in this league and the engine should always be looking for arbitrage, rather than having everyone bid all the time\" — personalities that randomize per seed so teams pursue consistent strategies, not freewheeling per-lot randomness",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Dial in the auction shape before shipping",
+      "decided_by": "owner",
+      "quote": "The user said \"dial that in before I shop this, then,\" and then sent a fast sequence of design notes"
+    },
+    {
+      "decision": "Wire manager personalities and organizational strength into the dice rolls",
+      "decided_by": "owner",
+      "quote": "\"Wire the manager personalities and the organizational strength into the dice rolls\""
+    },
+    {
+      "decision": "Base curve pivot lower than the floor (OVR 20 or 25); raise the cap; flexible per-round/bucketed cap",
+      "decided_by": "owner",
+      "quote": "\"The base should actually be lower than the floor, OVR 20 or 25\" / \"Why not raise the cap?\" / \"Why not have a flexible cap that can rise — per-round cap? Buckets of rounds?\""
+    },
+    {
+      "decision": "Hard-floor minimum-salary deals operate as a snake draft, not an auction",
+      "decided_by": "owner",
+      "quote": "\"The hard floor minimum salary deals should just operate like a draft not an auction at all\" / \"Snake draft, like roster fill I mean\""
+    },
+    {
+      "decision": "Steeper aggression on the top end; true difference between top 25 players and everyone else",
+      "decided_by": "owner",
+      "quote": "\"Steeper aggression on the top end is a good call. There should be a true difference between the top 25 players in the pool versus everyone else… you'd expect those first 3 picks to be marquee purchases\""
+    },
+    {
+      "decision": "Sellback/trade mechanic where the asset is auction budget",
+      "decided_by": "owner",
+      "quote": "\"That should lead to an overpay in different round since the money doesn't roll over\""
+    },
+    {
+      "decision": "Let the engine drive the numbers, no top-tier target",
+      "decided_by": "owner",
+      "quote": "\"I do not care what the top tier number is, let the teams bid and let's see it play out.\""
+    },
+    {
+      "decision": "Use the new currency system on the live auction page",
+      "decided_by": "owner",
+      "quote": "The user spotted this with \"CAN THIE ACUTION USE THE NE CURRENCY I MADE or not?\""
+    }
+  ],
+  "actions": [
+    {
+      "description": "Quadratic bid curve with lower pivot: replaced linear overall × 5_00_000 with (overall − 25)² × 1_00_000; pure function _bid_base(overall)",
+      "artifacts": ["_bid_base", "cfa32fe"],
+      "kind": "modified"
+    },
+    {
+      "description": "Wider noise, discipline-dampened: per-lot noise band uniform(1 − 0.55·(1−d), 1 + 0.50·(1−d))",
+      "artifacts": ["cfa32fe"],
+      "kind": "modified"
+    },
+    {
+      "description": "Manager personality → auction strategy: _team_auction_profile derives discipline, star_bias, aggression from org_strength, mgr_quick_hook, mgr_bullpen_aggression, mgr_joker_aggression; sampled once at start of apply_auction",
+      "artifacts": ["_team_auction_profile", "apply_auction", "cfa32fe"],
+      "kind": "new"
+    },
+    {
+      "description": "Tranched per-lot cap: _per_lot_cap with TRANCHE_CAPS (50→0.50, 200→0.20, 500→0.10, None→0.04); cutoffs match live-auction page stage/montage split",
+      "artifacts": ["_per_lot_cap", "cfa32fe"],
+      "kind": "modified"
+    },
+    {
+      "description": "Snake-draft for roster fill: top auction_lot_limit (default 500) lots bid; rest fill via snake order at min_bid; drafted lots recorded with winning_bid = min_bid, second_bid = NULL, single rank-1 bid row",
+      "artifacts": ["auction_lot_bids", "cfa32fe"],
+      "kind": "new"
+    },
+    {
+      "description": "Purse bump to ƒ200 crore",
+      "artifacts": ["cfa32fe"],
+      "kind": "config"
+    },
+    {
+      "description": "Elite bonus on top of the quadratic: base = (overall − 25)² × 1L + max(0, overall − 60)² × 10L",
+      "artifacts": ["1ea08e5"],
+      "kind": "modified"
+    },
+    {
+      "description": "Post-clear sellback trade mechanic with TRADE_THRESHOLD; new helper _team_valuation_noisefree; trade phase uses noise-free valuations, auction keeps noisy _team_bid",
+      "artifacts": ["_team_valuation_noisefree", "1ea08e5"],
+      "kind": "new"
+    },
+    {
+      "description": "Schema: two new nullable columns on auction_results (traded_to_team_id, trade_price) with idempotent ALTER TABLE migration; original Vickrey columns preserved as audit trail",
+      "artifacts": ["auction_results"],
+      "kind": "config"
+    },
+    {
+      "description": "get_live_auction + live page wiring: feed exposes traded_to_abbrev/_name, trade_price, derived final_owner_*; purse rollup nets trade flows; auction_live.html renders ⇄ Traded to line; applyBidsToPurse mirrors server-side rollup",
+      "artifacts": ["get_live_auction", "auction_live.html"],
+      "kind": "modified"
+    },
+    {
+      "description": "Live page currency wiring: replaced hardcoded $ + toLocaleString with JS fmtMoney() producing o27-money cells, mirroring o27v2/currency.py (format_indian, format_crore, western M/B/K), rates from window.O27_RATES",
+      "artifacts": ["o27v2/currency.py", "eba502c"],
+      "kind": "modified"
+    },
+    {
+      "description": "Cash-drain calibration pass: _team_pressure multiplier (capped 2.5×); variable-cost snake-draft fill max(min_bid, purse_remaining // open_slots); TRADE_LOT_LIMIT = 50 and TRADE_SALES_PER_TEAM = 1 hard caps; valuation-based trade threshold (winner_val × 1.05 instead of winning_bid × 1.05)",
+      "artifacts": ["_team_pressure", "TRADE_LOT_LIMIT", "TRADE_SALES_PER_TEAM"],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Original Vickrey columns (`winner_team_id`, `winning_bid`, `second_bid`, `price`) are preserved as the auction audit trail; the trade is a follow-up event on the same row.",
+    "Idempotent ALTER TABLE migration so existing saves attach without manual surgery.",
+    "the auction itself still uses the noisy `_team_bid` for the original allocation, preserving the original Vickrey audit trail",
+    "Hard floor still leaves `min_bid × remaining_slots` so roster fill always clears."
+  ],
+  "validation_claims": [
+    {
+      "claim": "End-to-end smoke (rng_seed=42, 56-team tiered): marquee top-25 avg ƒ39.5 cr (ƒ29.1–54.0), marquee 26-50 avg ƒ29.5 cr, core avg ƒ22.5 cr, depth avg ƒ14.9 cr, snake-fill flat ƒ50 lakh; top sale Santiago Hargett OVR 68 1B → NYM ƒ54.0 cr",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the auction with rng_seed=42 on the 56-team tiered config and compare tranche stats",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Trades after cash-drain pass: 7 of 500 auction lots (~1.4%), down from unthrottled 41%",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Count rows with traded_to_team_id NOT NULL after a seeded auction run",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Cash drain: all 56 teams within ƒ±0 of starting purse",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Sum per-team spend after a seeded auction run",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Personality readback: top spenders cluster around small_ball / players_manager / mad_scientist archetypes; bottom spenders cluster around sabermetric_max / iron_manager",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Group auction spend by manager archetype on a seeded run",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Top sale moved to ƒ54 cr and the marquee top-25 vs 26-50 gap opened up to 33% (was 18%) after the elite bonus",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Compare tranche averages before/after elite bonus on the same seed",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Unit test pinning _bid_base shape before calibration",
+      "reason": "Skipped writing the test because \"the curve is obvious,\" paid for it twice.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Surfacing the trade-rate target to the user before shipping TRADE_THRESHOLD = 0.05",
+      "reason": "I had no signal either way and shipped a default. An AskUserQuestion on threshold would have been worth a 30-second interrupt.",
+      "category": "unclear",
+      "status": "unknown"
+    },
+    {
+      "item": "Moving calibration constants to config",
+      "reason": "BID_QUAD_SCALE, BID_ELITE_SCALE, TRANCHE_CAPS, TRADE_THRESHOLD are all module-level constants ... Should have moved these to config[\"auction\"] from the start; refactor cost is low",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Multi-hop trades",
+      "reason": "Current is single-hop: lot clears, one trade fires, lot is settled.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Trade visualisation upgrade on live page; /auction static report trade display; auction-format toggle; auction-only personality archetypes; reverse-standings snake order; calibration sweep tooling",
+      "reason": "listed as pointers for follow-up work",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The \"no rollover ⇒ overpay later\" loop didn't actually close ... seller gets cash, but their `_team_bid` formula doesn't reference remaining purse ... net-seller teams exit with ƒ-100 to -325 cr \"spend\" ... mechanically correct but doesn't match the brief's \"overpay\" narrative. (Note: §12 cash-drain pass later added _team_pressure addressing this.)",
+    "Calibration constants live in Python, not config — a different league has to monkey-patch instead of editing JSON.",
+    "Trade visualisation in the live page is muted.",
+    "/auction static report doesn't show trades — the data is in the feed; just not surfaced.",
+    "Snake-draft order is naive (team_id order, round 2 reversed) instead of reverse-standings."
+  ],
+  "open_hooks": [
+    "Tune TRADE_THRESHOLD (try 0.10–0.15); per-lot measurement of 'true' corrections (>20% valuation gap)",
+    "Close the 'overpay later' loop via expected_purse pressure factor (code sketch provided)",
+    "Iterate the trade phase until no improving trade exists (Pareto-optimise post-Vickrey)",
+    "auction.bid_curve sub-dict in 56teams_tiered.json for per-league shapes",
+    "auction.format config knob: vickrey | first_price | english",
+    "Explicit auction-day Archetype axes (auction_aggression, auction_marquee_focus, auction_patience)",
+    "Reverse-standings snake order — trivial change in _advance",
+    "30-line calibration sweep script across 5-10 seeds reporting tranche stats"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Auction Shape: Personality-Driven Bidding, Tranched Caps, Snake-Draft Fill, Sellback Trades",
+    "What was asked for",
+    "What shipped",
+    "1. Quadratic bid curve with lower pivot (cfa32fe)",
+    "2. Wider noise, discipline-dampened (cfa32fe)",
+    "3. Manager personality → auction strategy (cfa32fe)",
+    "4. Tranched per-lot cap (cfa32fe)",
+    "5. Snake-draft for roster fill (cfa32fe)",
+    "6. Purse bump to ƒ200 crore (cfa32fe)",
+    "7. Elite bonus on top of the quadratic (1ea08e5)",
+    "8. Post-clear sellback trade mechanic (1ea08e5)",
+    "9. Schema changes (1ea08e5)",
+    "10. `get_live_auction` + live page wiring (1ea08e5)",
+    "11. Live page currency wiring (came in earlier in the session)",
+    "12. Cash-drain calibration pass (post-`1ea08e5`, in this commit)",
+    "End-to-end smoke (rng_seed=42, 56-team tiered)",
+    "What I'd do differently",
+    "Pointers for follow-up work"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/new-league-structure-tqk8H; commits cfa32fe (auction shape) and 1ea08e5 (elite tier + sellback). | 'What I'd do differently' retrospective: the off-by-10× bug on BID_QUAD_SCALE (set 10 * 1_00_000 thinking lakh; OVR 63 came out at ƒ144 cr base; took an instrumented per-team bid-debug pass to catch; 5-line unit test would have caught it — assert _bid_base(60) == 12_25_000, assert _bid_base(67) == 1_762_500); dead-end on 'make the cap so low bids can't reach it' — user redirected with 'why not raise the cap?', the per-lot cap had become a hammer when what was needed was a runway; currency-system bypass — prevention is 'grep o27-money' before writing any new money rendering; should have surfaced the trade-rate target (41% trade rate on first ship, borderline noise). | Valuation-threshold rationale: original formulation compared buyer's noise-free val vs winner's noise-inflated bid and stopped firing once the elite-bonus pulled bids above noise-free vals; new formulation says 'trade fires when the wrong team won the lot'; seller's reservation price is their own valuation, not the noisy winning_bid (sunk cost). | Personality variance now shows up in roster shape rather than net spend; every team spends ~ƒ200 cr exactly.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Rich retrospective ('What I'd do differently') recorded mostly in unmapped_content with key items mirrored into non_actions/residual_risks. The 'overpay later' residual risk is partially superseded by §12's _team_pressure fix within the same document."
+}

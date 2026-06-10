@@ -1,0 +1,131 @@
+{
+  "record_id": "hybrid-baseball--2026-05-09--fresh-league-500-and-wiring-salary-manager-sellback-cards",
+  "source_path": "docs/aar-fresh-league-500-and-data-card-wiring.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-09",
+  "title": "After-Action Report \u2014 Fresh-League 500 (`derive_linear_weights` KeyError) + Wiring Salary / Manager / Sellback Cards",
+  "scope": "Two threads landed on top of each other in the same session: 1. Audit the app for unwired features (\"data exists, user can't see it\" gaps). 2. The user reported `i can't get a new league to load with the latest files on main` \u2014 fresh league created post-restart was 500'ing on every page that touched batter / pitcher stats.",
+  "rationale": [
+    {
+      "item": "The audit surfaced three template-level gaps that needed surfacing; the deploy bug was a shared analytics helper that crashed when there was no game data to derive linear weights from.",
+      "references": []
+    },
+    {
+      "item": "Root cause of the 500: derive_linear_weights() builds the rv dict from events observed in game_pa_log; with zero games played the comprehension produces only keys it later adds unconditionally, and the wOBA-weight block dereferences unguarded keys (rv['1B'] etc.) \u2192 KeyError: '1B'.",
+      "references": []
+    },
+    {
+      "item": "Sellback trades were persisted by the trade mechanic (PR #35) and rendered in the live-auction replay, but a user who skipped the live replay never learned that any sellbacks had happened.",
+      "references": [
+        "PR #35",
+        "PR #36"
+      ]
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Fix: defensively populate every event type the rest of derive_linear_weights dereferences, defaulting to 0.0 (rv.setdefault for out/1B/2B/3B/HR; BB via _walk_run_value, HBP = BB)",
+      "artifacts": [
+        "o27v2/analytics/linear_weights.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Salaries on player detail + team roster: 'Salary' line in the player detail header strip; 'Salary' column on batter and pitcher roster tables with data-sort-value; rendered through the existing money Jinja filter",
+      "artifacts": [
+        "/player/<id>",
+        "/team/<id>",
+        "o27v2/valuation.py::estimate_player_value()"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Manager archetype + tactical axes on /team/<id>: compact 'Manager' strip showing the archetype's friendly label plus the eight axes as integer percentages with hover-titles; new archetype_label Jinja filter wrapping o27v2.managers.archetype_label()",
+      "artifacts": [
+        "teams.manager_archetype",
+        "o27v2.managers.archetype_label"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Sellback trades on the static /auction page: 'Final owner' column on the top-30-sales table rendering '\u21c4 <buyer> <trade_price>' when traded_to_abbrev is non-null; get_auction() joins to the traded-to team",
+      "artifacts": [
+        "auction_results.traded_to_team_id",
+        "get_auction()"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Semantically correct: no data \u2192 no signal \u2192 all derived weights collapse to 0, the league wOBA = 0.0, and downstream consumers get a no-op set of weights instead of a 500."
+  ],
+  "validation_claims": [
+    {
+      "claim": "All nine main pages now load on a fresh league: /, /standings, /team/1, /player/1, /teams, /leaders, /players, /youth, /auction \u2192 all 200.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed a fresh league and request all nine routes",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "End-to-end smoke (rng_seed=42, 56-team tiered): all listed pages 200; /team/1 shows manager card + salary column; /player/1 salary line; /auction 'Final owner' column with \u21c4 arrows on the 7 trades; /auction/live and /youth unchanged from PR #36; /leaders pre-existing salary leaderboard works.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed rng_seed=42 56-team tiered league and smoke-test routes",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Responsive layout fix for the manager card on narrow viewports",
+      "reason": "Punting on this until the rest of the responsive behaviour gets a pass.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Splitting audit-fix and bug-fix into separate PRs",
+      "reason": "the bug-fix was discovered while smoke-testing the audit fixes. ... For low-stakes work it's fine; in a more careful environment that's a habit to break.",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The fix is correct but it papers over a structural issue: derive_linear_weights mixes 'summarise the existing run-expectancy matrix' with 'derive league wOBA scaling' \u2014 one big function with implicit empty-data contracts on dict keys is a footgun.",
+    "No fresh-league integration smoke test exists; the failure mode is exactly the one such a test should catch.",
+    "When the league has no game data, derive_linear_weights now returns all-zeros \u2014 safe but unhelpful (/leaders and /standings show 0.000 wOBA across the board).",
+    "Manager card layout is functional but ugly on narrow viewports; mobile wraps the row mid-axis."
+  ],
+  "open_hooks": [
+    "Fresh-league smoke test (tests/test_fresh_league.py over each preset config, assert nav routes return 200 before any games are simmed)",
+    "derive_linear_weights structural cleanup: split into _empirical_rv_per_event_type() and _woba_scale_factor() (gated on league PA > 0, returns None for empty leagues)",
+    "Persisted MLB-fit fallback weights (BB=0.69, HBP=0.72, 1B=0.88, 2B=1.24, 3B=1.56, HR=2.00) until the league has accumulated enough PAs",
+    "Manager card on /teams index (archetype label in the team-list row)",
+    "Sellback trade column polish: add original-winner abbrev (KCR \u2192 \u21c4 NYM \u019247 cr)",
+    "Joker filter on /youth browse page",
+    "Live auction discoverability: nav entry or homepage tile",
+    "org_strength tooltip explaining the three things it drives (seed roll bonuses, development rates, auction-day discipline)"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Fresh-League 500 (`derive_linear_weights` KeyError) + Wiring Salary / Manager / Sellback Cards",
+    "What was asked for",
+    "What shipped",
+    "A. The fresh-league 500",
+    "B. Surfacing data that was silently persisted but never rendered",
+    "End-to-end smoke (rng_seed=42, 56-team tiered)",
+    "What I'd do differently",
+    "Pointers for follow-up work"
+  ],
+  "unmapped_content": "**Branch:** `claude/wire-data-cards`\n**Commits (in order):** 3a8092a \u2014 Surface salary, manager archetype, and sellback trades in the UI; (fix included in same commit) \u2014 derive_linear_weights defensive default for missing event types.\n\nKeyError traceback: KeyError: '1B' at o27v2/analytics/linear_weights.py line 273 in derive_linear_weights. The function had defensive guards on pa > 0 and n_starters > 0, but the dict-key lookups for the raw event types were unguarded. Once games are simmed, the function picks up real values on the next call (_LINEAR_WEIGHTS_CACHE, reset at process boot).\n\n'What I'd do differently' retrospective points: the fresh-league 500 should have been caught by an integration smoke test long ago (function live for weeks, worked on every existing save with real game data); should have run the audit before responding to the user's first prompt rather than after \u2014 the Explore agent caught most gaps but produced a few false positives (claimed player flags weren't rendered when they actually were); rule for next time: trust-but-verify on a sub-agent's findings before quoting them \u2014 grep takes 5 seconds. Manager axis columns: mgr_quick_hook, mgr_bullpen_aggression, mgr_leverage_aware, mgr_joker_aggression, mgr_pinch_hit_aggression, mgr_platoon_aggression, mgr_run_game, mgr_bench_usage; saber + joker_aggr feed _team_auction_profile.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Clear AAR with a long retrospective section; follow-up pointers mapped to open_hooks."
+}

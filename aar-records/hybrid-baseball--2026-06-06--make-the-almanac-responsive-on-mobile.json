@@ -1,0 +1,65 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--make-the-almanac-responsive-on-mobile",
+  "source_path": "docs/aar-almanac-mobile-responsive.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — Make the almanac responsive on mobile",
+  "scope": "On a phone the almanac scrolled sideways: the nav bar ran off both edges and the schedule table's columns were clipped. The cause was a single non-wrapping flex row in the header — there were zero media queries in `o27/almanac/static/almanac.css`. I added a `@media (max-width: 760px)` block (plus a `420px` refinement) that lets the header wrap and turns the nav into a self-contained horizontal-scroll strip, so the page width now stays pinned to the viewport. CSS-only change; no templates or Python touched.",
+  "rationale": [
+    {
+      "item": "`.site-bar` is `display:flex` with `gap:16px` and no wrap; it holds the brand, ten uppercase nav links, a 180px search box and a theme toggle — far wider than a ~390px phone, stretching `<body>` wider than the viewport.",
+      "references": []
+    },
+    {
+      "item": "The data tables were not the root cause: they already live inside `.tablewrap { overflow:auto }`; they only looked broken because the entire page was shifted by the header overflow. `_base.html.j2` already ships the correct viewport meta.",
+      "references": []
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Appended a responsive block to the end of almanac.css: @media (max-width: 760px) — .site-bar flex-wrap, brand on row one, search + toggle row two, nav last row with order:1; nav.top becomes its own overflow-x:auto strip; trimmed padding/title sizes; .section-bar/.tabs wrap; player/team header grids stack to one column; .boxscore-headline wraps. @media (max-width: 420px) — hide header search box; .cards to two columns.",
+      "artifacts": ["o27/almanac/static/almanac.css"],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "CSS-only change; no templates or Python touched.",
+    "The change is purely additive CSS gated behind `max-width` media queries, so desktop rendering is untouched."
+  ],
+  "validation_claims": [
+    {
+      "claim": "I verified the stylesheet is well-formed (balanced braces, valid media-query nesting) and reasoned through the flex/order layout by hand.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Lint/parse almanac.css and render the almanac on a narrow viewport",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Running the live app / screenshotting on mobile",
+      "reason": "I could not run the live app in this sandbox — `flask` isn't installed and there's no seeded DB (both environmental, per CLAUDE.md), and no headless browser was available to screenshot.",
+      "category": "blocked",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [],
+  "open_hooks": [],
+  "section_headers_original": [
+    "After-Action Report — Make the almanac responsive on mobile",
+    "TL;DR",
+    "What was wrong",
+    "The fix",
+    "Validation",
+    "Files touched"
+  ],
+  "unmapped_content": "Header metadata: Date completed 2026-06-06; Branch claude/almanac-mobile-responsive-HIvD1. | Symptom detail: the nav reads \"CHEDULE LEADERS CAREER…\" on one scroll position and \"O27 ALMANAC\" on another.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": false,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": false
+  },
+  "parser_notes": "Short, clean AAR. No delegation events or residual-risk statements present."
+}

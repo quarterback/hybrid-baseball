@@ -1,0 +1,167 @@
+{
+ "record_id": "hybrid-baseball--2026-05-30--the-power-play-rule-the-nickel-fielder",
+ "source_path": "docs/aar-power-play-nickel-fielder.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "medium",
+ "date": "2026-05-30",
+ "title": "After-Action Report \u2014 The Power Play Rule (the Nickel Fielder)",
+ "scope": "This is a reference AAR: it documents the mechanic as built, with `file:line` anchors.",
+ "rationale": [
+  {
+   "item": "The Power Play is the first optional, per-league rule in the engine \u2014 a checkbox a league can turn on, the way AL/NL split on the DH for thirty years. It ships off by default, so an existing universe is byte-for-byte unchanged until someone flips the toggle. That makes it a clean A/B lever.",
+   "references": []
+  },
+  {
+   "item": "It's a *prevent-defense* lever the way Declared Seconds is a tempo lever \u2014 a thing a manager spends at the right moment.",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "No mid-window substitution",
+   "decided_by": "agent",
+   "quote": "There is no mid-window substitution \u2014 it was judged not worth the bookkeeping over a 4-out window, and platooning the nickel by handedness is meaningless since he never bats."
+  },
+  {
+   "decision": "Did not force a 0-PA batting line for the nickel",
+   "decided_by": "agent",
+   "quote": "by design we did *not* force a 0-PA line into the batting table (that would risk the PA\u2194out reconciliation invariants)."
+  }
+ ],
+ "actions": [
+  {
+   "description": "Power Play mechanic implemented in one module: deploy decision (maybe_open_window), eligibility (find_nickel), fielding effect (apply_nickel_defense), presence lift (apply_presence_lift), window lifecycle (note_out, clear_window), putout attribution (nickel_putout_for, credit_nickel_putout)",
+   "artifacts": [
+    "o27/engine/power_play.py",
+    "o27/engine/prob.py",
+    "o27/engine/pa.py",
+    "o27/engine/game.py",
+    "o27/engine/state.py"
+   ],
+   "kind": "new"
+  },
+  {
+   "description": "Tuning constants added (POWER_PLAY_* family) at o27/config.py:678-707; auto-exposed as runtime tunables via o27v2/engine_config.py",
+   "artifacts": [
+    "o27/config.py",
+    "o27v2/engine_config.py",
+    "o27v2/sim.py"
+   ],
+   "kind": "config"
+  },
+  {
+   "description": "Box-score Powerplays footer line (format_powerplays_line) rendered under the Seconds line",
+   "artifacts": [
+    "o27/render/render.py",
+    "o27/render/templates/box_score.j2"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Test suite for the mechanic",
+   "artifacts": [
+    "o27/tests/test_power_play.py"
+   ],
+   "kind": "new"
+  }
+ ],
+ "risk_posture": [
+  "It ships **off by default**, so an existing universe is byte-for-byte unchanged until someone flips the toggle.",
+  "The hard requirement for an optional rule in this engine is that **off = identical**, because games are replayed from stored seeds (`backfill_arc`). Every hook returns **before consuming any RNG** when the rule is off or no window is active.",
+  "The **presence lift is below the whole-game noise floor by design** (a ~3% rating nudge over the ~15% of outs a window is open).",
+  "this is the one lever the defense has, not a cudgel",
+  "treat the *magnitude* as illustrative and the *direction/shape* as the finding"
+ ],
+ "validation_claims": [
+  {
+   "claim": "Across a seed sweep, every reproducible seed was byte-identical to the pre-change baseline in both final score and total RNG draw count (a handful of high-event extra-inning games diverge baseline-against-baseline too \u2014 pre-existing cross-process nondeterminism)",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "unclear",
+   "check_method": "Re-run a seed sweep with rule off vs pre-change baseline comparing scores and RNG draw counts",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Matched-seed A/B (1,500 games default rates): 1.70 deploys/game, runs \u0394 \u22120.78 \u00b1 0.65 (95% CI), 0.40 XBH\u2192single/game, 0.20 hits\u2192out/game; forced every half: 2.74 deploys, \u22120.65 \u00b1 0.64, 0.60, 0.32",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "no",
+   "check_method": "Re-run the matched-seed A/B harness with synthetic teams",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Paired-CRN micro (N=300k): top-of-band +4.4% defense_rating adds ~+0.15pts of outs and shaves ~0.27% of hits through the fielding channel alone, fading to ~nil at the 0.1% floor",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "no",
+   "check_method": "Re-run the paired-CRN micro-benchmark fixing draws while moving the rating",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "o27/tests/test_power_play.py \u2014 30 cases (off-by-default, eligibility, lifecycle, effect, presence, box-score line)",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run pytest o27/tests/test_power_play.py",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Regression: the engine, render, declared-seconds, realism-identity, and engine_config suites all pass with the new toggle exposed",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the named suites",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Calibrated season-level impact pass (real seeded league DB, league R/G\u00b7H\u00b72B\u00b73B on vs. off)",
+   "reason": "is the follow-up when wanted",
+   "category": "deferred",
+   "status": "unknown"
+  },
+  {
+   "item": "Mid-window nickel substitution",
+   "reason": "judged not worth the bookkeeping over a 4-out window, and platooning the nickel by handedness is meaningless since he never bats",
+   "category": "declined_by_owner",
+   "status": "unknown"
+  },
+  {
+   "item": "0-PA batting-table line for the nickel",
+   "reason": "that would risk the PA\u2194out reconciliation invariants",
+   "category": "out_of_scope",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "Whole-game run delta is noisy (matched-seed RNG streams fork after the first changed outcome) and synthetic teams run hot (~33 R/G).",
+  "Pre-existing cross-process nondeterminism from hash()-salted tiebreaks on near-identical synthetic rosters."
+ ],
+ "open_hooks": [
+  "Calibrated season-level A/B on a real seeded league DB"
+ ],
+ "section_headers_original": [
+  "After-Action Report \u2014 The Power Play Rule (the Nickel Fielder)",
+  "What the Power Play is",
+  "The numbers (all in `o27/config.py:678-707`)",
+  "How a league turns it on",
+  "When the decision is made (`maybe_open_window`, `power_play.py:245`)",
+  "Nickel eligibility (`find_nickel`, `power_play.py:163`)",
+  "The fielding effect (`apply_nickel_defense`, `power_play.py:293`)",
+  "The presence effect (`apply_presence_lift`, `power_play.py`)",
+  "Window lifecycle (open \u2192 tick \u2192 close)",
+  "Box-score rendering (`format_powerplays_line`, `power_play.py:357`)",
+  "Eligibility / role / substitution \u2014 design choices",
+  "Behavior-neutral when off (seed-replay safety)",
+  "Measured impact (does it actually suppress offense?)",
+  "Tests",
+  "Things to remember"
+ ],
+ "unmapped_content": "Date written: 2026-05-30; Branch claude/power-play-optional-rule-HmsMs; PR pending. Mechanic reference detail retained in source: nickel fielder NF, scorekeeping position 10, single middle outfielder (F10); window rules (one per defensive half, up to 4 outs, ends with the half, fresh in Declared Seconds, never in super innings, no carryover); full constants table (WINDOW_OUTS 4, XBH_HELD_PROB 0.35, SINGLE_OUT_PROB 0.12, NICKEL_PO_SHARE 0.33, PRESENCE_MIN/MAX 0.001/0.044, ARM_MIN 0.62, FIELD_MIN 0.58, SKIP_GAME_PROB 0.05, MISTIME_PROB 0.09, BLOWOUT_MARGIN 8, DEPLOY_BASE_EARLY/MID/LATE/FORCED 0.03/0.15/0.50/0.90, CLOSE_GAME_MULT 1.4); per-AB polling with hard gates; per-game skip/mistime rolls; deploy-probability ramp with blowout zeroing; eligibility derived from attributes with pitcher wild-card fallback (never one who already appeared); fielding effect conversions and putout attribution; presence lift stash-and-restore LIFO lifecycle layered on leadership flares; box-score line formats including multi-window/multi-nickel forms; 'starting nickel is emergent, not a roster slot'; ephemeral joker-like appearance; 'Things to remember' summary bullets.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "Self-described 'reference AAR' documenting the mechanic as built \u2014 genre_confidence medium. Date from 'Date written:' line. Dense file:line anchors summarized in unmapped_content."
+}

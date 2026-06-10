@@ -1,0 +1,163 @@
+{
+  "record_id": "hybrid-baseball--2026-06-05--agentic-audio-in-app-game-of-the-week-broadcasts",
+  "source_path": "docs/aar-agentic-audio-game-of-the-week.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-05",
+  "title": "After-Action Report — Agentic Audio: in-app \"Game of the Week\" broadcasts",
+  "scope": "Stages 1 + 2 shipped, plus an auto-generate worker. In-app two-host broadcasts of (1) a single game (\"🎧 Listen\") and (2) a daily league roundup (\"📻 Radio\"), with a background worker that auto-narrates new game-days. Built as a separate `o27audio/` service wired into the live web app. Live API calls (Claude + OpenAI TTS) are first exercised on deploy; everything around them is verified offline.",
+  "rationale": [
+    {
+      "item": "The ask: an \"MLB-TV-for-the-ears\" companion — audio-only content narrating the leagues. Two flavors wanted: (1) a Game of the Week play-by-play call, and (2) a league \"sports radio\" roundup. It must run as a separate instance, not be baked into the sim, and must be usable entirely from the app UI on a phone, with no command line.",
+      "references": []
+    },
+    {
+      "item": "It's plumbing, not research. O27 games are seed-deterministic and already persist everything needed: `game_pbp.pbp_text` (~52k chars/game), plus `game_pa_log`, box stats, and `game_scoring_events`. The audio app never simulates.",
+      "references": []
+    },
+    {
+      "item": "Cost is modest and TTS-dominated. ~$0.50–$1 per game on the cheap baseline (OpenAI `gpt-4o-mini-tts`); Claude is the small part (~$0.15–$0.50). No GPUs, no always-on infra.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Trigger and playback must live in the web UI, not a CLI",
+      "decided_by": "owner",
+      "quote": "\"I don't use the command line for this I do everything inside the apps … I'm on a phone.\""
+    },
+    {
+      "decision": "Pre-rendered files (not live streaming), two-host booth, both content types, self-built pipeline (Claude + a TTS API) over an all-in-one podcast API",
+      "decided_by": "joint",
+      "quote": "Confirmed product choices (via Q&A): pre-rendered files (not live streaming), two-host booth, both content types (game + roundup), self-built pipeline (Claude + a TTS API) over an all-in-one podcast API."
+    }
+  ],
+  "actions": [
+    {
+      "description": "New self-contained o27audio/ package: sources.py (load_game, read-only), script.py (Claude structured outputs + stub_script), tts.py (OpenAI gpt-4o-mini-tts two voices + offline tone stub), render.py (stdlib wave stitch + MP3 via ffmpeg), manifest.py (sidecar index), pipeline.py (gather/produce split), blueprint.py (/audio generate/status/audio/player), cli.py (narrate-game with --dry-run/--stub-script/--stub-tts)",
+      "artifacts": ["o27audio/sources.py", "o27audio/script.py", "o27audio/tts.py", "o27audio/render.py", "o27audio/manifest.py", "o27audio/pipeline.py", "o27audio/blueprint.py", "o27audio/cli.py"],
+      "kind": "new"
+    },
+    {
+      "description": "Web touch points (additive): register_blueprint(audio_bp); 🎧 Listen button on game page; Dockerfile installs ffmpeg; requirements add openai; .gitignore for generated output",
+      "artifacts": ["o27v2/web/app.py", "o27v2/web/templates/game.html", "Dockerfile", "o27/requirements.txt", ".gitignore"],
+      "kind": "modified"
+    },
+    {
+      "description": "Stage 2 roundup show (/audio/roundup, 📻 Radio in nav): day's slate, division leaders, season HR/RBI/K leaders, transactions wire; new manifest kind roundup keyed save_key:date; blueprint refactored to generic _launch/_status_payload/_serve_audio helpers + one shared player template",
+      "artifacts": ["o27audio/blueprint.py"],
+      "kind": "new"
+    },
+    {
+      "description": "Auto-generate worker (o27audio/worker.py): daemon thread started by runserver, debounced game-day watcher, auto-generates roundup and (in full mode) day's most broadcast-worthy game via pick_game_of_the_day; cost guards via O27AUDIO_AUTOGEN env (roundup/full/off), one roundup per new date, failed render advances watermark",
+      "artifacts": ["o27audio/worker.py"],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Built as a separate `o27audio/` service wired into the live web app ... nothing baked into the sim or core schema",
+    "Did not modify the sim, engine, or core schema. The audio service is a read-only consumer with its own sidecar manifest.",
+    "Background thread, not synchronous request ... An in-flight guard prevents double-taps.",
+    "Gather-in-request / produce-in-thread split ... so switching the active league mid-render can't corrupt the read.",
+    "WAV-first stitching ... avoids a hard ffmpeg/pydub dependency to build the clip",
+    "Multi-league safe. Clips are namespaced by the active save (save_key:game_id)"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Data layer: initdb + sim 5 into a throwaway DB; load_game pulls pbp (51,802 chars on the test game), 61 scoring events, 6 batting stars, pitching lines; --dry-run shows a 56k-char payload assembled correctly",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run initdb + sim and the CLI --dry-run against the throwaway DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Full pipeline offline: --stub-script --stub-tts produced a valid 68.3s, 24 kHz mono 16-bit WAV from 20 alternating turns, with a manifest row; second game rendered the same",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the CLI with stub flags and inspect output WAV/manifest",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Web flow offline via Flask shim: none → generating → ok with duration/turns/cost, audio() resolved the file, player page rendered, repeat generate no-ops as ok",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "unclear",
+      "check_method": "Drive blueprint view functions with a Flask shim or real Flask",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Safety/UX: missing-key and missing-SDK paths return friendly errors; bad game IDs 404; generated audio git-ignored; app.py compiles with the new import",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Exercise error paths and compile app.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Worker validation: roundup dry-run assembles correct digest; full stub run produced a valid 24s roundup WAV; _tick driven directly — tick 1 observes/debounces, tick 2 generates, tick 3 no-ops — verified twice cleanly; refactored blueprint re-tested for both game and roundup",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Drive worker._tick directly with stubbed pipeline",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Live Claude/OpenAI API calls",
+      "reason": "no sandbox network — voice quality and prompt tuning are the first post-deploy task",
+      "category": "blocked",
+      "status": "unknown"
+    },
+    {
+      "item": "Modifying the sim, engine, or core schema",
+      "reason": "The audio service is a read-only consumer with its own sidecar manifest.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Automated test under tests/",
+      "reason": "validation was manual (offline harness). A small test that exercises `pipeline.produce(..., stub=True)` would be a cheap follow-up.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Admin UI/kill-switch for the worker beyond the env var",
+      "reason": "the worker has no admin UI/kill-switch beyond the env var",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The two live API calls are unproven from here ... first real contact is on deploy. Voice quality, persona steering, and the script's handling of O27-specific mechanics (Second Chance, Walk-Back, Super-Innings) need a real listen and likely prompt tuning.",
+    "Requires an ANTHROPIC_API_KEY Fly secret. Only OpenAI was set; the scripting step errors without the Claude key (surfaced on the page, not a crash).",
+    "Latency is real. First render of a game is ~a minute; subsequent plays are instant (cached on volume).",
+    "Cost-estimate is approximate; reconcile against the dashboard before trusting it for a backfill.",
+    "max_pbp_chars cap (60k): unusually long games are truncated before the box-score tail; a very long game loses its final innings of detail unless the cap is raised."
+  ],
+  "open_hooks": [
+    "Deploy + listen: set ANTHROPIC_API_KEY, merge #212, tune the two voices and booth personas from the first sample",
+    "A/B the TTS provider: provider sits behind one interface; compare OpenAI vs ElevenLabs by ear vs cost",
+    "Batch API for backfills",
+    "pipeline.produce*(..., stub=True) test is the obvious cheap follow-up",
+    "Manifest stores char_count and est_cost_usd per clip to reconcile against provider dashboards before any bulk run"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Agentic Audio: in-app \"Game of the Week\" broadcasts",
+    "TL;DR",
+    "What was asked for",
+    "The tools (the actual stack)",
+    "Architecture (where each piece lives)",
+    "Design decisions worth recording",
+    "Cost (recorded per clip in the manifest)",
+    "Validation (what was actually verified, and how)",
+    "The honest caveats",
+    "What I did NOT do",
+    "Stage 2 + worker (built after the initial report)",
+    "Recommended next steps"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/agentic-audio-sports-app-2o2jM (PR #212). | Update (same session): the \"what I did NOT do\" items below — the roundup show and the auto-generate worker — were subsequently built. | Tools table: Anthropic Claude (anthropic SDK, Opus 4.8, structured outputs, prompt caching); OpenAI gpt-4o-mini-tts (two voice IDs, per-host tone via instructions); stdlib wave + ffmpeg; SQLite via o27v2.db read-only; Fly volume /data/audio + sidecar manifest.db. | Cost detail: ~30k-char script ≈ 12–18 spoken min; script $0.15–$0.50 (Sonnet→Opus; Batch API halves it); TTS ~$0.45–$0.50 OpenAI vs ElevenLabs ~$1.50 (Flash) to ~$9 (premium); 100-game backfill ≈ $50–$100; roundup mode ~$0.20–$0.60 per in-game day, full adds ~$0.50–$1. | Persistence: when O27V2_SAVES_DIR is set (Fly), clips write to /data/audio; otherwise o27audio/out/. | Original 'What I did NOT do' included the roundup show and auto-generate worker, later built (recorded as actions).",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": true,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Document updated within the same session: two original non-actions (roundup show, auto-generate worker) were subsequently built and reported in a 'Stage 2 + worker' section; remaining non-actions taken from the updated 'Still not done' list plus unrevised items."
+}

@@ -1,0 +1,132 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--retiring-wera-anchoring-xra-to-run-environment",
+  "source_path": "docs/aar-wera-retirement-xra-headline.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — retiring wERA, anchoring xRA to the run environment",
+  "scope": "Scope: o27v2/web/app.py (pitching constants, aggregator, baselines), tests/test_stat_invariants.py (invariant 8), 13 templates + test_template_renders.",
+  "rationale": [
+    {
+      "item": "wERA weighted earned runs by arc … asserting a run allowed late is worth more than the same run early. That theory has nothing to stand on in O27. In a single continuous 27-out half, every run counts identically toward the final score. So wERA wasn't measuring run prevention; it was measuring run prevention + a wrong theory about timing.",
+      "references": []
+    },
+    {
+      "item": "xRA measures the thing wERA was pretending to measure, without the fallacy. It's the run-prevention companion to the RE24-native run values used for BSR and 2C Runs.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Invariant 8 updated, not deleted",
+      "decided_by": "owner",
+      "quote": "Invariant 8 UPDATED, not deleted (per the owner's call — keep the check, point it at the surviving stat)"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Dropped the arc-weighted ER / C_w computation; werra / wera_plus keys retained as aliases of xra / xra+ (≈40 references keep working)",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Anchored xRA to league RA per 27 outs; fixed anchoring bug by routing both sides through one shared _xra_run_values helper, xra_norm = total_RA / Σ(run_values_p)",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "pWAR rebased to xRA: VORP = (replacement_xRA − my_xRA) × outs/27, replacement = league xRA × 1.20",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Invariant 8 now asserts league xRA (outs-weighted) tracks league RA/27 within 0.05, plus a guard that werra aliases xra; query gained breakdown columns",
+      "artifacts": [
+        "tests/test_stat_invariants.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "UI relabel: wERA+ → xRA+, wERA → xRA across 13 templates; arc-weighting tooltips rewritten",
+      "artifacts": [
+        "o27v2/web/templates/"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "The `werra` / `wera_plus` keys are retained as **aliases of `xra` / `xra+`** so leaderboards, dispersion, standings and templates keep working with zero field-plumbing churn (≈40 references).",
+    "Left as a scoped, low-risk follow-up rather than risk a blind 13-template structural pass."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Invariant 8 passes exactly (league xRA == league RA/27 to ~0; was failing at 0.062 for the old wERA, then 0.725 → 0.0607 → 0 as the anchoring fix landed)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "Run tests/test_stat_invariants.py invariant 8 against a seeded DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Full stat-invariant suite: 11 passed. o27/tests: 106. o27v2/tests: 128 passed (the 1 fail is the pre-existing flaky GM-noise trade sampling test)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest the named suites",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "All pages render 200; no template says \"wERA\" anymore",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Render all pages and grep templates for wERA",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Template column de-dup (some templates display the xRA value twice)",
+      "reason": "Left as a scoped, low-risk follow-up rather than risk a blind 13-template structural pass",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Optional descriptive arc splits (early/mid/late ER with no weighting)",
+      "reason": "Decay already carries the real fade signal. Not needed for the core move.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Some templates display the xRA value twice (retained werra-fed column next to the xra-fed one); labels correct.",
+    "Two pre-existing tests/test_template_renders failures (gmli field; season-archive writer) fail identically before this work — data/fixture-dependent, worth a look on a proper season-archive DB."
+  ],
+  "open_hooks": [
+    "Per-template removal of the redundant xRA column.",
+    "Descriptive early/mid/late ER breakdown if 'when did the damage happen' is wanted back."
+  ],
+  "section_headers_original": [
+    "After-Action Report — retiring wERA, anchoring xRA to the run environment",
+    "1. Why wERA had to go (the fallacy)",
+    "2. The replacement: xRA",
+    "3. What changed (data — `d8eb5aa`)",
+    "4. What changed (UI — `6072cdc`)",
+    "5. Validation",
+    "6. Follow-ups"
+  ],
+  "unmapped_content": "wERA arc weights: outs 1–9 ×0.85, 10–18 ×1.00, 19–27 ×1.20. The real leverage of a run is situational — what WPA / leverage index capture. Anchoring bug detail: xra_norm computed from blended league hit-shares while per-pitcher xRA used the actual allowed singles/doubles/triples breakdown — method mismatch leaving league xRA ~0.5 off. Commits d8eb5aa → 6072cdc; branch claude/war-oaa-reconciliation-koalas-7t0pG.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date:' header (2026-06-06). Same branch as the WAR/OAA reconciliation AARs."
+}

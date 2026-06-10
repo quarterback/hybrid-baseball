@@ -1,0 +1,244 @@
+{
+  "record_id": "hybrid-baseball--2026-05-06--decoupling-hits-and-runs-doubles-gidp-triple-play",
+  "source_path": "docs/aar-decouple-hits-and-runs-on-doubles.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-06",
+  "title": "After-Action Report — Decoupling Hits and Runs (Doubles, Throw-outs at Home, GIDP, Triple Play, 2C Fielders' Choice)",
+  "scope": "Drive-by user complaint: \"time to decouple hits and runs they run too similar to each killing my immersion\". Translation: a hit's run output is too predictable. Operating constraint: don't break the realism identity invariant (at neutral player attributes the engine should produce the same numbers it did before this change), and don't blow up league-wide run rates.",
+  "rationale": [
+    {
+      "item": "The double was the load-bearing problem — the only deterministic hit-type branch in runner_advances_for_hit, frequent enough to dominate the perceived correlation (always [2, 2, 1]).",
+      "references": []
+    },
+    {
+      "item": "Reading 2 (\"every hit produces the same run outcome\") is the actual mechanism and dominates Reading 1 — fix the determinism and the correlation slackens for free.",
+      "references": []
+    },
+    {
+      "item": "The decoupling machinery (_runner_advance, TOOTBLAN, baserunning attributes) was already in the repo; a larger refactor would have been an over-engineered way to address what is fundamentally a single missing line in one switch statement.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Initial decoupling request",
+      "decided_by": "owner",
+      "quote": "\"time to decouple hits and runs they run too similar to each killing my immersion\""
+    },
+    {
+      "decision": "Broaden scope: triples shouldn't auto-score, generalize to any runner, ship double plays, reduced-rate FC on 2C",
+      "decided_by": "owner",
+      "quote": "\"Triples shouldn't always score there should be a percentage that get thrown out at home or GIDP or Triple plays or get caught stealing or other thing\""
+    },
+    {
+      "decision": "Calibration pass with explicit target rates and broadened GIDP eligibility",
+      "decided_by": "owner",
+      "quote": "\"It should never be automatic there should ag least be a 2% chance of a fast runner being thrown out at home, 9% neutral and 25% slow/raw\""
+    },
+    {
+      "decision": "Ship the Apollo-style 2C moved-runner stat",
+      "decided_by": "owner",
+      "quote": "\"Moving runner % add it\""
+    }
+  ],
+  "actions": [
+    {
+      "description": "New tunable RUNNER_EXTRA_DOUBLE_FROM_1B (0.30) and doubles branch in runner_advances_for_hit now resolves the 1B runner via _resolve/_runner_advance with TOOTBLAN out threading (commit f1ac800; 15 insertions, 1 deletion)",
+      "artifacts": [
+        "o27/config.py",
+        "o27/engine/prob.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "_thrown_out_at_home helper wired into single (2B runner) and triple (1B runner) branches; triple split out from hr so HRs stay deterministic (commit 9145b77)",
+      "artifacts": [
+        "o27/engine/prob.py",
+        "RUNNER_THROWN_OUT_AT_HOME_BASE/SPEED_SCALE/SKILL_SCALE"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "GIDP: inserted in _generate_pitch after the run/stay choice; hit_type flipped to double_play, runner_out_idx=0; later refactored into clamp(0.06, 0.23, BASE × force_factor(bases) × quality_factor(contact) − speed_bonus + defense_bonus) with eligibility on any runner on base",
+      "artifacts": [
+        "o27/engine/prob.py",
+        "o27/config.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Triple plays: TRIPLE_PLAY_GIVEN_DP_PROB = 0.04 with new extra_runner_outs outcome field threaded through advance_runners and _resolve_contact; later extended to 1B+2B + 0 outs and a baserunner-error bonus when the lead forced runner has below-average baserunning",
+      "artifacts": [
+        "o27/engine/prob.py",
+        "o27/engine/baserunning.py",
+        "o27/engine/pa.py",
+        "o27/render/render.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "2C / stay reduced-rate fielders' choice: separate stay block rolls for a tag-out of the lead runner, scaled by GIDP_STAY_MULTIPLIER = 0.30; batter survives the AB; first writer wins on runner_out_idx",
+      "artifacts": [
+        "o27/engine/prob.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Calibration re-tune: RUNNER_THROWN_OUT_AT_HOME_BASE 0.09, scales 0.20, new RUNNER_THROWN_OUT_AT_HOME_MIN 0.02 hard floor (never automatic)",
+      "artifacts": [
+        "o27/config.py"
+      ],
+      "kind": "config"
+    },
+    {
+      "description": "Apollo-style 2C moved-runner stat shipped end-to-end: six c2_op_X/c2_adv_X columns on game_batter_stats (ALTER TABLE migration), BatterStats fields, stay-branch tracking in _update_stats, persistence in sim.py, career aggregation in v2_bridge, '2C Moved-Runner Rate' card on player.html",
+      "artifacts": [
+        "o27v2/db.py",
+        "o27/stats/batter.py",
+        "o27/render/render.py",
+        "o27v2/sim.py",
+        "o27/v2_bridge.py",
+        "o27/web/templates/player.html"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Operating constraint: don't break the realism identity invariant ... and don't blow up league-wide run rates.",
+    "Two small surgical changes, both leaning on existing machinery ... rather than introducing a parallel system.",
+    "This deliberately *does not* fire if `runner_out_idx` was already set by an earlier path (TOOTBLAN, fielders_choice from `resolve_contact`) — first writer wins.",
+    "The trigger is deliberately tiny."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Smoke test, 5000 doubles per cohort: neutral 22.8% score from 1B, fast/smart/aggressive 62.0%, slow/raw/passive 16.3%; slow-cohort formula prediction 17.1% vs observed 16.3%",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run seeded cohort smoke test against runner_advances_for_hit",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_realism_identity.py passes (6/6) after each commit",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest tests/test_realism_identity.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Throw-out-at-home verified rates (20k samples per cohort): fast 1.9%, neutral 8.7%, slow 24.9% (targets 2/9/25)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run cohort sampling on _thrown_out_at_home",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "GIDP probability table spans 6.0% floor to 23.0% ceiling across scenarios (e.g. 1B alone medium neutral 13.0%, bases loaded medium 18.2%)",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Recompute GIDP probabilities per scenario",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "TP rates (10k BIPs per scenario): 1B+2B neutral 0.13%, weak 2B-runner BR 0.26% (weak baserunning ~doubles TP rate), bases loaded 0.21%, gate closed 0.00%",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run _generate_pitch BIP sampling",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "GIDP gate works: DPs are 0% when the 1B-runner-and-<2-outs gate is closed, and 5–9% when open; total out share preserved",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the BIP scenario table",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Sample 2C counters after a single 2C ground-out: c2_op_1b=1, c2_adv_1b=1, sty=1, stay_hits=1",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run a single 2C ground-out scenario and inspect counters",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Singles, triples, HRs, ground outs, fly outs, line outs advance defaults (beyond the additions) untouched",
+      "reason": "Singles already had 1B-runner variability; triples/HRs are correctly deterministic; ground/fly outs already used _runner_advance; line-outs correctly freeze",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "The 2B and 3B runners on a double still always score",
+      "reason": "A runner on 2B who can't score on a double is rare enough to not be worth modeling, and a runner on 3B holding on a double would be nonsense",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Hit-side talent flow in _generate_pitch untouched",
+      "reason": "That's the hit-vs-out axis. This change targets the runs-given-a-hit axis, which is where the user's complaint lived",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "2C moved-runner stat initially not implemented in this branch (proposal only)",
+      "reason": "would expand scope beyond the decoupling work; flagging as a clean next step if the user wants to pursue it (later shipped in the calibration-pass follow-up after the user said 'Moving runner % add it')",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Separating 'runner was already going' from 'moved by the swing' in the 2C stat",
+      "reason": "separating that from a 'moved by the swing' event is hard and probably not worth the complexity for a first cut",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "League-wide run rates will tick up modestly — call it a third of a run per nine on the team-runs-allowed side. Worth keeping an eye on in the next stat-invariant pass; if it's too hot, drop RUNNER_EXTRA_DOUBLE_FROM_1B from 0.30 toward 0.15–0.20",
+    "Rough net: maybe +0.20 runs/game per side at neutral. Worth re-checking against the stat-invariant suite once a fresh-sim DB is available; knobs to dial back are RUNNER_EXTRA_DOUBLE_FROM_1B and GIDP_BASE_PROB"
+  ],
+  "open_hooks": [
+    "Config knobs for re-tuning run rates (RUNNER_EXTRA_DOUBLE_FROM_1B, GIDP_BASE_PROB)",
+    "Open question section recommending the Apollo-style 2C moved-runner stat with suggested counter/display/naming/edge-case shape (subsequently shipped)"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Decoupling Hits and Runs (Doubles, Throw-outs at Home, GIDP, Triple Play, 2C Fielders' Choice)",
+    "What was asked for",
+    "Diagnosis",
+    "What was built",
+    "1. New tunable",
+    "2. Doubles branch in `runner_advances_for_hit`",
+    "How the math composes",
+    "Validation data",
+    "Identity invariants",
+    "What this does NOT change",
+    "Why this was the right knob",
+    "Files touched (commit 1 — doubles)",
+    "Follow-up — broader scope (commit `9145b77`)",
+    "What was built",
+    "1. `_thrown_out_at_home` helper (`o27/engine/prob.py`).",
+    "Validation data — throw-outs at home",
+    "Validation data — GIDP / TP rates",
+    "Identity / regression check",
+    "Net effect on run rates",
+    "Open question — moving-runners (\"Apollo\") effectiveness stat for 2C",
+    "Follow-up — calibration pass (commit `<retune>`)",
+    "Throw-outs at home — re-tuned",
+    "GIDP — broadened eligibility, contact-quality input, 6–23% band",
+    "Triple plays — extended to 1B+2B; baserunning-error bonus",
+    "Apollo-style 2C moved-runner stat — shipped",
+    "Identity / regression check",
+    "Files touched (commit 2 — broader scope)"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/decouple-hits-runs-rGteJ; commits f1ac800 (doubles), 9145b77 (broader scope), plus an unnamed '<retune>' calibration commit. Diagnosis table of hit-type variability sources. Math composition: P(score) = P(attempt) × P(safe|attempt) with attempt-rate bonuses max(0,...) (slow runners keep the baseline) and TOOTBLAN safe rate not clamped at baseline. Identity invariants note: the realism identity contract does not pin runner_advances_for_hit to its old defaults; the singles branch precedent (extra_chance=0.10) is followed; a league of all-0.5 rosters used to score 0% of 1B runners on doubles, now ~23%. Force/quality factor detail for GIDP (force_factor 0.40–1.40, quality_factor weak 1.30 / medium 1.00 / hard 0.55; speed bonus 0.20, defense 0.15). Apollo stat details: opportunity/success rules (thrown out trying = opportunity, not success), card renders only when c2_op_total > 0, in-game label '2C Moved-Runner Rate', sample rate table. Net-effect back-of-envelope arithmetic per change. Commit-2 diff: 161 insertions, 13 deletions. User quotes for follow-up expansions ('Or just men on 3rd base...', 'Double plays too obviously', 'But not impossible Fielders choice lessens witb 2nd chance ab') and calibration ('Same for GIDP the opp should be higher... Should be a range of 6 % to 23%...', 'Triple plays can happen with 2 runners on and a batter; baserunner errors can induce them as well.', 'pay Apollo has the stat ... if it's worth modeling I'd like to do it').",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Document covers three sequential workstreams (initial doubles fix, broader-scope follow-up, calibration pass) in one AAR; one commit hash is a literal placeholder '<retune>'. Duplicate heading texts ('What was built', 'Identity / regression check') appear; recorded in order."
+}

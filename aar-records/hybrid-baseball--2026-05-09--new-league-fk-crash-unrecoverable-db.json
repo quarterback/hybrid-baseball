@@ -1,0 +1,64 @@
+{
+  "record_id": "hybrid-baseball--2026-05-09--new-league-fk-crash-unrecoverable-db",
+  "source_path": "docs/aar-new-league-fk-crash.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-09",
+  "title": "After-Action Report — /new-league FK Crash + Unrecoverable DB",
+  "scope": "The session was originally scoped to monitoring /api/health. The health logs themselves looked fine — 200 on every probe — but the same log stream surfaced a real-user crash on /new-league followed by every subsequent request 500'ing on a different error. That's what the user was actually stuck on.",
+  "rationale": [
+    {"item": "\"still not able to get the league started again after the last 2 PRs\"", "references": []},
+    {"item": "\"i try to start a new league in the pro/rel universe and it crashes and then i can't get it back at all.\"", "references": []},
+    {"item": "Three tables owned by o27v2/auction.py (auction_keepers, auction_results, auction_lot_bids) REFERENCES teams(id)/players(id) but were missing from drop_all()'s drop list; once they hold rows, DROP TABLE players/teams raises FOREIGN KEY constraint failed and drop_all() aborts halfway, killing the app.", "references": ["PR #35 new-league-structure", "PR #36 Live auction polish", "PR #37 Fresh-league 500"]},
+    {"item": "executescript runs each DROP TABLE in sequence and SQLite commits each one as it goes; when the script raised midway, tables already dropped (including sim_meta) stayed dropped. Every page-load context processor calls get_current_sim_date(), so the whole app went down.", "references": []}
+  ],
+  "delegation_events": [],
+  "actions": [
+    {"description": "Added the three auction tables explicitly to drop_all()'s drop list, first since they're pure children of teams/players.", "artifacts": ["o27v2/db.py"], "kind": "modified"},
+    {"description": "Wrapped the whole drop script in PRAGMA foreign_keys = OFF/ON with try/finally so drop order doesn't matter and any future referencing table is structurally safe.", "artifacts": ["o27v2/db.py:drop_all()"], "kind": "modified"},
+    {"description": "Wrote a focused integration repro before fixing — init_db + init_auction_schema + inserted teams/players/auction_keepers rows, then drop_all() (lives in the AAR, not committed).", "artifacts": [], "kind": "other"}
+  ],
+  "risk_posture": [
+    "The `try/finally` makes sure FKs are restored even if some other exception (corrupt DB, locked file) escapes the script — the connection is short-lived but the PRAGMA flips to a session-scoped default at SQLite level, and being defensive here is cheap.",
+    "Skipping for now to keep the fix minimal.",
+    "Total diff: 26 insertions, 17 deletions in 1 file."
+  ],
+  "validation_claims": [
+    {"claim": "Before the fix: raises sqlite3.IntegrityError: FOREIGN KEY constraint failed exactly as in production.", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Run the repro snippet from the AAR against the pre-fix drop_all", "verified": "not_checked"},
+    {"claim": "After the fix: drop_all OK; remaining tables ['season_batting_leaders', 'season_pitching_leaders', 'season_standings', 'seasons', 'sqlite_sequence']; full table set restored after reseed; FK pragma still ON: 1.", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Run the repro snippet against the fixed drop_all and inspect sqlite_master and PRAGMA foreign_keys", "verified": "not_checked"},
+    {"claim": "The repro test verified this: after drop_all(), those four [seasons-archive] tables are still present.", "evidence_cited": "manual verification", "checkable_against_repo": "yes", "check_method": "Run drop_all on a seeded DB and list remaining tables", "verified": "not_checked"}
+  ],
+  "non_actions": [
+    {"item": "No matching test in the repo's tests/ directory; the repro lives in the AAR rather than as a committed regression test", "reason": "seeding a two-league DB without dragging in the rest of seed_league requires either fixture infra that doesn't exist yet or a brittle hand-built state. The structural fix (FKs off + the auction tables in the drop list) is the thing that prevents the class of bug. Skipping for now to keep the fix minimal.", "category": "deferred", "status": "unknown"},
+    {"item": "Seasons-archive tables (seasons, season_standings, season_batting_leaders, season_pitching_leaders) deliberately not dropped", "reason": "matching the existing comment in the schema: Task #62 archived season history persists ACROSS the drop_all() / reseed cycle so a multi-season test run can compare model output across seasons.", "category": "out_of_scope", "status": "unknown"},
+    {"item": "No special migration for the user's broken half-dropped DB", "reason": "On the next request init_db() runs its executescript(SCHEMA) step, which is CREATE TABLE IF NOT EXISTS for every table — missing tables come back, surviving rows in untouched tables stay.", "category": "out_of_scope", "status": "unknown"}
+  ],
+  "residual_risks": [
+    "It's a regression that a fresh-DB integration test wouldn't catch — it requires DB state from a prior season."
+  ],
+  "open_hooks": [
+    "If we want a guard test later, the right shape is: test_drop_all_with_full_referencing_state — seed_minimal_league_with_auction_run(); db.drop_all(); no raise."
+  ],
+  "section_headers_original": [
+    "After-Action Report — /new-league FK Crash + Unrecoverable DB",
+    "What was asked for",
+    "Diagnosis",
+    "Two errors, same root cause",
+    "What `drop_all()` was missing",
+    "Why this hadn't surfaced earlier",
+    "What was built",
+    "Commit `dec35cf` — drop_all FK fix",
+    "What was deliberately *not* dropped",
+    "Recovery for the broken DB",
+    "Repro / regression check",
+    "What didn't ship",
+    "Files touched"
+  ],
+  "unmapped_content": "Branch: claude/monitor-api-health-ypTDM; Commit: dec35cf. | Error traces: POST /new-league raised sqlite3.IntegrityError: FOREIGN KEY constraint failed at o27v2/db.py:775 drop_all; subsequent requests raised sqlite3.OperationalError: no such table: sim_meta at o27v2/sim.py:1707 get_current_sim_date. | drop_all()'s known drop list and the auction.py table definitions (lines 46-80) quoted in full. | PR archaeology: the \"last 2 PRs\" were #36 (Live auction polish: render fix on FINAL PRICE + flag emojis + /youth schema) and #37 (Fresh-league 500: derive_linear_weights default for missing event types); neither touched drop_all(), but #37 was the first time most users actually got to the auction stage on a fresh league — exposing the latent FK gap that #35 (new-league-structure) had opened. | Bug only triggers when a previous league ran init_auction_schema, the auction ran (rows inserted), and the user starts a second league. | Files touched: o27v2/db.py:768 — drop_all(): added auction tables; wrapped executescript in PRAGMA foreign_keys = OFF/ON with try/finally.",
+  "quality_vector": {
+    "has_scope": true, "has_rationale": true, "has_delegation_record": false,
+    "has_validation": true, "has_negative_space": true, "has_residual_risk": true
+  },
+  "parser_notes": "Clean bug-fix AAR; repro code lives in the document rather than the test suite (explicitly noted)."
+}

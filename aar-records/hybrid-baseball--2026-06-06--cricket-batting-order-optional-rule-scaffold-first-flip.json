@@ -1,0 +1,155 @@
+{
+  "record_id": "hybrid-baseball--2026-06-06--cricket-batting-order-optional-rule-scaffold-first-flip",
+  "source_path": "docs/aar-cricket-batting-order.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-06",
+  "title": "After-Action Report — Cricket Batting Order: the optional rule (scaffold + first flip)",
+  "scope": "This AAR covers the scope decision and the optional-rule scaffold — the gate, the per-league plumbing, and the first (automatic) flip mechanic. A follow-on AAR turns the automatic flip into a manager decision; this document is the historical record of the foundation.",
+  "rationale": [
+    {
+      "item": "Cricket's defining order rule — bat in fixed order, retired once dismissed, all-out ends the innings — conflicts head-on with O27's 27-out half (a ~9–12 batter side would be all-out long before 27 outs). So I clarified scope up front and landed on a much smaller, native-feeling mechanic, shipped as an optional, per-league rule (the Power Play pattern).",
+      "references": [
+        "docs/feature-cricket-batting-order.md"
+      ]
+    },
+    {
+      "item": "The existing cycle machinery already had the needed signal: Team.advance_lineup detects the wrap, increments lineup_cycle_number, and resets jokers_used_this_cycle — exactly the record of \"was a joker deployed this trip?\", readable at the wrap before it's cleared.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Reorder-only mechanic, shipped as an optional per-league rule",
+      "decided_by": "owner",
+      "quote": "The user chose **reorder-only**, shipped as an **optional per-league rule**."
+    },
+    {
+      "decision": "Two scoping questions surfaced before building (meaning of the rule; global vs per-league)",
+      "decided_by": "joint",
+      "quote": "I surfaced the conflict with the 27-out core and asked: (1) what should \"cricket batting order\" mean — full dismissal model, partnerships, reorder-only, or a design doc; and (2) how broad — global change or optional per-league rule."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Gate: cricket_order_on(team) — per-team override first, else global config default (on if league opted in OR global default on)",
+      "artifacts": [
+        "o27/engine/cricket_order.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Global default cfg.CRICKET_BATTING_ORDER_ENABLED, auto-exposed on the Engine Settings dashboard via engine_config",
+      "artifacts": [
+        "config.py",
+        "engine_config"
+      ],
+      "kind": "config"
+    },
+    {
+      "description": "Storage: teams.cricket_order_enabled column (CREATE TABLE + idempotent ALTER migration)",
+      "artifacts": [
+        "db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Per-game read: sim.py stamps the override on both teams when the league opted in",
+      "artifacts": [
+        "sim.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "UI opt-in: new-league checkbox, peer-universe per-league select, /league/edit toggle for existing leagues, with app.py handlers",
+      "artifacts": [
+        "app.py",
+        "/league/edit"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "First (automatic) flip mechanic inside advance_lineup: on a joker-free wrap, reverse the lineup for the next cycle (later superseded by the manager decision)",
+      "artifacts": [
+        "advance_lineup"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "So no other rule (outs, stays, jokers, walk-back, Declared Seconds) changes; the rule only reorders the existing cycle, and only when a league turns it on.",
+    "was off-by-default = byte-for-byte unchanged",
+    "Mirrors Power Play end to end, so the two optional rules behave identically with respect to global-vs-per-league control"
+  ],
+  "validation_claims": [
+    {
+      "claim": "New engine test module exercising the flip and the gate; full o27/tests suite green",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "pytest o27/tests",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Off-by-default verified inert; on-by-default flips fire in live games (verified: 8 flips/game with two joker-less sides; the #9-hitting pitcher led off the next cycle)",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run live games with rule off and on, inspect lineup order",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "DB column + migration verified on fresh and legacy teams tables; all changed Python byte-compiles; edited Jinja templates parse",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run migrations and byte-compile/parse checks",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "The flip as a manager decision (earn / use-or-lose / persona / regulation only)",
+      "reason": "handed to follow-on aar-cricket-batting-order-manager-decision.md",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Flip-aware lineup construction",
+      "reason": "handed to aar-cricket-batting-order-flip-aware-lineups.md",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "No new stats; no dismissal/all-out model",
+      "reason": "out of scope — breaks the 27-out half",
+      "category": "out_of_scope",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "The automatic flip had a rendering gap (the raw apply_event log is discarded when a Renderer is present) — fixed by the follow-on event-based redesign"
+  ],
+  "open_hooks": [
+    "Manager-decision reframe (delivered by follow-on)",
+    "Flip-aware lineup construction (delivered by follow-on)"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Cricket Batting Order: the optional rule (scaffold + first flip)",
+    "TL;DR",
+    "Scope (two questions up front)",
+    "What it hooks into",
+    "What was built (the optional-rule scaffold)",
+    "The first flip mechanic (later superseded)",
+    "Validation (this line of work)",
+    "Not changed / handed to follow-ons"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/o27-cricket-batting-order-k6hhp; followed by the manager-decision and flip-aware-lineups AARs; living spec docs/feature-cricket-batting-order.md. Rule statement: when enabled, the batting order flips 1-9 → 9-1 at the end of a trip through the order that the side completed without deploying a joker; using a joker locks the order for that cycle.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed:' line. Three same-day AARs on one branch form a sequence."
+}

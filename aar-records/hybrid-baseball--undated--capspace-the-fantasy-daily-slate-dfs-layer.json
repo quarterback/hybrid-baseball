@@ -1,0 +1,41 @@
+{
+  "record_id": "hybrid-baseball--undated--capspace-the-fantasy-daily-slate-dfs-layer",
+  "source_path": "docs/aar-capspace-dfs-fantasy.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": null,
+  "title": "CapSpace: the `/fantasy` Daily-Slate (DFS) layer",
+  "scope": null,
+  "rationale": [],
+  "delegation_events": [],
+  "actions": [],
+  "risk_posture": [],
+  "validation_claims": [],
+  "non_actions": [],
+  "residual_risks": [],
+  "open_hooks": [],
+  "section_headers_original": [
+    "After-Action Report \u2014 CapSpace: the `/fantasy` Daily-Slate (DFS) layer",
+    "What was asked for",
+    "What shipped",
+    "Data mapping (what's real)",
+    "The salary calibration (the one real gotcha)",
+    "Discovery / entry points",
+    "Pool trim",
+    "O27-specific notes",
+    "Validation",
+    "Contests / leaderboard / live (now real \u2014 `contests.py`)",
+    "What was *not* done (deliberately deferred)"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": false,
+    "has_rationale": false,
+    "has_delegation_record": false,
+    "has_validation": false,
+    "has_negative_space": false,
+    "has_residual_risk": false
+  },
+  "parser_notes": "Full text extraction deferred to manual review; this is a structural skeleton only."
+}

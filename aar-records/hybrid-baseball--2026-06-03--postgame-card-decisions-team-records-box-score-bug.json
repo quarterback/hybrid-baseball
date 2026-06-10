@@ -1,0 +1,175 @@
+{
+ "record_id": "hybrid-baseball--2026-06-03--postgame-card-decisions-team-records-box-score-bug",
+ "source_path": "docs/aar-postgame-scorecard-decisions-and-records.md",
+ "repo": "hybrid-baseball",
+ "parsed_at": "2026-06-10",
+ "genre_confidence": "high",
+ "date": "2026-06-03",
+ "title": "After-Action Report \u2014 Post-game card decisions + team records, and the \"(L, 4-0)\" box-score bug",
+ "scope": "Three tangled complaints about how finished games present pitcher decisions and records:",
+ "rationale": [
+  {
+   "item": "Box scores showed impossible decision records \u2014 e.g. `Hlavacka (L, 4-0)`: a pitcher tagged with the loss whose season record didn't include a loss. And \"sometimes the record is there, sometimes it isn't.\"",
+   "references": []
+  },
+  {
+   "item": "The expanded (schedule) cards still showed the SP matchup post-game, while the small (dashboard) cards already switched to W/L pitchers with records \"like real MLB.\"",
+   "references": []
+  },
+  {
+   "item": "No team records on the cards \u2014 the user wanted the W-L line on each side, pre-game and updated after the game resolves.",
+   "references": []
+  },
+  {
+   "item": "Root cause of #1: two different W/L attribution algorithms \u2014 the box score labeled the losing pitcher by most runs allowed, but the record came from the season W-L map which charges the loss by most earned runs.",
+   "references": []
+  }
+ ],
+ "delegation_events": [
+  {
+   "decision": "Finisher line requested: save slot shows finisher with terminal-outs total",
+   "decided_by": "owner",
+   "quote": "The owner asked for the save slot on the scorecard to show the finisher with his terminal-outs total, like a record: `F: Brockman (33)`"
+  },
+  {
+   "decision": "Out-share-based win attribution flagged back to owner rather than implemented",
+   "decided_by": "joint",
+   "quote": "Changing that needs per-pitcher \"outs-while-leading\" data the schema doesn't expose yet, so it's flagged, not silently rewritten."
+  }
+ ],
+ "actions": [
+  {
+   "description": "One source of truth for decisions: new pure helpers credit_win / charge_loss / decide_pitchers; SP_OUTS_THRESHOLD moved here",
+   "artifacts": [
+    "o27v2/web/box_score.py"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "All surfaces route through the canonical helpers: _pitcher_wl_map, _attach_decisions (aggregating pitcher rows per player across phases), new _game_decision_pids, game_detail, youth/world-cup box views, box_text._pick_decisions",
+   "artifacts": [
+    "o27v2/web/app.py",
+    "o27v2/web/box_text.py"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "render_pitching_table reserves room for the decision/record suffix and truncates the name instead",
+   "artifacts": [
+    "o27v2/web/box_score.py"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Cards: new _attach_team_records(games, as_of_date) attaching away_record/home_record; wired into index and schedule routes; record chips and W/L decision blocks in templates; SP matchup shown only pre-game",
+   "artifacts": [
+    "o27v2/web/app.py",
+    "index.html",
+    "schedule.html"
+   ],
+   "kind": "modified"
+  },
+  {
+   "description": "Finisher line: new box_score.pick_finisher(win_rows); multi-tag composition in render_pitching_table and box_text._pitching_block; new app._game_finisher and _terminal_outs_map; f_pitcher attached in _attach_decisions; cards render F: line",
+   "artifacts": [
+    "o27v2/web/box_score.py",
+    "o27v2/web/app.py",
+    "o27v2/web/box_text.py",
+    "game_pitcher_stats.terminal_outs"
+   ],
+   "kind": "new"
+  }
+ ],
+ "risk_posture": [
+  "The W/L *heuristics themselves* (12-out SP win, most-ER loss) are unchanged in spirit \u2014 the win here was making every surface agree on one of them, not inventing a new rule.",
+  "Saves-by-the-old-rule remain absent on purpose; the finisher line is the intended replacement.",
+  "it's flagged, not silently rewritten"
+ ],
+ "validation_claims": [
+  {
+   "claim": "Reproduced the bug on a seeded 30-team DB (120 finals): 30 label/record mismatches, 26 labels with no matching season record. After the fix: 0 losers without a loss, 0 winners without a win; season totals stay balanced (total_W == total_L == finals)",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "unclear",
+   "check_method": "Seed a 30-team DB, sim 120 finals, cross-check decision labels vs season W-L map",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Long-name case now renders `Gymnastikfor (L, 0-1)` (name truncated, record intact)",
+   "evidence_cited": "manual verification",
+   "checkable_against_repo": "yes",
+   "check_method": "Render a pitching table with a long pitcher name",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "pytest o27/tests o27v2/tests \u2192 235 passed, 1 skipped",
+   "evidence_cited": "tests",
+   "checkable_against_repo": "yes",
+   "check_method": "Run pytest o27/tests o27v2/tests",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "Rendered /, /schedule, and /game/<id> against the seeded DB: records on both card styles pre/post game, W/L decisions on expanded finals, SP matchup retained for upcoming games",
+   "evidence_cited": "render/smoke",
+   "checkable_against_repo": "yes",
+   "check_method": "Run the app against a seeded DB and inspect the three routes",
+   "verified": "not_checked"
+  },
+  {
+   "claim": "On a seeded 120-final season: 77 games have a finisher, 21 of them a pitcher who also won",
+   "evidence_cited": "metrics",
+   "checkable_against_repo": "unclear",
+   "check_method": "Query game_pitcher_stats terminal-outs leaders vs win attribution on a seeded season",
+   "verified": "not_checked"
+  }
+ ],
+ "non_actions": [
+  {
+   "item": "Out-share-of-lead win attribution rule",
+   "reason": "Changing that needs per-pitcher \"outs-while-leading\" data the schema doesn't expose yet, so it's flagged, not silently rewritten.",
+   "category": "blocked",
+   "status": "unknown"
+  },
+  {
+   "item": "Changing the W/L heuristics themselves",
+   "reason": "the win here was making every surface agree on one of them, not inventing a new rule",
+   "category": "out_of_scope",
+   "status": "unknown"
+  },
+  {
+   "item": "Per-game historical replay of team records for arbitrary mixed-date lists",
+   "reason": "Team records on a card are \"as of the card's anchor date.\" On the dashboard/schedule every game in a list shares that date, so the figure is exact",
+   "category": "out_of_scope",
+   "status": "unknown"
+  }
+ ],
+ "residual_risks": [
+  "Open question raised back to the owner: the engine's current win attribution is SP if \u226512 outs, else most-effective reliever \u2014 not the out-share-of-lead computation the owner described."
+ ],
+ "open_hooks": [
+  "Possible future out-share-based win rule (needs per-pitcher outs-while-leading schema data)"
+ ],
+ "section_headers_original": [
+  "After-Action Report \u2014 Post-game card decisions + team records, and the \"(L, 4-0)\" box-score bug",
+  "TL;DR",
+  "What was wrong",
+  "The decision/record split",
+  "The fix",
+  "1. One source of truth (`o27v2/web/box_score.py`)",
+  "2. Everyone routes through it (`o27v2/web/app.py`)",
+  "3. Don't truncate the record",
+  "4. Cards: decisions + team records",
+  "Validation",
+  "Follow-up: the finisher (\"F\") line \u2014 O27's save",
+  "What I did *not* change"
+ ],
+ "unmapped_content": "Branch: claude/postgame-scorecard-display-dMhTC. Detail on the split: app.game_detail built decisions inline (W = last winning pitcher who recorded an out; L = losing pitcher with most runs_allowed) while app._pitcher_wl_map charged W = SP if \u226512 outs else most-effective reliever; L = pitcher with most er. 30 of 120 simulated finals disagreed; 26 of those 30 showed no record at all. Second smaller cause: long-named decision pitcher overran the fixed-width name column and the record got truncated. Finisher definition: Terminal Outs (TO) \u2014 outs in a spell where the pitcher entered with a lead, never let it be tied or lost, and finished the game; a finisher can also be the winning pitcher, e.g. `Manue (W, 1-0) (F, 7)`. _attach_team_records: finals show the record through their date; unplayed games show what clubs bring in (through the prior day); one query covers both cutoffs.",
+ "quality_vector": {
+  "has_scope": true,
+  "has_rationale": true,
+  "has_delegation_record": true,
+  "has_validation": true,
+  "has_negative_space": true,
+  "has_residual_risk": true
+ },
+ "parser_notes": "Date from 'Date completed:' line. Title contains punctuation/quotes; slug shortened. Document includes a follow-up section (finisher line) appended after main validation."
+}

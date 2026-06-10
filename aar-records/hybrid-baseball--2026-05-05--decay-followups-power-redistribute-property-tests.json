@@ -1,0 +1,143 @@
+{
+  "record_id": "hybrid-baseball--2026-05-05--decay-followups-power-redistribute-property-tests",
+  "source_path": "docs/aar-decay-followups-and-tests.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-05",
+  "title": "After-Action Report — Decay follow-ups + power-redistribute property tests",
+  "scope": "The prior AAR parked three follow-up tickets: (1) lineup-cycling drift offset for Decay; (2) selection bias on Q1 Decay — a per-appearance Decay metric would surface this; (3) HR-rate stability check on the redistribute. User: \"fix the follow ups\". All three shipped.",
+  "rationale": [
+    {
+      "item": "Lineup-cycling drift offset for Decay: league-wide arc-3 K% will always be higher than arc-1 K% because the 27-out single inning cycles to weaker hitters; use the league's natural arc-1→arc-3 K% delta as the zero-point.",
+      "references": [
+        "aar-stamina-power-and-latek.md"
+      ]
+    },
+    {
+      "item": "Selection bias on Q1 Decay: low-stamina starters who blow up in arc-2 get pulled before arc-3 — so the cross-arc sample for Q1 is from their best outings, biasing Decay toward zero.",
+      "references": [
+        "aar-stamina-power-and-latek.md"
+      ]
+    },
+    {
+      "item": "HR-rate stability check: the redistribute is mathematically sum-preserving, but the league HR rate post-change is 2.06% — would need to compare to the exact same seed-set under the old additive model to confirm zero drift.",
+      "references": [
+        "aar-stamina-power-and-latek.md"
+      ]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Ship all three parked follow-ups",
+      "decided_by": "owner",
+      "quote": "User: \"fix the follow ups\". All three shipped."
+    }
+  ],
+  "actions": [
+    {
+      "description": "Drift-corrected Decay: _league_baselines() emits league_arc1_k_pct, league_arc3_k_pct, league_decay_drift; _aggregate_pitcher_rows exposes decay_raw and writes decay = decay_raw - league_decay_drift; tooltips updated",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "leaders.html",
+        "player.html",
+        "stats_browse.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Per-appearance Decay + arc-3 reach rate: _pitcher_per_game_decay_map() (one GROUP-BY query against game_pitcher_stats) and _stamp_per_game_decay(rows, drift); new Decay/G and A3% columns on /stats?side=pit&view=all",
+      "artifacts": [
+        "o27v2/web/app.py:301-378",
+        "o27v2/web/templates/stats_browse.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Property + Monte-Carlo tests for power redistribute: seven tests (sum-preservation hard/medium/weak, identity at zero power_dev, directionality, Monte-Carlo HR-rate stability, per-player spread)",
+      "artifacts": [
+        "o27/tests/test_power_redistribute.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Coefficient bug fix caught by directionality test: POWER_REDIST_HARD_D2T dropped from 0.20 to 0.10 so doubles rise net-positive on positive power",
+      "artifacts": [
+        "o27/config.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Decay/G for diagnostic comparison only, not as a primary leader-card metric — too noisy at small sample"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Drift quantified: league_arc1_k_pct = 22.09%, league_arc3_k_pct = 26.31%, league_decay_drift = -4.22 pp",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compute baselines on a fresh sim DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Decay quartile breakdown (drift-corrected) table: e.g. Q1 corrected Decay +3.56, arc3 reach 86.5%; Q4 +2.82, 32.9%",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run the quartile query post-resim",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "HR-rate stability: HR/PA 2.057% → 2.052% (-0.005pp), 2B/PA 6.434% → 6.523% (+0.089pp), 3B/PA 1.244% → 1.218% (-0.026pp); all deltas under the 1.5pp tolerance asserted by the property test",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Compare pre/post resim rate metrics; run the Monte-Carlo test",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Seven tests, all passing (o27/tests/test_power_redistribute.py)",
+      "evidence_cited": "tests",
+      "checkable_against_repo": "yes",
+      "check_method": "python -m pytest o27/tests/test_power_redistribute.py -v",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Smoke test: 13/13 routes return 200, including the new column layout on /stats?side=pit&view=all",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the route smoke test",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [],
+  "residual_risks": [
+    "Decay/G runs noisier than season Decay — by a lot (Q1 Decay/G mean +57.55 vs season +3.56); equal-weighting games over-amplifies small samples. Known characteristic to flag (not a bug)."
+  ],
+  "open_hooks": [
+    "Reading recommendation: Decay for fatigue vs league norm, Decay/G diagnostic only, A3% to know how much the Decay number can be trusted"
+  ],
+  "section_headers_original": [
+    "After-Action Report — Decay follow-ups + power-redistribute property tests",
+    "What was asked for",
+    "What was built",
+    "1. Drift-corrected Decay",
+    "2. Per-appearance Decay + arc-3 reach rate",
+    "3. Property + Monte-Carlo tests for power redistribute",
+    "Verification (post-resim with all changes)",
+    "Drift quantified",
+    "Decay quartile breakdown (drift-corrected)",
+    "HR-rate stability check",
+    "Smoke test",
+    "Files touched",
+    "Known characteristic to flag (not a bug)"
+  ],
+  "unmapped_content": "Header metadata: Branch claude/fix-dark-theme-baseball-terms-7UhIv; predecessor aar-stamina-power-and-latek.md. Interpretation table for drift-corrected Decay (0 = league norm; >0 true fatigue signal; <0 durable arm). arc3_reach_rate is the actual survivor-bias signal: a pitcher with clean Decay = -3 but arc3_reach_rate = 30% has Decay computed from 30% of appearances. Quartile insight: Q1 low-stamina arms post 86.5% reach rate because they're mostly relievers pitching the back of the arc; Q4 workhorses 32.9% because starters get pulled mid-arc — stamina translates to 'can carry a starter workload', not 'completes the arc'. Directionality test detail: at the original D2T = 0.20, single→double gain and double→triple loss cancelled exactly on the doubles row at power_dev=+1; league 2B rate held at 6.52% vs 6.43% prior. Per-render cost note: one query per render, ~18k row GROUP BY. The user's framing (per-appearance Decay would surface the selection bias) holds in spirit — A3% is the cleaner direct surfaced signal, Decay/G the equal-weighted version.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": false,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Date from 'Date completed:' line. No explicit non-actions section."
+}

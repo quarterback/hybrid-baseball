@@ -1,0 +1,396 @@
+{
+  "record_id": "hybrid-baseball--2026-05-08--tiered-league-youth-league-ipl-auction",
+  "source_path": "docs/aar-tiered-league-and-youth-and-auction.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-08",
+  "title": "After-Action Report — Tiered league + Youth league + IPL auction",
+  "scope": "This session built three structural additions to O27 in one branch: 1. A new league structure — 4-tier promotion/relegation (Galactic / Premier / National / Association), 14 teams per tier, 80 games per team. 2. The O27 Youth League — 32 national teams of ages 14–19, auto-attached to every save. 3. An IPL-style auction with Vickrey resolution — runs at season rollover for tiered configs, redistributes every non-keeper player to the highest valuer.",
+  "rationale": [
+    {
+      "item": "The user's first proposal was \"play every adjacent tier\" — that arrangement is mathematically inconsistent with 80 games for everyone; the only configuration that lands at exactly 80 games for all 56 teams with symmetric per-pair counts is paired tiers.",
+      "references": []
+    },
+    {
+      "item": "The Phase 3 youth-sim commit shipped with jokers_available=[] and mgr_joker_aggression=0.0. Reviewer correctly pointed out that this isn't O27. Jokers are structural — README.md:19 lists them as a load-bearing rule of the sport, and README.md:68 describes joker deployment as the reason intentional walks are rare in O27.",
+      "references": [
+        "README.md:19",
+        "README.md:68"
+      ]
+    },
+    {
+      "item": "Why Vickrey: no need to model bidding rounds — a single private bid per player resolves cleanly to a winner; and honest \"second-best willing to pay X\" log entries — with Vickrey the bid isn't gameable, so the numbers are interpretable as actual valuations.",
+      "references": []
+    },
+    {
+      "item": "Mirroring game_batter_stats / game_pitcher_stats for youth would have at least doubled the schema surface for marginal narrative gain. The development engine — which is the substance of the youth feature — does not depend on per-game youth stats.",
+      "references": []
+    },
+    {
+      "item": "Separate youth tables instead of is_youth flags: the Flask app has 50+ queries against teams/players/games; adding a flag would have required threading WHERE is_youth = 0 through every leaderboard; schema differences are real; graduation is a clean schema-to-schema insert.",
+      "references": []
+    },
+    {
+      "item": "Per the user's design ask: youth ratings should work like US college recruiting stars (★ to ★★★★★) and the underlying numbers should stay hidden.",
+      "references": []
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Relegation playoff implemented as a Bernoulli draw rather than real game sim, scoped down per user priority",
+      "decided_by": "joint",
+      "quote": "That's deliberate: the playoff happens at off-season time when the engine isn't running, and the user explicitly said the auction part isn't important right now (so the playoff infrastructure shouldn't be either)."
+    },
+    {
+      "decision": "Talent-blind initial tier draw",
+      "decided_by": "owner",
+      "quote": "The user opted out of stratified talent at seed time, so the inaugural Galactic isn't actually better than Association on day 1."
+    },
+    {
+      "decision": "No rivals mechanic",
+      "decided_by": "agent",
+      "quote": "The user mentioned rivalries in the abstract but didn't ask for them — the schedule doesn't designate any specific cross-tier teams as recurring rivals."
+    },
+    {
+      "decision": "Hide numerical attribute grades behind recruiting stars",
+      "decided_by": "owner",
+      "quote": "Per the user's design ask: youth ratings should work like US college recruiting stars (★ to ★★★★★) and the underlying numbers should stay hidden."
+    },
+    {
+      "decision": "Use a 9-batter lineup for youth instead of padding with pitcher-DHs",
+      "decided_by": "agent",
+      "quote": "Use a 9-batter lineup matching the original O27 README rules (8 fielders + SP, all 9 fielders bat). … This was the path taken."
+    }
+  ],
+  "actions": [
+    {
+      "description": "New tiered 56-team config with schedule_mode tiered, tier_order, tier_schedule_pairs, promotion_relegation block, auction block",
+      "artifacts": [
+        "o27v2/data/league_configs/56teams_tiered.json"
+      ],
+      "kind": "config"
+    },
+    {
+      "description": "New _generate_tiered_pairings() in schedule generation, routed via schedule_mode == \"tiered\" check",
+      "artifacts": [
+        "o27v2/schedule.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "New _assign_tiered_divisions() dealing teams into tiers via random shuffle; seed_league() routes through it; also auto-attaches youth league (attach_youth_league flag)",
+      "artifacts": [
+        "o27v2/league.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "New promotion module: apply_promotion_relegation(config, *, rng_seed, dry_run) computing and applying moves, returning structured report",
+      "artifacts": [
+        "o27v2/promotion.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Standings/new-league UI for tiers (badges, seed numbers, coloured promotion/relegation gutters, Preview/Run P/R buttons), new POST /api/season/promote-relegate, /api/season/advance now calls apply_promotion_relegation",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/web/templates/standings.html",
+        "o27v2/web/templates/new_league.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Youth league module: schema (youth_teams, youth_players, youth_groups, youth_group_membership, youth_games), seeder, advance_youth_year, run_youth_tournament, reset_youth_tournament, get_tournament, read helpers",
+      "artifacts": [
+        "o27v2/youth.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Youth web routes and templates: /youth, /youth/team/<id>, /youth/tournament, POST /api/youth/seed, POST /api/youth/tournament/run",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/web/templates/youth.html",
+        "o27v2/web/templates/youth_team.html",
+        "o27v2/web/templates/youth_tournament.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "IPL-style auction module with Vickrey resolution: schema (auction_keepers, auction_results), _select_keepers, _team_bid, apply_auction, get_auction (~370 lines); /auction route + POST /api/auction/run; auction.html template; nav link",
+      "artifacts": [
+        "o27v2/auction.py",
+        "o27v2/web/app.py",
+        "o27v2/web/templates/auction.html",
+        "o27v2/web/templates/base.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Phase 3: real PA-by-PA engine sim for youth tournament via new youth_sim module, game_youth_batter_stats / game_youth_pitcher_stats tables, /youth/game/<id> box score route + template",
+      "artifacts": [
+        "o27v2/youth_sim.py",
+        "o27v2/youth.py",
+        "o27v2/web/app.py",
+        "o27v2/web/templates/youth_box_score.html",
+        "o27v2/web/templates/youth_tournament.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Phase 4: 28-player youth rosters with jokers, Youth Potential Index governor, sticky recruiting stars, hidden ratings; schema ALTERs (is_joker, joker_archetype, youth_potential_index, recruit_stars); UI reworked to stars + observed stats",
+      "artifacts": [
+        "o27v2/youth.py",
+        "o27v2/youth_sim.py",
+        "o27v2/web/templates/youth.html",
+        "o27v2/web/templates/youth_team.html",
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Untouched: every other config under `data/league_configs/`.",
+    "The MLB-shape `_generate_pairings()` is unchanged — every other config still flows through it.",
+    "30teams config is unchanged — the new code paths are only entered when `schedule_mode == \"tiered\"`.",
+    "No existing config was touched. No existing route was removed or re-shaped. Every code path that pre-dated this branch flows through unchanged when the active config is non-tiered, and the youth league is fully separate-schema.",
+    "The heuristic is kept as a per-game fallback wrapped in try/except so a single engine bug doesn't brick the whole tournament.",
+    "This was the simplest defensible cut for the demo."
+  ],
+  "validation_claims": [
+    {
+      "claim": "2240 games scheduled for 56 teams; every team at exactly 80.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed the 56teams_tiered config and count scheduled games per team",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "364 in-tier games per tier, 392 cross-tier games on each scheduled edge, 0 on the unscheduled P–N edge.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Query games table by tier pairing after seeding",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "12 moves on every dry-run (2 per tier-edge × 3 edges × 2 sides); after apply, every tier still has exactly 14 teams; dry-run does not mutate teams.league",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run apply_promotion_relegation dry_run and apply on a seeded DB and inspect",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "32 teams seeded, 384 youth players total, age range 14..19; one rollover produced 66 graduations → 66 new FAs at 20 → 66 new 14-year-olds backfilled",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Seed and roll over a save; count youth_players and pro FA inserts",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "63 games per tournament: 48 group + 15 knockout. R16 contains exactly 16 distinct teams. One champion.",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run run_youth_tournament and count youth_games rows by round",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "/youth, /youth/team/<id>, /youth/tournament all render.",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Start the app and request the routes",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "168 keepers retained (56 × 3); 2464-player pool → 1736 sold, 728 unsold; top sale ~$594 for grade-70 talent; Vickrey gap visible in the log",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Run apply_auction on the tiered config and inspect auction_results",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "/auction renders all sections; non-tiered config shows the \"tiered-only\" message instead of erroring",
+      "evidence_cited": "render/smoke",
+      "checkable_against_repo": "yes",
+      "check_method": "Request /auction under tiered and non-tiered saves",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "In the calibration sim, jokers produced 1262 PAs across the 63-game tournament",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-run a youth tournament and count joker PAs",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Empirically every team passed the shape audit post-rollover (28 total, 9 pitchers, 3 jokers per team, all three joker archetypes present).",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Audit youth_players counts per team after a rollover",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "A full 63-game tournament runs in ~16.5 seconds (~0.26 s/game) on the reference dev machine.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "yes",
+      "check_method": "Time run_youth_tournament locally",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Final-game scoring of 17–2 in test sims with avg 24.8 R/G is consistent with the pro league's documented 22–26 R/G/T target.",
+      "evidence_cited": "metrics",
+      "checkable_against_repo": "unclear",
+      "check_method": "Re-sim youth games and compare run environment",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Relegation playoff is not a real game sim (win-pct-weighted Bernoulli draw with 0.4–0.6 floor/ceiling)",
+      "reason": "the playoff happens at off-season time when the engine isn't running, and the user explicitly said the auction part isn't important right now",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "No stratified talent at initial tier seed (talent-blind draw)",
+      "reason": "The user opted out of stratified talent at seed time",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "No \"rivals\" mechanic",
+      "reason": "The user mentioned rivalries in the abstract but didn't ask for them",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "No per-PA youth stats (originally heuristic game results only)",
+      "reason": "would have at least doubled the schema surface for marginal narrative gain",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Random group draw, no pots",
+      "reason": "For v1 the random draw is fine — every season produces a different bracket shape, and a pot system is a small follow-up",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "No carry-over performance feedback into youth development",
+      "reason": "This was the simplest defensible cut for the demo",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "No human bidding in the auction",
+      "reason": "This is a sim, not a UI auction room. AI valuations resolve everything.",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "One bid per player per team (no multi-round escalation)",
+      "reason": "The noise term is what produces variance between teams, not back-and-forth bidding",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Keepers chosen by raw overall only",
+      "reason": "The ranked top-N is plenty for the demo",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Geographic / pot-based group draw for the youth tournament",
+      "reason": "Random draw only.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Performance-based youth development bonuses",
+      "reason": "A player who carries a tournament gets the same dev draw as the bench.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Auction visualisation as a live event",
+      "reason": "Currently the report is a static page after the auction runs.",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Dynamic keeper rules per tier",
+      "reason": "A real IPL has different rules per franchise / season; we treat all teams identically. Could be a config knob.",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Known regression: any youth player from a save pre-dating the YPI commit has youth_potential_index = 1.0, so their existing tournament stats reflect full potential rather than YPI-muted potential; retroactive fix requires a re-roll.",
+    "~30% of the auction pool goes unsold (long tail of ~700 replacement-level players) — described as a feature, not a bug.",
+    "Cost of separate youth tables: every read endpoint that wants to show youth data has to query both tables (kept localised to youth.py)."
+  ],
+  "open_hooks": [
+    "The hook in _decide_playoff_match is one function — swap it for a real game sim later if desired.",
+    "Pot-based seeding for youth group draw as a small follow-up.",
+    "Feed tournament line into a _grit_modulator-style multiplier on the dev draw for performance-based youth development.",
+    "Animated bid-by-bid auction replay — the data is all in auction_results.",
+    "Dynamic keeper rules per tier as a config knob."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Tiered league + Youth league + IPL auction",
+    "Part 1 — Tiered 56-team league with promotion/relegation",
+    "Format",
+    "Promotion / relegation rules",
+    "Files / where the work lives",
+    "UI surface",
+    "What got verified",
+    "Trade-offs accepted",
+    "Part 2 — O27 Youth League",
+    "Format",
+    "Auto-attached",
+    "Year-end aging + graduation",
+    "Tournament (Phase 2)",
+    "Files",
+    "What got verified",
+    "Trade-offs accepted",
+    "Part 3 — IPL-style auction with Vickrey resolution",
+    "Format",
+    "Bid valuation",
+    "Why Vickrey",
+    "Files",
+    "What got verified",
+    "Trade-offs accepted",
+    "Architectural decisions that propagated through everything",
+    "Separate tables for the youth league",
+    "The tiered config is a new config, not a fork of the existing schedule logic",
+    "Auction runs on the *teams* schema, not a separate \"auction roster\" schema",
+    "Phase 4 — Youth roster overhaul: jokers, YPI governor, recruiting stars, hidden ratings",
+    "Why this happened",
+    "The Youth Potential Index (YPI)",
+    "Recruiting stars (★ to ★★★★★)",
+    "What the user sees",
+    "Roster shape",
+    "Joker integration",
+    "Schema additions",
+    "Files touched",
+    "Known regression",
+    "Phase 3 — Real game sim for the youth tournament (post-AAR addition)",
+    "Roster shape adaptation",
+    "Manager AI on a roster that has no archetype data",
+    "SP rotation",
+    "Performance",
+    "What's still not done",
+    "Files added / modified"
+  ],
+  "unmapped_content": "Bid valuation formula: base_value = overall × 5; need_multiplier = 1.0 + 0.15 × position_need (capped at 1.5); noise = uniform(0.85, 1.15); max_bid = floor(base × need_mult × noise); purse_cap = max(10, purse_remaining - 10 × (slots_left - 1)); final_bid = min(max_bid, purse_cap). YPI: per-player access factor in [0.22, 0.81] rolled once at creation; stored attributes are TRUE potential; engine multiplies unit-space ratings by YPI; YPI never persists into the pro players table. Recruiting star distribution: 5★ 0.7% (composite ≥ 68), 4★ 9% (≥ 58), 3★ 30% (≥ 48), 2★ 47% (≥ 36), 1★ 13%. AVG ladder by stars: 5★ .333, 4★ .340, 3★ .303, 2★ .273, 1★ .228. Roster shape: 8 starting fielders + 8 backups + 9 pitchers (3 rotation + 6 bullpen) + 3 jokers = 28 per team × 32 nations = 896. Youth SP rotation: ORDER BY starts_so_far ASC, pitcher_skill DESC, id ASC. Phase-3 note that mgr defaults were 0.5/archetype=\"\" and joker decisions short-circuited (superseded by Phase 4). Commits: d6d10ac, 10a2b62, 293153d, 4d187fb; branch claude/new-league-structure-tqk8H. Full NEW/MODIFIED file list in 'Files added / modified'.",
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Long multi-phase AAR covering four phases including a 'post-AAR addition' (Phase 3) and Phase 4 appended after the original report; Phase 4 section appears before Phase 3 in the document. Date taken from 'Date completed: 2026-05-08' header line."
+}
