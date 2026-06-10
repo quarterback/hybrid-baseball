@@ -1,0 +1,210 @@
+{
+  "record_id": "hybrid-baseball--2026-06-07--orphan-nations-name-pollution",
+  "source_path": "docs/aar-orphan-nations-and-name-pollution.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-07",
+  "title": "After-Action Report \u2014 Orphan name pools \u2192 nations, and a league-wide name scrub",
+  "scope": "Promoted 5 orphan name pools to full nations with regions and teams; backfilled female names; extended scrubbing to 2,370 junk tokens across ~90 name buckets",
+  "rationale": [
+    {
+      "item": "Serbian name files existed but there's no Serbia in the game",
+      "references": [
+        "Observation from name pool audit"
+      ]
+    },
+    {
+      "item": "Five curated national name pools were wired to no region and no team",
+      "references": [
+        "Name pool cross-reference audit"
+      ]
+    },
+    {
+      "item": "European/African/Latin buckets riddled with football/basketball club names and sports terms",
+      "references": [
+        "Earlier name-scrub AAR"
+      ]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Promote Serbia, Albania, Estonia, Latvia, Georgia to full nations",
+      "decided_by": "joint",
+      "quote": "Cross-referencing every name bucket against both regions and teams surfaced exactly five buckets with full curated name sets but neither a region nor a team"
+    },
+    {
+      "decision": "Backfill Albanian and Georgian female given names",
+      "decided_by": "owner",
+      "quote": "The user asked for both genders"
+    },
+    {
+      "decision": "Scope scrubbing to remove only clear junk, keep legit diaspora names",
+      "decided_by": "joint",
+      "quote": "Removed: soccer/basketball/MLS/NBA club names, sports terms in many languages, league/federation/sponsor words, and cross-culture place names sitting in the wrong bucket. Kept: legit place-derived given names (Victoria, Paris, Milan, Sofia, Rosario, Wellington)"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Added Serbia, Albania, Estonia, Latvia, Georgia as flat regions in regions.json",
+      "artifacts": [
+        "o27v2/data/names/regions.json"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added 5 new Frontier Cup teams in youth.py for promoted nations",
+      "artifacts": [
+        "o27v2/youth.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Backfilled Albanian female given names (~32 names)",
+      "artifacts": [
+        "o27v2/data/names/female_first.json"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Backfilled Georgian female given names (~32 names)",
+      "artifacts": [
+        "o27v2/data/names/female_first.json"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Scrubbed surnames.json removing 1,167 junk tokens across 55 buckets",
+      "artifacts": [
+        "o27v2/data/names/surnames.json"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Scrubbed male_first.json removing 889 junk tokens across 69 buckets",
+      "artifacts": [
+        "o27v2/data/names/male_first.json"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Scrubbed female_first.json removing 310 junk tokens across 46 buckets",
+      "artifacts": [
+        "o27v2/data/names/female_first.json"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Extended scrub_name_pools.py with 838-token SCRAPED_SPORTS_JUNK guard",
+      "artifacts": [
+        "scripts/scrub_name_pools.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added Iceland with patronymic surname bucket and Frontier team",
+      "artifacts": [
+        "o27v2/data/names/surnames.json",
+        "o27v2/data/names/regions.json",
+        "o27v2/youth.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Subagent cleanup is heuristic across multiple languages; some cross-culture given names may have been incorrectly removed",
+    "Scrubber extension uses exact-token matching only to avoid stripping legitimate names containing junk substrings",
+    "Second pass cleanup was manual and heuristic; some borderline toponyms retained by design"
+  ],
+  "validation_claims": [
+    {
+      "claim": "All three name files + regions.json parse cleanly; no bucket emptied",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "yes",
+      "check_method": "Parse JSON and verify bucket references",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_name_pool_clean.py reports 0 residual junk",
+      "evidence_cited": "scrubber dry-run",
+      "checkable_against_repo": "yes",
+      "check_method": "Run test_name_pool_clean.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "tests/test_name_regions.py: every region resolves, no Player N fallbacks",
+      "evidence_cited": "inline logic execution",
+      "checkable_against_repo": "yes",
+      "check_method": "Run test_name_regions.py",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Five new countries generate coherent male and female names",
+      "evidence_cited": "inline logic execution",
+      "checkable_against_repo": "yes",
+      "check_method": "Spot-check name generation for new nations",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Promote generic blend / fallback pools",
+      "reason": "These are shared/legacy pools, not countries",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Promote austrian, belgian, swiss, kazakh",
+      "reason": "Those countries already exist as teams; regions just draw from shared pool",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    },
+    {
+      "item": "Add Iceland initially",
+      "reason": "Had only given names, no surnames; subsequently added in follow-up",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Process female-only fragment keys",
+      "reason": "Dead data corresponding to countries already in game; out of scope",
+      "category": "out_of_scope",
+      "status": "unknown"
+    },
+    {
+      "item": "Add new nations to presets or international league name-mixes",
+      "reason": "Existing promoted micro-nations (Croatia, Slovenia, Lithuania) also wired this way",
+      "category": "declined_by_owner",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Subagent cleanup heuristic; misfiled cross-culture given names (diaspora footballers) may remain",
+    "Scrubber protection is exact-token only; could miss substring-based junk if future scrapes embed junk within names"
+  ],
+  "open_hooks": [
+    "Second-pass residual place/club surname removal (6 toponyms removed manually post-scrub)",
+    "Extend scrub_name_pools.py with SCRAPED_SPORTS_JUNK guard for forward protection",
+    "Add Iceland with patronymic surname bucket"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Orphan name pools \u2192 nations, and a league-wide name scrub",
+    "TL;DR",
+    "1. Orphan pools \u2192 real nations",
+    "What I deliberately did NOT promote, and why",
+    "2. League-wide name-pool scrub",
+    "Validation",
+    "What I did NOT change (honest caveats)",
+    "Commits"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Comprehensive AAR with clear separation of orphan-pool promotion (design decision) vs league-wide scrubbing (maintenance). Honest about heuristic nature of multi-language cleanup. Follow-ups tracked as commits rather than open items."
+}

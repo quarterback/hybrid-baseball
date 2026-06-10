@@ -1,0 +1,178 @@
+{
+  "record_id": "hybrid-baseball--2026-05-08--live-auction-replay",
+  "source_path": "docs/aar-live-auction-replay.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-05-08",
+  "title": "After-Action Report \u2014 Live Auction Replay (top-50 stage + montage) and Currency Wiring",
+  "scope": "IPL-TV-style replay of off-season auction with top 50 lots receiving stage treatment, remaining lots in montage, with currency system integration",
+  "rationale": [
+    {
+      "item": "User asked for an IPL-TV-style replay experience with animated bidding and dramatic price reveals",
+      "references": [
+        "User request for replay mechanics"
+      ]
+    },
+    {
+      "item": "Live auction page was rendering prices as $504 instead of \u0192504, bypassing the currency system from PR #33",
+      "references": [
+        "Currency system from PR #33, commit b35b611"
+      ]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Stage tier size set to top 50 lots",
+      "decided_by": "joint",
+      "quote": "Tuned for IPL-TV pacing \u2014 50 \u00d7 3.5s \u2248 3 minutes of stage, then ~30 seconds of montage."
+    },
+    {
+      "decision": "Bid sheet depth set to persist top 8 bids per lot",
+      "decided_by": "joint",
+      "quote": "Caps the new table at ~13k rows for a 2500-lot auction; the animation never shows more than ~6 anyway."
+    },
+    {
+      "decision": "Currency must be wired into live page",
+      "decided_by": "owner",
+      "quote": "CAN THIE ACUTION USE THE NE CURRENCY I MADE or not?"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Added lot_order INTEGER column to auction_results",
+      "artifacts": [
+        "o27v2/auction.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added player_overall INTEGER column to auction_results for composite snapshot",
+      "artifacts": [
+        "o27v2/auction.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Created new auction_lot_bids table to store top 8 bids per lot",
+      "artifacts": [
+        "o27v2/db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Implemented get_live_auction() read-side feed function",
+      "artifacts": [
+        "o27v2/auction.py"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Created /auction/live page with Bootstrap two-column layout",
+      "artifacts": [
+        "o27v2/web/templates/auction_live.html"
+      ],
+      "kind": "new"
+    },
+    {
+      "description": "Wired currency system into auction page via JavaScript",
+      "artifacts": [
+        "o27v2/web/templates/auction_live.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added routes GET /auction/live and GET /api/auction/live",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "Currency wiring was implemented second after discovering bypass in first commit",
+    "Vickrey-price reconstruction is brittle and duplicates logic from apply_auction",
+    "Bid-reveal animation caps at 8 rows even when actual auction had more bidders"
+  ],
+  "validation_claims": [
+    {
+      "claim": "Seeded 56-team config with 168 keepers retained, 1736 sold, 2464 lots total",
+      "evidence_cited": "smoke test",
+      "checkable_against_repo": "yes",
+      "check_method": "Re-run with seed 42 on 56teams_tiered config",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Live feed split correctly: 50 stage / 2414 montage",
+      "evidence_cited": "smoke test",
+      "checkable_against_repo": "yes",
+      "check_method": "Check get_live_auction output on test DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Stage star distribution: 2\u00d7 5\u2605 + 48\u00d7 4\u2605",
+      "evidence_cited": "smoke test",
+      "checkable_against_repo": "yes",
+      "check_method": "Verify _player_stars thresholds",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "Auction-magnitude rescale to guilder era",
+      "reason": "Raised post-facto as a design issue; shipped in follow-up commit",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "True-bidder-count surfacing in stage card",
+      "reason": "Requires adding n_bidders column but implementation unclear",
+      "category": "deferred",
+      "status": "unknown"
+    },
+    {
+      "item": "Persist price column on auction_results",
+      "reason": "Currently reconstructed from second_bid; should be pre-computed",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "Vickrey-price reconstruction formula min_bid=10 will become wrong after auction-magnitude rescale",
+    "Skip-to-End recomputes purse rollup instead of using pre-baked field",
+    "Stage card shows only 8 bidders capped from bid sheet even when more existed"
+  ],
+  "open_hooks": [
+    "Rescale auction to guilder-era magnitudes with higher starting purses and min-bid floor",
+    "Add price column to auction_results to eliminate reconstruction logic",
+    "Surface true bidder count in stage card ('8 of 14 bidders shown')",
+    "Add end-screen narrative reels (biggest splurges, steals, biggest underbids, overpay teams)",
+    "Integrate auction coverage into team pages and league front page",
+    "Allow replaying past seasons via /auction/live?season=N query param"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Live Auction Replay (top-50 stage + montage) and Currency Wiring",
+    "What was asked for",
+    "What shipped",
+    "Schema additions (o27v2/auction.py)",
+    "apply_auction updates",
+    "Read-side feed (o27v2/auction.py::get_live_auction)",
+    "/auction/live page (o27v2/web/templates/auction_live.html)",
+    "Currency wiring (auction_live.html)",
+    "Routes (o27v2/web/app.py)",
+    "Static-page entry point (auction.html)",
+    "End-to-end smoke test",
+    "What I'd do differently",
+    "Pointers for follow-up work"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Complete AAR with clear scoping, design decisions, and follow-up tracking. Currency wiring issue discovered mid-build and fixed in second commit."
+}

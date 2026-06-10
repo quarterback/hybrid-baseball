@@ -1,0 +1,190 @@
+{
+  "record_id": "hybrid-baseball--2026-06-07--per-league-playoffs-postseason-stats",
+  "source_path": "docs/aar-per-league-playoffs-and-postseason-stats.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-10",
+  "genre_confidence": "high",
+  "date": "2026-06-07",
+  "title": "After-Action Report \u2014 Per-League Playoffs, Configurable Format & Separate Postseason Stats",
+  "scope": "Rewrote playoff engine for per-league brackets, configurable series lengths, and separate postseason stats tracking with live UI controls",
+  "rationale": [
+    {
+      "item": "Playoff model was fundamentally broken: unclear what postseason was, no per-league structure",
+      "references": [
+        "User feedback"
+      ]
+    },
+    {
+      "item": "AL and NL were thrown into one pool with no WS between league champions",
+      "references": [
+        "Old model analysis"
+      ]
+    },
+    {
+      "item": "Series lengths were hardcoded and not configurable",
+      "references": [
+        "Old model analysis"
+      ]
+    }
+  ],
+  "delegation_events": [
+    {
+      "decision": "Per-league brackets as primary model; cross-league WS only for 2-league saves",
+      "decided_by": "joint",
+      "quote": "Each league crowns its own champion. Leagues are nationally independent \u2014 a club in one league never meets a club in another during a bracket. Only when a single save holds exactly two leagues (the AL/NL case) do the two champions then play a World Series"
+    },
+    {
+      "decision": "Default series ladder 3/5/7/7 (Wild Card/Division/League Championship/World Series)",
+      "decided_by": "joint",
+      "quote": "Each selectable from {3, 5, 7, 9}"
+    },
+    {
+      "decision": "Playoff stats tracked separately, never double-counted",
+      "decided_by": "owner",
+      "quote": "Regular-season / career / leaderboard numbers exclude playoff games; postseason gets its own tab and page"
+    }
+  ],
+  "actions": [
+    {
+      "description": "Rewrote o27v2/playoffs.py with per-league bracket engine",
+      "artifacts": [
+        "o27v2/playoffs.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added league and series_kind columns to playoff_series table",
+      "artifacts": [
+        "o27v2/db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Fixed champion tracking in season_archive.py to use postseason champion",
+      "artifacts": [
+        "o27v2/season_archive.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Implemented playoff settings persistence in /playoffs/settings route",
+      "artifacts": [
+        "o27v2/web/app.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Added is_playoff flag to game_batter_stats and game_pitcher_stats",
+      "artifacts": [
+        "o27v2/db.py"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Updated ~51 query sites to filter out playoff games for regular-season stats",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/season_archive.py",
+        "o27v2/analytics/"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Created Postseason tab on player card for playoff-only stats",
+      "artifacts": [
+        "o27v2/web/templates/player.html"
+      ],
+      "kind": "modified"
+    },
+    {
+      "description": "Created /postseason/stats dedicated postseason leaderboard page",
+      "artifacts": [
+        "o27v2/web/app.py",
+        "o27v2/web/templates/stats_browse.html"
+      ],
+      "kind": "new"
+    }
+  ],
+  "risk_posture": [
+    "Deliberately left in-season roster modeling unfiltered; operates on raw stat tables during regular season only",
+    "Stat invariants 5 and 8 re-scoped to regular-season-only games"
+  ],
+  "validation_claims": [
+    {
+      "claim": "End-to-end on 8-team save: AL and NL each ran 4-team series, World Series winner crowned",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "no",
+      "check_method": "Run 8teams config full season then drain bracket",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Configurable format: /playoffs/settings POST persisted custom ladder",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "no",
+      "check_method": "Set teams_per_league=6 and 5/7/9/9 ladder, verify reflection",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Bracket seeding correct for fields 2-8",
+      "evidence_cited": "unit check",
+      "checkable_against_repo": "yes",
+      "check_method": "Verify standard seed order and bye placement",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Stat invariants: 9/9 pass on played-out save",
+      "evidence_cited": "manual verification",
+      "checkable_against_repo": "no",
+      "check_method": "Run invariant harness on test DB",
+      "verified": "not_checked"
+    },
+    {
+      "claim": "Test suite: 255 passed, 1 skipped, 1 failed (pre-existing)",
+      "evidence_cited": "pytest",
+      "checkable_against_repo": "yes",
+      "check_method": "Run pytest o27/tests o27v2/tests",
+      "verified": "not_checked"
+    }
+  ],
+  "non_actions": [
+    {
+      "item": "In-season roster modeling scoped to regular season",
+      "reason": "Runs during regular season when no playoff rows exist yet",
+      "category": "deferred",
+      "status": "unknown"
+    }
+  ],
+  "residual_risks": [
+    "3+ co-equal leagues with bracket enabled crown independent champions with no overall champion",
+    "Postseason leaderboard thresholds are minimal (\u22651 PA/\u22651 out) due to tiny postseason samples",
+    "Two pre-existing test failures remain (test_managers.py, test_trades.py) unrelated to this work"
+  ],
+  "open_hooks": [
+    "Scope in-season roster modeling (development.py, trades.py, injuries.py, rotation.py, bench.py) to regular season"
+  ],
+  "section_headers_original": [
+    "After-Action Report \u2014 Per-League Playoffs, Configurable Format & Separate Postseason Stats",
+    "What was asked for",
+    "What the old model did (and why it felt broken)",
+    "What was built",
+    "1. Per-league bracket engine (o27v2/playoffs.py, rewritten)",
+    "2. Schema (o27v2/db.py)",
+    "3. Champion fix (o27v2/season_archive.py)",
+    "4. Web \u2014 /playoffs (app.py + playoffs.html)",
+    "5. Postseason stats \u2014 separate, never double-counted",
+    "6. Stat invariants scoped to the regular season",
+    "Verification",
+    "What was deliberately left alone",
+    "Honest limits / follow-ups"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": true,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Comprehensive overhaul of playoff system with clear design decisions confirmed with user. Stat filtering touch was broad (~51 sites) and mechanical, addressed via shared helpers. Pre-existing test failures noted as out of scope."
+}
