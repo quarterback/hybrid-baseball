@@ -52,6 +52,63 @@ app = Flask(__name__, template_folder="templates")
 app.config["SECRET_KEY"] = "o27v2-dev-key"
 
 
+@app.route("/export/leaders.json")
+def export_leaders_json():
+    """Computed advanced-stat leaders (wOBA, OPS+, FIP, K%/BB%, …) — the
+    same rollups /leaders renders. For the vroomtv hub, which would
+    otherwise have to re-derive these against the raw per-game tables."""
+    if request.args.get("token") and \
+            request.args.get("token") != os.environ.get("EXPORT_TOKEN", ""):
+        abort(404)
+    games_played = db.fetchone(
+        "SELECT COUNT(*) as n FROM games WHERE played = 1")["n"]
+    if games_played == 0:
+        return jsonify({"batting": [], "pitching": []})
+    num_teams = db.fetchone("SELECT COUNT(*) as n FROM teams")["n"] or 2
+    games_per_team = max(1, (games_played * 2) // num_teams)
+    min_pa = max(3, games_per_team)
+    min_outs = max(3, games_per_team)
+    baselines = _league_baselines()
+
+    batting = db.fetchall(
+        """SELECT p.name as player_name, t.abbrev as team_abbrev,
+                  COUNT(DISTINCT bs.game_id) as g,
+                  SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                  SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                  SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                  SUM(bs.bb) as bb, SUM(bs.k) as k,
+                  COALESCE(SUM(bs.hbp),0) as hbp, COALESCE(SUM(bs.sb),0) as sb,
+                  COALESCE(SUM(bs.cs),0)  as cs,  COALESCE(SUM(bs.stays),0) as stays
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0)=0) bs
+           JOIN players p ON bs.player_id = p.id
+           JOIN teams   t ON bs.team_id = t.id
+           GROUP BY p.id HAVING SUM(bs.pa) >= ?""", (min_pa,))
+    _aggregate_batter_rows(batting, baselines=baselines)
+    batting = sorted(batting, key=lambda r: -r.get("woba", 0))[:25]
+
+    pitching = db.fetchall(
+        """SELECT pl.name as player_name, t.abbrev as team_abbrev,
+                  COUNT(DISTINCT ps.game_id) as g,
+                  SUM(ps.outs_recorded) as outs, SUM(ps.hits_allowed) as h,
+                  SUM(ps.runs_allowed) as r, SUM(ps.er) as er,
+                  SUM(ps.bb) as bb, SUM(ps.k) as k, SUM(ps.hr_allowed) as hr,
+                  SUM(ps.batters_faced) as bf
+           FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0)=0) ps
+           JOIN players pl ON ps.player_id = pl.id
+           JOIN teams   t  ON ps.team_id   = t.id
+           GROUP BY pl.id HAVING SUM(ps.outs_recorded) >= ?""", (min_outs,))
+    for r in pitching:
+        outs = r.get("outs") or 0
+        r["ip"] = outs / 3
+        r["era"] = (r["er"] * 27.0 / outs) if outs else 0
+        r["k9"] = (r["k"] * 27.0 / outs) if outs else 0
+        r["bb9"] = (r["bb"] * 27.0 / outs) if outs else 0
+        r["whip"] = ((r["bb"] + r["h"]) * 3 / outs) if outs else 0
+    pitching = sorted(pitching, key=lambda r: r.get("era", 99))[:25]
+    return jsonify({"batting": batting, "pitching": pitching,
+                    "min_pa": min_pa, "min_outs": min_outs})
+
+
 @app.route("/export/db")
 def export_db():
     """Stream a consistent snapshot of the active save's DB.
@@ -76,6 +133,19 @@ def export_db():
     src_path = saves.active_db_path()
     if not src_path or not os.path.exists(src_path):
         abort(404)
+    # Cheap change detection so the hub can skip unchanged downloads: the
+    # fingerprint covers the DB and its WAL sidecar (writes land there
+    # first under WAL mode).
+    parts = []
+    for p in (src_path, src_path + "-wal"):
+        try:
+            st = os.stat(p)
+            parts.append(f"{st.st_mtime_ns}-{st.st_size}")
+        except OSError:
+            parts.append("0")
+    etag = '"' + ".".join(parts) + '"'
+    if request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
     fd, snap_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
@@ -92,8 +162,10 @@ def export_db():
             pass
         return resp
 
-    return send_file(snap_path, mimetype="application/x-sqlite3",
+    resp = send_file(snap_path, mimetype="application/x-sqlite3",
                      as_attachment=True, download_name="o27v2.db")
+    resp.headers["ETag"] = etag
+    return resp
 
 from o27.almanac.blueprint import almanac_bp
 app.register_blueprint(almanac_bp)
