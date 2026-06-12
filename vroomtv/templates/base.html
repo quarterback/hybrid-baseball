@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}The Unassociated Press Sports Wire{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="masthead">
+  <span class="masthead-flag">The <em>Unassociated</em> Press</span>
+  <hr class="masthead-rule">
+  <span class="masthead-tagline">Sports Wire &mdash; All the Results Fit to Transmit</span>
+</header>
+<div class="edition-bar">
+  <div>{{ wire_date }}</div>
+  <nav>
+    <a href="{{ url_for('index') }}"{% if request.endpoint == 'index' %} class="active"{% endif %}>Scores</a>
+    <a href="{{ url_for('standings') }}"{% if request.endpoint == 'standings' %} class="active"{% endif %}>Standings</a>
+    <a href="{{ url_for('leaders') }}"{% if request.endpoint == 'leaders' %} class="active"{% endif %}>Leaders</a>
+  </nav>
+  <div>Evening Wire Edition</div>
+</div>
+<div class="page">
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

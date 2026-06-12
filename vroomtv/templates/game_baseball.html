@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ game.away_abbrev }} @ {{ game.home_abbrev }} — Box Score{% endblock %}
+{% block content %}
+<div class="dispatch-header">
+  <div class="dispatch-dateline">From Our Diamond Correspondent &mdash; {{ game.game_date }}{% if game.is_playoff %} &bull; Playoff{% endif %}</div>
+  <div class="dispatch-headline">{{ game.away_name }} at {{ game.home_name }}</div>
+  <div class="dispatch-linescore">
+    {{ game.away_abbrev }} {{ game.away_score }}
+    <span class="final">Final</span>
+    {{ game.home_abbrev }} {{ game.home_score }}
+  </div>
+</div>
+{% set home_id = game.home_team_id %}
+{% set away_id = game.away_team_id %}
+{% for label, team_id in [(game.away_name, away_id), (game.home_name, home_id)] %}
+  {% set side_batters = batters | selectattr('team_id', 'equalto', team_id) | list %}
+  {% if side_batters %}
+  <div class="box-section">
+    <h3>{{ label }} &mdash; Batting</h3>
+    <table class="box-table">
+      <thead><tr><th>Player</th><th>Pos</th><th>AB</th><th>R</th><th>H</th><th>2B</th><th>3B</th><th>HR</th><th>RBI</th><th>BB</th><th>K</th></tr></thead>
+      <tbody>
+      {% for b in side_batters %}
+        <tr><td>{{ b.player_name }}</td><td>{{ b.game_position or '&mdash;' }}</td><td>{{ b.ab }}</td><td>{{ b.runs }}</td><td>{{ b.hits }}</td><td>{{ b.doubles }}</td><td>{{ b.triples }}</td><td>{{ b.hr }}</td><td>{{ b.rbi }}</td><td>{{ b.bb }}</td><td>{{ b.k }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+{% endfor %}
+{% for label, team_id in [(game.away_name, away_id), (game.home_name, home_id)] %}
+  {% set side_pitchers = pitchers | selectattr('team_id', 'equalto', team_id) | list %}
+  {% if side_pitchers %}
+  <div class="box-section">
+    <h3>{{ label }} &mdash; Pitching</h3>
+    <table class="box-table">
+      <thead><tr><th>Player</th><th>BF</th><th>Outs</th><th>H</th><th>R</th><th>ER</th><th>BB</th><th>K</th><th>HR</th></tr></thead>
+      <tbody>
+      {% for p in side_pitchers %}
+        <tr><td>{{ p.player_name }}</td><td>{{ p.batters_faced }}</td><td>{{ p.outs_recorded }}</td><td>{{ p.hits_allowed }}</td><td>{{ p.runs_allowed }}</td><td>{{ p.er }}</td><td>{{ p.bb }}</td><td>{{ p.k }}</td><td>{{ p.hr_allowed }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+{% endfor %}
+{% if pbp %}
+<div class="box-section">
+  <h3>Play by Play</h3>
+  <div class="pbp-block">{{ pbp }}</div>
+</div>
+{% endif %}
+<div class="mt1"><a href="{{ url_for('index') }}">&larr; Back to Scores</a></div>
+{% endblock %}
