@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if source == 'gtt' %}{{ home_name }} vs. {{ away_name }}{% else %}{{ home }} vs. {{ away }}{% endif %} — Match Card
+{% endblock %}
+{% block content %}
+<div class="dispatch-header">
+  <div class="dispatch-dateline">
+    From Our Court Correspondent &mdash;
+    {% if source == 'gtt' %}{{ league_name }}, Week {{ week }}
+    {% else %}{{ division | upper }} {{ gender | title }}, Week {{ week }}{% endif %}
+  </div>
+  <div class="dispatch-headline">
+    {% if source == 'gtt' %}{{ away_name }} at {{ home_name }}
+    {% else %}{{ away }} at {{ home }}{% endif %}
+  </div>
+  <div class="dispatch-linescore">
+    {% if source == 'gtt' %}{{ away_abbrev }} {{ away_points }} <span class="final">Final</span> {{ home_abbrev }} {{ home_points }}
+    {% else %}{{ away }} {{ away_points }} <span class="final">Final</span> {{ home }} {{ home_points }}{% endif %}
+  </div>
+</div>
+{% if lines %}
+<div class="box-section">
+  <h3>Match Lines</h3>
+  <div class="tennis-lines">
+  {% for line in lines %}
+    {% set line_num = loop.index %}
+    <div class="tennis-line-row">
+      <span class="line-type">{{ 'Doubles ' ~ line_num if line_num <= 3 else 'Singles ' ~ (line_num - 3) }}</span>
+      <span class="line-players">
+        {% if line.get('home_players') %}{{ line.home_players | join(' / ') }} <span class="ink-light">vs.</span> {{ line.away_players | join(' / ') }}
+        {% elif line.get('home_player') %}{{ line.home_player }} <span class="ink-light">vs.</span> {{ line.away_player }}
+        {% else %}<span class="ink-light">&mdash;</span>{% endif %}
+      </span>
+      <span class="line-score">{% if line.get('score') %}{{ line.score }}{% elif line.get('scoreline') %}{{ line.scoreline }}{% else %}&mdash;{% endif %}</span>
+      <span class="line-winner">
+        {% if line.get('winner') == 'home' %}Home W{% elif line.get('winner') == 'away' %}Away W{% elif line.get('winner') is not none %}W{% endif %}
+      </span>
+    </div>
+  {% endfor %}
+  </div>
+</div>
+{% else %}
+  <div class="wire-notice mt1">Detailed line-by-line data not available for this dual</div>
+{% endif %}
+<div class="mt1"><a href="{{ url_for('index') }}">&larr; Back to Scores</a></div>
+{% endblock %}

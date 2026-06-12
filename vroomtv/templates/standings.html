@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Standings — The U.A.P. Sports Wire{% endblock %}
+{% block content %}
+<div class="dept-head mt1"><h2>Standings as of Press Time</h2></div>
+<hr class="broad-rule heavy">
+
+<div class="leaders-section">
+  <h2>⚾ &nbsp;Diamond Standings</h2>
+  {% if not baseball_standings %}
+    <div class="wire-notice">No data — BASEBALL_DB not configured or no games played</div>
+  {% else %}
+    <div class="leaders-cols">
+    {% set seen = namespace(divs=[]) %}
+    {% for t in baseball_standings %}
+      {% if (t.league ~ '/' ~ t.division) not in seen.divs %}{% set _ = seen.divs.append(t.league ~ '/' ~ t.division) %}{% endif %}
+    {% endfor %}
+    {% for div_key in seen.divs %}
+      {% set lg_name = div_key.split('/')[0] %}
+      {% set div_name = div_key.split('/')[1] %}
+      <div class="standings-block">
+        <h3>{{ lg_name }} &mdash; {{ div_name }}</h3>
+        <table class="standings-table">
+          <thead><tr><th>Club</th><th>W</th><th>L</th><th>Pct</th></tr></thead>
+          <tbody>
+          {% for t in baseball_standings if t.league == lg_name and t.division == div_name %}
+            {% set pct = (t.wins / (t.wins + t.losses)) if (t.wins + t.losses) > 0 else 0 %}
+            <tr>
+              <td>{{ t.abbrev }} &nbsp;<span class="ink-light">{{ t.name }}</span></td>
+              <td>{{ t.wins }}</td><td>{{ t.losses }}</td>
+              <td>.{{ '%03d'|format((pct * 1000)|int) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<hr class="broad-rule heavy">
+<div class="leaders-section">
+  <h2>🏉 &nbsp;Viperball Pro Standings</h2>
+  {% if not viperball_standings %}
+    <div class="wire-notice">No data — VIPERBALL_DB not configured or no games played</div>
+  {% else %}
+    <div class="leaders-cols">
+    {% for lg in viperball_standings %}
+      <div class="standings-block">
+        <h3>{{ lg.league }}</h3>
+        <table class="standings-table">
+          <thead><tr><th>Club</th><th>W</th><th>L</th><th>T</th><th>Streak</th></tr></thead>
+          <tbody>
+          {% for t in lg.teams %}
+            <tr>
+              <td>{{ t.team_name }}</td><td>{{ t.wins }}</td><td>{{ t.losses }}</td><td>{{ t.ties }}</td>
+              <td>{% if t.streak %}<span class="{% if t.streak_type == 'W' %}red{% else %}ink-light{% endif %}">{{ t.streak_type }}{{ t.streak }}</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<hr class="broad-rule heavy">
+<div class="leaders-section">
+  <h2>🎾 &nbsp;Court Standings</h2>
+  {% if not tennis_standings %}
+    <div class="wire-notice">No data — TENNIS_DB not configured or no matches played</div>
+  {% else %}
+    <div class="leaders-cols">
+    {% for lg in tennis_standings %}
+      <div class="standings-block">
+        <h3>{{ lg.league }}</h3>
+        <table class="standings-table">
+          <thead><tr><th>Club</th><th>W</th><th>L</th><th>Pct</th></tr></thead>
+          <tbody>
+          {% for t in lg.teams %}
+            {% set pct = (t.wins / (t.wins + t.losses)) if (t.wins + t.losses) > 0 else 0 %}
+            <tr>
+              <td>{{ t.name }}</td><td>{{ t.wins }}</td><td>{{ t.losses }}</td>
+              <td>.{{ '%03d'|format((pct * 1000)|int) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

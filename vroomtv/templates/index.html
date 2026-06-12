@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Scores — The U.A.P. Sports Wire{% endblock %}
+{% block content %}
+<div class="dept-head mt1"><h2>Latest Results from the Wire</h2></div>
+<div class="wire-grid">
+
+  <div class="wire-col">
+    <div class="sport-head">
+      <span class="sport-icon">⚾</span>
+      <h3>Diamond Dispatches</h3>
+      <span class="sport-subhead">O27 Baseball League</span>
+    </div>
+    {% if not baseball_configured %}
+      <div class="wire-notice">No wire feed configured<br>Set BASEBALL_DB</div>
+    {% elif not baseball_scores %}
+      <div class="wire-notice">No results on the wire</div>
+    {% else %}
+      {% for g in baseball_scores %}
+      <div class="score-card{% if g.is_playoff %} playoff{% endif %}">
+        <div class="score-dispatch">
+          <span class="score-teams"><span class="away">{{ g.away_abbrev }}</span><span class="sep">@</span><span class="home">{{ g.home_abbrev }}</span></span>
+          <span class="score-result">
+            {% if g.away_score > g.home_score %}<span class="winner">{{ g.away_score }}</span>&ndash;{{ g.home_score }}
+            {% else %}{{ g.away_score }}&ndash;<span class="winner">{{ g.home_score }}</span>{% endif %}
+          </span>
+        </div>
+        <div class="score-meta">
+          {{ g.away_name }} at {{ g.home_name }} &nbsp;&bull;&nbsp;
+          <a href="{{ url_for('game_baseball', game_id=g.id) }}">Box Score &rsaquo;</a>
+          {% if g.is_playoff %}&nbsp;&bull;&nbsp;<em>Playoff</em>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div class="wire-col">
+    <div class="sport-head">
+      <span class="sport-icon">🏉</span>
+      <h3>Viperball Bureau</h3>
+      <span class="sport-subhead">Pro League Reports</span>
+    </div>
+    {% if not viperball_configured %}
+      <div class="wire-notice">No wire feed configured<br>Set VIPERBALL_DB</div>
+    {% elif not viperball_scores %}
+      <div class="wire-notice">No results on the wire</div>
+    {% else %}
+      {% set current_league = namespace(name='') %}
+      {% for g in viperball_scores %}
+        {% if g.league != current_league.name %}
+          {% if not loop.first %}<hr class="broad-rule">{% endif %}
+          <div class="score-meta small-caps" style="margin-bottom:0.3rem;">{{ g.league }} &mdash; Wk.{{ g.week }}</div>
+          {% set current_league.name = g.league %}
+        {% endif %}
+        <div class="score-card">
+          <div class="score-dispatch">
+            <span class="score-teams"><span class="away">{{ g.away_name[:12] }}</span><span class="sep">@</span><span class="home">{{ g.home_name[:12] }}</span></span>
+            <span class="score-result">
+              {% if g.away_score > g.home_score %}<span class="winner">{{ g.away_score }}</span>&ndash;{{ g.home_score }}
+              {% else %}{{ g.away_score }}&ndash;<span class="winner">{{ g.home_score }}</span>{% endif %}
+            </span>
+          </div>
+          <div class="score-meta"><a href="{{ url_for('game_viperball', save_key=g.save_key, week=g.week, matchup_key=g.matchup_key) }}">Game Report &rsaquo;</a></div>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div class="wire-col">
+    <div class="sport-head">
+      <span class="sport-icon">🎾</span>
+      <h3>Court Correspondents</h3>
+      <span class="sport-subhead">GTT &amp; NCAA Reports</span>
+    </div>
+    {% if not tennis_configured %}
+      <div class="wire-notice">No wire feed configured<br>Set TENNIS_DB</div>
+    {% elif not tennis_scores %}
+      <div class="wire-notice">No results on the wire</div>
+    {% else %}
+      {% set current_league = namespace(name='') %}
+      {% for g in tennis_scores %}
+        {% if g.league != current_league.name %}
+          {% if not loop.first %}<hr class="broad-rule">{% endif %}
+          <div class="score-meta small-caps" style="margin-bottom:0.3rem;">{{ g.league }}</div>
+          {% set current_league.name = g.league %}
+        {% endif %}
+        <div class="score-card">
+          <div class="score-dispatch">
+            <span class="score-teams">
+              <span class="away">{{ g.away_abbrev if g.away_abbrev else g.away_name[:14] }}</span>
+              <span class="sep">@</span>
+              <span class="home">{{ g.home_abbrev if g.home_abbrev else g.home_name[:14] }}</span>
+            </span>
+            <span class="score-result">
+              {% if g.away_points > g.home_points %}<span class="winner">{{ g.away_points }}</span>&ndash;{{ g.home_points }}
+              {% else %}{{ g.away_points }}&ndash;<span class="winner">{{ g.home_points }}</span>{% endif %}
+            </span>
+          </div>
+          <div class="score-meta">
+            {{ g.home_name[:20] }} vs. {{ g.away_name[:20] }} &nbsp;&bull;&nbsp;
+            <a href="{{ url_for('game_tennis', source=g.source, dual_id=g.id) }}">Match Card &rsaquo;</a>
+          </div>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
