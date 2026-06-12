@@ -51,6 +51,48 @@ import datetime as _dt
 app = Flask(__name__, template_folder="templates")
 app.config["SECRET_KEY"] = "o27v2-dev-key"
 
+
+@app.route("/export/db")
+def export_db():
+    """Stream a consistent snapshot of the active save's DB.
+
+    Token-protected feed for the cross-sport hub (quarterback/vroomtv),
+    which mirrors scores/standings/news from this sim. Responds 404 (not
+    403) unless EXPORT_TOKEN is configured and matched, so the route is
+    invisible on instances that haven't opted in.
+    """
+    import sqlite3
+    import tempfile
+    from flask import after_this_request, send_file
+    from o27v2 import saves
+
+    token = os.environ.get("EXPORT_TOKEN")
+    supplied = request.headers.get("Authorization", "").removeprefix("Bearer ").strip() \
+        or request.args.get("token", "")
+    if not token or supplied != token:
+        abort(404)
+    src_path = saves.active_db_path()
+    if not src_path or not os.path.exists(src_path):
+        abort(404)
+    fd, snap_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
+    dst = sqlite3.connect(snap_path)
+    src.backup(dst)  # consistent even mid-write (WAL-safe)
+    dst.close()
+    src.close()
+
+    @after_this_request
+    def _cleanup(resp):
+        try:
+            os.unlink(snap_path)
+        except OSError:
+            pass
+        return resp
+
+    return send_file(snap_path, mimetype="application/x-sqlite3",
+                     as_attachment=True, download_name="o27v2.db")
+
 from o27.almanac.blueprint import almanac_bp
 app.register_blueprint(almanac_bp)
 
