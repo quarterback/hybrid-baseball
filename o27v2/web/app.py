@@ -66,10 +66,12 @@ def export_db():
     from flask import after_this_request, send_file
     from o27v2 import saves
 
+    # Open by default — this data is already public on the site itself.
+    # Setting EXPORT_TOKEN locks the route to requests carrying it.
     token = os.environ.get("EXPORT_TOKEN")
     supplied = request.headers.get("Authorization", "").removeprefix("Bearer ").strip() \
         or request.args.get("token", "")
-    if not token or supplied != token:
+    if token and supplied != token:
         abort(404)
     src_path = saves.active_db_path()
     if not src_path or not os.path.exists(src_path):
