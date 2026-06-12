@@ -76,6 +76,19 @@ def export_db():
     src_path = saves.active_db_path()
     if not src_path or not os.path.exists(src_path):
         abort(404)
+    # Cheap change detection so the hub can skip unchanged downloads: the
+    # fingerprint covers the DB and its WAL sidecar (writes land there
+    # first under WAL mode).
+    parts = []
+    for p in (src_path, src_path + "-wal"):
+        try:
+            st = os.stat(p)
+            parts.append(f"{st.st_mtime_ns}-{st.st_size}")
+        except OSError:
+            parts.append("0")
+    etag = '"' + ".".join(parts) + '"'
+    if request.headers.get("If-None-Match") == etag:
+        return Response(status=304)
     fd, snap_path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     src = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
@@ -92,8 +105,10 @@ def export_db():
             pass
         return resp
 
-    return send_file(snap_path, mimetype="application/x-sqlite3",
+    resp = send_file(snap_path, mimetype="application/x-sqlite3",
                      as_attachment=True, download_name="o27v2.db")
+    resp.headers["ETag"] = etag
+    return resp
 
 from o27.almanac.blueprint import almanac_bp
 app.register_blueprint(almanac_bp)
