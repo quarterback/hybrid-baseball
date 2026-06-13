@@ -23,7 +23,7 @@ from . import config, manifest, pipeline, sources
 
 
 def _mode() -> str:
-    return (os.environ.get("O27AUDIO_AUTOGEN", "roundup") or "").strip().lower()
+    return (os.environ.get("O27AUDIO_AUTOGEN", "off") or "").strip().lower()
 
 
 def _interval() -> int:

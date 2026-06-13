@@ -147,3 +147,23 @@ def delete_clip(kind: str, ref_id: str) -> None:
             "DELETE FROM audio_clips WHERE kind = ? AND ref_id = ?",
             (kind, ref_id),
         )
+
+
+def purge_all() -> int:
+    """Delete every generated clip (files + manifest rows). Returns count deleted."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT kind, ref_id, wav_path, mp3_path FROM audio_clips"
+        ).fetchall()
+    deleted = 0
+    for row in rows:
+        for p in (row["wav_path"], row["mp3_path"]):
+            if p:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        deleted += 1
+    with _conn() as c:
+        c.execute("DELETE FROM audio_clips")
+    return deleted

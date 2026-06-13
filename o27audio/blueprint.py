@@ -208,6 +208,15 @@ def roundup_player():
         initial=row["status"] if row else "none", cta="Generate roundup")
 
 
+# --- Admin -------------------------------------------------------------------
+
+@audio_bp.post("/admin/purge")
+def admin_purge():
+    """Delete all generated audio clips (files + manifest rows)."""
+    n = manifest.purge_all()
+    return jsonify({"deleted": n})
+
+
 # --- House style / lexicon editor -----------------------------------------
 
 @audio_bp.route("/style", methods=["GET", "POST"])
