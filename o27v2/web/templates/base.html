@@ -1247,7 +1247,7 @@
       {% set ep = request.endpoint %}
       {% set g_games   = ['index', 'gazette.view', 'audio.roundup_player', 'standings', 'schedule', 'playoffs_view'] %}
       {% set g_players = ['players', 'player_detail', 'teams', 'team_detail', 'compare', 'free_agents'] %}
-      {% set g_stats   = ['leaders', 'streaks_and_records', 'team_stats', 'stats_browse', 'analytics', 'distributions', 'o27i_home', 'o27i_leaders', 'player_o27i', 'o27i_advanced', 'glossary'] %}
+      {% set g_stats   = ['leaders', 'streaks_and_records', 'team_stats', 'stats_browse', 'analytics', 'distributions', 'postseason_stats', 'o27i_home', 'o27i_leaders', 'player_o27i', 'o27i_advanced', 'glossary'] %}
       {% set g_league  = ['league', 'transactions', 'auction_view', 'auction_live', 'youth_view', 'youth_team_view', 'youth_tournament_view', 'pro_worldcup_view', 'pro_worldcup_team_view', 'college_view', 'college_program_view', 'college_player_view', 'college_postseason_view', 'college_leaders_view', 'college_game_view', 'college_draft_view', 'college_import_view', 'college_prospects', 'economy_view', 'financials_view'] %}
       {% set g_history = ['seasons_index', 'season_detail', 'season_archive', 'hall_of_fame', 'hof_candidates', 'hof_settings'] %}
       {% set g_manage  = ['engine_settings', 'benchmarks', 'saves_index', 'new_league_get', 'new_league_post', 'universe_new_get', 'universe_new_post'] %}
@@ -1262,7 +1262,6 @@
             <li><a class="dropdown-item {% if ep == 'standings' %}active{% endif %}" href="{{ url_for('standings') }}">Standings</a></li>
             <li><a class="dropdown-item {% if ep == 'schedule' %}active{% endif %}" href="{{ url_for('schedule') }}">Schedule</a></li>
             <li><a class="dropdown-item {% if ep == 'playoffs_view' %}active{% endif %}" href="{{ url_for('playoffs_view') }}">Playoffs</a></li>
-            <li><a class="dropdown-item {% if ep == 'postseason_stats' %}active{% endif %}" href="{{ url_for('postseason_stats') }}">Postseason Stats</a></li>
           </ul>
         </li>
 
@@ -1280,6 +1279,7 @@
           <a class="nav-link dropdown-toggle {% if ep in g_stats %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Stats</a>
           <ul class="dropdown-menu">
             <li><a class="dropdown-item {% if ep == 'leaders' %}active{% endif %}" href="{{ url_for('leaders') }}">Leaders</a></li>
+            <li><a class="dropdown-item {% if ep == 'postseason_stats' %}active{% endif %}" href="{{ url_for('postseason_stats') }}">Postseason Stats</a></li>
             <li><a class="dropdown-item {% if ep == 'streaks_and_records' %}active{% endif %}" href="{{ url_for('streaks_and_records') }}">Streaks &amp; Records</a></li>
             <li><a class="dropdown-item {% if ep == 'team_stats' %}active{% endif %}" href="{{ url_for('team_stats') }}">Team Stats</a></li>
             <li><a class="dropdown-item {% if ep == 'stats_browse' %}active{% endif %}" href="{{ url_for('stats_browse') }}">Stat Browser</a></li>

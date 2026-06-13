@@ -170,6 +170,42 @@ def init_college_schema() -> None:
                 _SCHEMA_BATTER_STATS, _SCHEMA_PITCHER_STATS,
                 _SCHEMA_REPORTS, _SCHEMA_META):
         db.execute(sql)
+    # Migration: persist the name-gender preference per season so the
+    # annual rollover stops drifting every new freshman class back to
+    # "mixed" (the historical hardcoded default). Existing seasons are
+    # backfilled from the world/pro config they were created under, which
+    # recovers the gender the league was actually seeded with.
+    cols = [r["name"] for r in db.fetchall("PRAGMA table_info(college_meta)")]
+    if "gender" not in cols:
+        db.execute("ALTER TABLE college_meta ADD COLUMN gender TEXT")
+        db.execute("UPDATE college_meta SET gender = ? WHERE gender IS NULL",
+                   (_world_gender(),))
+
+
+def _world_gender() -> str:
+    """The active world/pro league's name gender ('male'|'female'|'mixed'),
+    used as the fallback when a college season has no stored preference.
+    The college tier inherits the pro gender at creation, so this recovers
+    the original selection for saves made before it was persisted."""
+    try:
+        from o27v2.season_archive import get_active_league_meta
+        from o27v2.league import get_config
+        _seed, cfg_id = get_active_league_meta()
+        if cfg_id:
+            g = (get_config(cfg_id) or {}).get("gender", "")
+            if (g or "").lower() in ("male", "female", "mixed"):
+                return g.lower()
+    except Exception:
+        pass
+    return "mixed"
+
+
+def _college_gender(season: int) -> str:
+    """Stored name-gender preference for a college season, falling back to
+    the world gender (then 'mixed') when unset/invalid."""
+    row = db.fetchone("SELECT gender FROM college_meta WHERE season = ?", (season,))
+    g = ((row or {}).get("gender") or "").lower() if row else ""
+    return g if g in ("male", "female", "mixed") else _world_gender()
 
 
 # ---------------------------------------------------------------------------
@@ -497,8 +533,9 @@ def seed_college_league(season: int, rng_seed: int = 0,
             n_players += 1
 
     db.execute(
-        "INSERT OR REPLACE INTO college_meta (season, phase) VALUES (?, 'regular')",
-        (season,),
+        "INSERT OR REPLACE INTO college_meta (season, phase, gender) "
+        "VALUES (?, 'regular', ?)",
+        (season, gender),
     )
     return {"created_programs": n_programs,
             "created_players":  n_players,
@@ -1240,8 +1277,9 @@ def run_abstract_season(season: int, *, rng_seed: int = 0,
         )
 
     db.execute(
-        "INSERT OR REPLACE INTO college_meta (season, phase) VALUES (?, ?)",
-        (season, "regular"),
+        "INSERT INTO college_meta (season, phase, gender) VALUES (?, ?, ?) "
+        "ON CONFLICT(season) DO UPDATE SET phase = excluded.phase",
+        (season, "regular", _college_gender(season)),
     )
 
     result = {
@@ -1872,8 +1910,9 @@ def run_postseason(season: int, rng_seed: int = 0) -> dict:
     cws_winner = _sim_double_elim_bracket(season, "cws", 0, sr_winners, rng)
 
     db.execute(
-        "INSERT OR REPLACE INTO college_meta (season, phase) VALUES (?, 'complete')",
-        (season,),
+        "INSERT INTO college_meta (season, phase, gender) VALUES (?, 'complete', ?) "
+        "ON CONFLICT(season) DO UPDATE SET phase = excluded.phase",
+        (season, _college_gender(season)),
     )
     return {"champion_program_id": cws_winner,
             "regional_winners": regional_winners,
@@ -2034,12 +2073,13 @@ def annual_rollover(season: int, next_season: int, rng_seed: int = 0) -> dict:
     # to replace the graduated seniors. ~6 fresh freshmen per program
     # (mirrors the original seeding distribution where 25% of the 23-man
     # roster was seniors).
-    # Name picker: matches the initial-seeding default in
-    # generate_college_roster — US-region, mixed gender. Without this
-    # the rollover was passing no `name=` to generate_college_player,
-    # which defaults to "", producing nameless freshmen.
+    # Name picker: honor the league's stored gender preference (recovered
+    # from the world/pro config for legacy saves) rather than the old
+    # hardcoded "mixed", which made every new freshman class drift back to
+    # mixed-gender regardless of what the league was seeded with.
     from o27v2.league import make_name_picker
-    name_picker = make_name_picker(rng, gender="mixed",
+    gender = _college_gender(season)
+    name_picker = make_name_picker(rng, gender=gender,
                                    region_weights={"us": 1.0})
     progs = db.fetchall("SELECT id, short_name FROM college_programs "
                         "WHERE season = ?", (season,))
@@ -2068,8 +2108,9 @@ def annual_rollover(season: int, next_season: int, rng_seed: int = 0) -> dict:
             _insert_player(new_prog_id, p)
 
     db.execute(
-        "INSERT OR REPLACE INTO college_meta (season, phase) VALUES (?, 'regular')",
-        (next_season,),
+        "INSERT OR REPLACE INTO college_meta (season, phase, gender) "
+        "VALUES (?, 'regular', ?)",
+        (next_season, gender),
     )
     return {"next_season": next_season,
             "programs_carried": len(progs)}
