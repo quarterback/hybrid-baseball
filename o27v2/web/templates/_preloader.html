@@ -195,27 +195,94 @@
     return label + ' ' + new Array(dots).join('.');
   }
 
-  var steps = [
-    { t: 120,  html: span('head', 'SUPER INNINGS &mdash; O27 SIMULATION SYSTEM') + EOL },
-    { t: 90,   html: span('dim', '(C) 2026 Parachute Commons.  All bases reserved.') + EOL + EOL },
-    { t: 260,  html: 'BIOS v2.7 ' + span('dim', 'sidearm/submarine arch') + ' ... ' + span('ok', 'OK') + EOL },
-    { t: 220,  html: 'Detecting baseball variant ......... ' + span('amber', 'O27') + EOL },
-    { kind: 'mem' },
-    { t: 200,  html: 'Initializing sim kernel ........... [ ' + span('ok', 'OK') + ' ]' + EOL + EOL },
-    { t: 160,  html: span('dim', 'Loading engine modules:') + EOL },
-    { t: 110,  html: '  ' + leader('plate_appearance.sys', 26) + ' ' + span('ok', 'OK') + EOL },
-    { t: 95,   html: '  ' + leader('baserunning.sys', 26) + ' ' + span('ok', 'OK') + EOL },
-    { t: 95,   html: '  ' + leader('stay_mechanic.drv', 26) + ' ' + span('ok', 'OK') + EOL },
-    { t: 95,   html: '  ' + leader('joker_cooldown.drv', 26) + ' ' + span('ok', 'OK') + EOL },
-    { t: 95,   html: '  ' + leader('park_geometry.dat', 26) + ' ' + span('ok', 'OK') + EOL },
-    { t: 95,   html: '  ' + leader('weather.dat', 26) + ' ' + span('ok', 'OK') + EOL },
-    { t: 110,  html: '  ' + leader('nautical_crew.sys', 26) + ' ' + span('ok', 'OK') + EOL + EOL },
-    { kind: 'bar', label: 'Seeding rosters' },
-    { t: 220,  html: 'Calibrating run environment ....... ' + span('amber', '5.1 R/G') + EOL },
-    { t: 220,  html: 'Mounting league database .......... ' + span('amber', 'o27v2.db') + EOL + EOL },
-    { t: 320,  html: span('dim', '27 outs per side. No innings. Play ball.') + EOL + EOL },
-    { t: 240,  html: span('head', 'READY.') + EOL },
+  /* Pick a random boot theme — cycles through 4 distinct flavours. */
+  var _seed = Date.now();
+  var _theme = _seed % 4;
+
+  var ALL_STEPS = [
+    /* 0 — Classic DOS / BIOS */
+    [
+      { t: 120,  html: span('head', 'SUPER INNINGS &mdash; O27 SIMULATION SYSTEM') + EOL },
+      { t: 90,   html: span('dim', '(C) 2026 Parachute Commons.  All bases reserved.') + EOL + EOL },
+      { t: 260,  html: 'BIOS v2.7 ' + span('dim', 'sidearm/submarine arch') + ' ... ' + span('ok', 'OK') + EOL },
+      { t: 220,  html: 'Detecting baseball variant ......... ' + span('amber', 'O27') + EOL },
+      { kind: 'mem' },
+      { t: 200,  html: 'Initializing sim kernel ........... [ ' + span('ok', 'OK') + ' ]' + EOL + EOL },
+      { t: 160,  html: span('dim', 'Loading engine modules:') + EOL },
+      { t: 110,  html: '  ' + leader('plate_appearance.sys', 26) + ' ' + span('ok', 'OK') + EOL },
+      { t: 95,   html: '  ' + leader('baserunning.sys', 26) + ' ' + span('ok', 'OK') + EOL },
+      { t: 95,   html: '  ' + leader('stay_mechanic.drv', 26) + ' ' + span('ok', 'OK') + EOL },
+      { t: 95,   html: '  ' + leader('joker_cooldown.drv', 26) + ' ' + span('ok', 'OK') + EOL },
+      { t: 95,   html: '  ' + leader('park_geometry.dat', 26) + ' ' + span('ok', 'OK') + EOL },
+      { t: 95,   html: '  ' + leader('weather.dat', 26) + ' ' + span('ok', 'OK') + EOL },
+      { t: 110,  html: '  ' + leader('nautical_crew.sys', 26) + ' ' + span('ok', 'OK') + EOL + EOL },
+      { kind: 'bar', label: 'Seeding rosters' },
+      { t: 220,  html: 'Calibrating run environment ....... ' + span('amber', '5.1 R/G') + EOL },
+      { t: 220,  html: 'Mounting league database .......... ' + span('amber', 'o27v2.db') + EOL + EOL },
+      { t: 320,  html: span('dim', '27 outs per side. No innings. Play ball.') + EOL + EOL },
+      { t: 240,  html: span('head', 'READY.') + EOL },
+    ],
+    /* 1 — Broadcast / TV control room */
+    [
+      { t: 100,  html: span('head', 'O27 BROADCAST CONTROL  &bull;  SUPER INNINGS NETWORK') + EOL },
+      { t: 80,   html: span('dim', 'Production feed  &mdash;  uplink 12-GHz / sat-7') + EOL + EOL },
+      { t: 240,  html: 'Handshaking uplink ................ ' + span('ok', 'LOCKED') + EOL },
+      { t: 200,  html: 'Sync timecode ..................... ' + span('amber', '00:00:00;00') + EOL },
+      { t: 180,  html: 'Chroma key bus .................... ' + span('ok', 'GREEN') + EOL },
+      { t: 160,  html: 'Audio matrix ...................... ' + span('ok', 'CLEAR') + EOL + EOL },
+      { kind: 'bar', label: 'Loading box-score fonts  ' },
+      { t: 160,  html: span('dim', 'Routing graphics:') + EOL },
+      { t: 110,  html: '  ' + leader('scoreboard.gfx', 26) + ' ' + span('ok', 'LIVE') + EOL },
+      { t: 95,   html: '  ' + leader('lower_third.gfx', 26) + ' ' + span('ok', 'LIVE') + EOL },
+      { t: 95,   html: '  ' + leader('stat_ticker.gfx', 26) + ' ' + span('ok', 'LIVE') + EOL },
+      { t: 95,   html: '  ' + leader('replay_deck.gfx', 26) + ' ' + span('ok', 'LIVE') + EOL + EOL },
+      { t: 260,  html: 'Confirming umpire crew ............ ' + span('amber', '4 assigned') + EOL },
+      { t: 220,  html: 'First pitch in .................... ' + span('amber', 'moments') + EOL + EOL },
+      { t: 320,  html: span('dim', 'You\'re on in 3... 2... 1...') + EOL + EOL },
+      { t: 240,  html: span('head', 'WE\'RE LIVE.') + EOL },
+    ],
+    /* 2 — Sabermetrics / stats mainframe */
+    [
+      { t: 100,  html: span('head', 'O27 ANALYTICS ENGINE  v4.2  [PARACHUTE COMMONS]') + EOL },
+      { t: 80,   html: span('dim', 'Advanced statistics runtime  &mdash;  27-out variant') + EOL + EOL },
+      { t: 240,  html: 'Connecting to league DB ........... ' + span('ok', 'OK') + EOL },
+      { t: 180,  html: 'Reading season schema ............. ' + span('ok', 'OK') + EOL },
+      { kind: 'mem' },
+      { t: 160,  html: span('dim', 'Compiling stat modules:') + EOL },
+      { t: 110,  html: '  ' + leader('wOBA.stat', 26) + ' ' + span('ok', 'READY') + EOL },
+      { t: 95,   html: '  ' + leader('FIP.stat', 26) + ' ' + span('ok', 'READY') + EOL },
+      { t: 95,   html: '  ' + leader('xFIP.stat', 26) + ' ' + span('ok', 'READY') + EOL },
+      { t: 95,   html: '  ' + leader('OPS_plus.stat', 26) + ' ' + span('ok', 'READY') + EOL },
+      { t: 95,   html: '  ' + leader('o27i.stat', 26) + ' ' + span('ok', 'READY') + EOL },
+      { t: 95,   html: '  ' + leader('spray_chart.render', 26) + ' ' + span('ok', 'READY') + EOL + EOL },
+      { kind: 'bar', label: 'Regressing to the mean  ' },
+      { t: 220,  html: 'League run environment ............ ' + span('amber', '5.1 R/G') + EOL },
+      { t: 220,  html: 'Pythagorean exponent .............. ' + span('amber', '1.83') + EOL + EOL },
+      { t: 320,  html: span('dim', 'Sample size is everything. Good luck.') + EOL + EOL },
+      { t: 240,  html: span('head', 'ANALYSIS READY.') + EOL },
+    ],
+    /* 3 — Scouting / front office terminal */
+    [
+      { t: 100,  html: span('head', 'SUPER INNINGS  &bull;  FRONT OFFICE TERMINAL') + EOL },
+      { t: 80,   html: span('dim', 'Scouting &amp; roster management subsystem  &mdash;  O27 League') + EOL + EOL },
+      { t: 240,  html: 'Auth: front office credentials .... ' + span('ok', 'ACCEPTED') + EOL },
+      { t: 200,  html: 'Loading trade deadline rules ...... ' + span('ok', 'OK') + EOL },
+      { t: 180,  html: 'Syncing minor-league affiliates ... ' + span('ok', 'OK') + EOL },
+      { kind: 'bar', label: 'Pulling scouting reports  ' },
+      { t: 160,  html: span('dim', 'Evaluating prospects:') + EOL },
+      { t: 110,  html: '  ' + leader('bat_speed.eval', 26) + ' ' + span('ok', 'GRADED') + EOL },
+      { t: 95,   html: '  ' + leader('pitch_mix.eval', 26) + ' ' + span('ok', 'GRADED') + EOL },
+      { t: 95,   html: '  ' + leader('run_tool.eval', 26) + ' ' + span('ok', 'GRADED') + EOL },
+      { t: 95,   html: '  ' + leader('plate_disc.eval', 26) + ' ' + span('ok', 'GRADED') + EOL },
+      { t: 95,   html: '  ' + leader('makeup.eval', 26) + ' ' + span('amber', 'INTANGIBLE') + EOL + EOL },
+      { t: 220,  html: 'International bonus pool .......... ' + span('amber', 'allocated') + EOL },
+      { t: 220,  html: 'Waiver wire priority .............. ' + span('amber', 'computed') + EOL + EOL },
+      { t: 320,  html: span('dim', 'The best ability is availability.') + EOL + EOL },
+      { t: 240,  html: span('head', 'FRONT OFFICE OPEN.') + EOL },
+    ],
   ];
+
+  var steps = ALL_STEPS[_theme];
 
   /* a persistent cursor element appended after every paint */
   function repaintCursor() {

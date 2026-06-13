@@ -15,6 +15,7 @@ Usage:
     python o27v2/manage.py configs              — list available league configs
     python o27v2/manage.py tune [SEASON_GAMES]  — sim a full season, verify Phase 9 targets
     python o27v2/manage.py dbmaint [--dry-run] [--keep-current-season]  — prune play-by-play blobs, checkpoint WAL + VACUUM to reclaim /data space
+    python o27v2/manage.py audio-purge  — delete all generated audio clips (files + manifest rows)
 
 CONFIG_ID defaults to '30teams'.  Valid values: 8teams 12teams 16teams 24teams 30teams 36teams
 """
@@ -493,6 +494,13 @@ def cmd_dbmaint(dry_run: bool = False, keep_current_season: bool = False):
               f"(freed {_mb(total_before - total_after)}) across {len(paths)} DB(s).")
 
 
+def cmd_audio_purge():
+    """Delete every generated audio clip from the manifest and filesystem."""
+    from o27audio import manifest as _manifest
+    n = _manifest.purge_all()
+    print(f"Purged {n} audio clip(s).")
+
+
 def cmd_runserver(config_id: str = "30teams"):
     from o27v2.web.app import app
     from o27v2 import saves
@@ -550,9 +558,9 @@ def cmd_runserver(config_id: str = "30teams"):
     else:
         print(f"Existing league found ({existing['n']} teams) — skipping seed.")
 
-    # o27audio auto-generate worker — narrates new game-days automatically.
-    # Enabled by default in cheap "roundup" mode; O27AUDIO_AUTOGEN=off disables,
-    # =full also narrates the day's top game. Only runs when actually serving.
+    # o27audio auto-generate worker — off by default; set O27AUDIO_AUTOGEN=roundup
+    # (or =full) to enable automatic narration after each sim batch. Only runs
+    # when actually serving.
     try:
         from o27audio.worker import start as _start_audio_autogen
         if _start_audio_autogen():
@@ -605,6 +613,8 @@ def main():
         rest = args[1:]
         cmd_dbmaint(dry_run="--dry-run" in rest,
                     keep_current_season="--keep-current-season" in rest)
+    elif args[0] == "audio-purge":
+        cmd_audio_purge()
     else:
         print(__doc__)
         sys.exit(1)
