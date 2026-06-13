@@ -335,6 +335,9 @@ class SpellRecord:
     sb_allowed: int = 0   # successful stolen bases against this pitcher
     cs_caught:  int = 0   # caught-stealing outs while this pitcher was on
     fo_induced: int = 0   # foul-outs (3-foul rule) ending an AB on this pitcher
+    balks:          int = 0   # pitcher's balks called this spell
+    catchers_balks: int = 0   # catcher's balks called this spell
+    ci_allowed:     int = 0   # catcher's interference calls this spell
     # Walk-Back: PAs where this pitcher faced a hitter with a Walk-Back
     # runner pending on 3B (Manfred-runner analog). wb_runs is the subset
     # of those PAs where the Walk-Back runner scored. Used by the
@@ -633,6 +636,9 @@ class GameState:
     pitcher_sb_allowed_this_spell: int = 0  # stolen bases against current spell
     pitcher_cs_caught_this_spell: int = 0   # CS outs while current spell on mound
     pitcher_fo_induced_this_spell: int = 0  # foul-outs in current spell
+    pitcher_balks_this_spell:         int = 0
+    pitcher_catchers_balk_this_spell: int = 0
+    pitcher_ci_this_spell:            int = 0
     pitcher_errors_this_spell: int = 0      # defensive errors during current spell
                                             # (post-error runs in the spell charge UER)
     # Walk-Back: rule-placed-runner PAs this pitcher has faced this spell,

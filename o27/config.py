@@ -955,6 +955,37 @@ PP_PITCH_ARM_MIN: float    = 0.55 # AND a position player with at least this arm
 WILD_PITCH_PROB: float = 0.015  # per pitch with runners on base (tuned: 0.02→0.015, reduces cheap-run ties)
 
 # ---------------------------------------------------------------------------
+# Semi-rare rule probabilities
+# ---------------------------------------------------------------------------
+
+# Pitcher's balk: illegal motion with runners on base. All runners advance 1B.
+# Fires per pitch when runners are on. Tuned for ~1 per team per 4-5 seasons.
+BALK_PROB_PER_PITCH: float = 0.00015
+
+# Catcher's balk: illegal pre-pitch catcher positioning or timing.
+# Penalty: automatic ball (walk if count reaches 4 balls). Rarer than pitcher's balk.
+CATCHERS_BALK_PROB_PER_PITCH: float = 0.00008
+
+# Catcher's interference: catcher's mitt contacts the bat during a swing.
+# Fires on swinging_strike or contact outcomes. Batter awarded 1B.
+CATCHER_INTERFERENCE_PROB: float = 0.00035
+
+# Dropped third strike: catcher drops strike 3 with 1B unoccupied.
+# Pitcher retains the K; batter races to 1B.
+DROPPED_THIRD_STRIKE_BASE_PROB: float = 0.038
+DROPPED_THIRD_STRIKE_OUT_AT_FIRST: float = 0.72  # fraction thrown out at 1B
+
+# Defensive indifference: fielding team doesn't contest a stolen base.
+# Fires when deep in the half AND run differential is large.
+# Scored as DI — no SB or CS credited.
+DI_MIN_OUTS: int = 20
+DI_RUN_DIFF_THRESHOLD: int = 6
+
+# Fielder's obstruction: fielder blocks the base path on a thrown-out runner.
+# Runner is ruled safe; charged as a defensive error.
+FIELDER_OBSTRUCTION_PROB: float = 0.004
+
+# ---------------------------------------------------------------------------
 # Player attribute defaults (used as dataclass field defaults in state.py)
 # ---------------------------------------------------------------------------
 # These are the fallback values when a player is created without explicit attrs.

@@ -17,9 +17,13 @@ Supported event types (§4.3):
                              "outcome": dict from fielding.py
 
   Baserunning events:
-    stolen_base_attempt  — requires "base_idx": 0|1|2
-    pickoff_attempt      — requires "base_idx": 0|1|2, "success": bool
-    balk
+    stolen_base_attempt      — requires "base_idx": 0|1|2
+    pickoff_attempt          — requires "base_idx": 0|1|2, "success": bool
+    balk                     — pitcher's balk; all runners advance 1B
+    catchers_balk            — catcher's illegal pre-pitch action; automatic ball
+    catcher_interference     — catcher contacts bat; batter awarded 1B
+    dropped_third_strike     — catcher drops K; requires "safe": bool
+    defensive_indifference   — stolen base not contested; requires "base_idx": 0|1|2
 
   Manager events (call manager.py helpers instead for full enforcement):
     joker_insertion  — requires "joker": Player, "lineup_position": int
@@ -608,11 +612,66 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         return log
 
     if etype == "balk":
+        state.pitcher_balks_this_spell += 1
         new_bases, runs = wild_pitch_advance(state.bases)
         state.bases = new_bases
         log.append("  Balk — runners advance one base.")
         if runs:
             log += _score_run(state, runs)
+        return log
+
+    if etype == "catchers_balk":
+        state.pitcher_catchers_balk_this_spell += 1
+        state.count.balls += 1
+        log.append(f"  Catcher's balk — automatic ball. Count: {state.count}.")
+        if state.count.balls >= 4:
+            log += _walk(state)
+        return log
+
+    if etype == "catcher_interference":
+        batter = state.current_batter
+        log.append(f"  Catcher's interference — {batter.name} awarded 1B.")
+        state.pitcher_ci_this_spell += 1
+        state.bases, runs, adv_log = _force_advance_for_walk(state.bases, batter.player_id)
+        log += adv_log
+        if runs:
+            log += _score_run(state, runs)
+        log += _end_at_bat(state)
+        return log
+
+    if etype == "dropped_third_strike":
+        safe = event.get("safe", False)
+        batter = state.current_batter
+        batter_id = batter.player_id
+        log.append(f"  Strike 3 — dropped by the catcher! {batter.name} races to first.")
+        state.pitcher_k_this_spell += 1
+        state.pitcher_k_arc_this_spell[_arc_index(state.pa_start_outs)] += 1
+        state.pitcher_k_tto_this_spell[_tto_bucket(state)] += 1
+        if safe:
+            log.append(f"  {batter.name} beats the throw — SAFE at 1B!")
+            state.bases[0] = batter_id
+            state.pitcher_unearned_runs_this_spell += 0  # batter reaching on DTS is not an error per se
+        else:
+            log.append(f"  Thrown out at 1B.")
+            log += _record_out(state, batter_id)
+        log += _end_at_bat(state)
+        return log
+
+    if etype == "defensive_indifference":
+        base_idx = event["base_idx"]
+        runner_id = state.bases[base_idx]
+        if runner_id is None:
+            log.append("  Defensive indifference — no runner to advance.")
+            return log
+        state.bases[base_idx] = None
+        dest_names = ["2B", "3B", "Home"]
+        if base_idx + 1 <= 2:
+            state.bases[base_idx + 1] = runner_id
+            log.append(f"  Defensive indifference — runner takes {dest_names[base_idx]} "
+                       f"(no contest, no SB credited).")
+        else:
+            log += _score_run(state)
+            log.append(f"  Defensive indifference — runner scores from 3B unchallenged.")
         return log
 
     # ------------------------------------------------------------------
@@ -815,6 +874,10 @@ def _resolve_contact(
         state.fielding_team.shift_hits_lost += 1
         log.append("  Shift exposed — ground ball through the vacated side. "
                    "(Batter beat the alignment.)")
+
+    if outcome.get("fielder_obstruction"):
+        log.append("  Fielder's obstruction — runner ruled safe on appeal.")
+        state.pitcher_errors_this_spell += 1
 
     # PRD §2.6: stay does not apply to home runs — batter must run.
     # fielding.py emits hit_type "hr" for home runs.

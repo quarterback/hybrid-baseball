@@ -11,6 +11,9 @@ primary_region = "ams"
   # O27V2_DB_PATH here — that pins a single fixed DB and bypasses the saves
   # registry. The startup migration adopts any legacy /data/o27v2.db as "Save 1".
   O27V2_SAVES_DIR = "/data/saves"
+  # Number of gunicorn workers per machine. performance-2x has 2 dedicated
+  # vCPUs; 2 workers keeps CPU-bound sim requests from starving page loads.
+  GUNICORN_WORKERS = "2"
 
 [[mounts]]
   source = "o27v2_data"
@@ -19,12 +22,21 @@ primary_region = "ams"
 [http_service]
   internal_port = 8080
   force_https = true
-  # Single-machine setup: keep the one machine running instead of cycling it on idle.
-  # auto_stop with min=0 was causing fly to stop+start the machine on every idle
-  # window, which shows up in the dashboard as "restarting too much".
   auto_stop_machines = false
   auto_start_machines = true
-  min_machines_running = 1
+  # Two machines for load distribution. IMPORTANT: each machine mounts its
+  # own Fly volume — SQLite state is NOT shared between machines. Use
+  # sticky_sessions so every browser client is pinned to one machine for
+  # the duration of their session; this prevents a user from seeing
+  # inconsistent data across machines. If you need true shared state across
+  # machines, migrate to LiteFS (fly.io/docs/litefs) or PostgreSQL.
+  min_machines_running = 2
+  [http_service.concurrency]
+    type = "requests"
+    # soft_limit triggers back-pressure (Fly routes new connections elsewhere);
+    # hard_limit starts rejecting. Sized for 2 gunicorn workers × some queuing.
+    soft_limit = 20
+    hard_limit = 30
 
   [[http_service.checks]]
     grace_period = "15s"
@@ -35,11 +47,9 @@ primary_region = "ams"
     timeout = "5s"
 
 [[vm]]
-  # performance-1x is a DEDICATED vCPU (no burst throttling). The Leaders/Scores
-  # pages do ~2.4s of CPU-bound aggregation per render; on the shared/burstable
-  # tiers that throttled out to 30-50s under any concurrency. Dedicated CPU keeps
-  # the base compute honest; the in-memory result cache (app.py) removes the
-  # recompute entirely on cache hits. Reversible — drop back to shared-cpu-2x if
-  # the cache alone proves enough.
-  size = "performance-1x"
-  memory = "2048mb"
+  # performance-2x: 2 dedicated vCPUs + 4 GB RAM. Two CPUs let gunicorn run
+  # 2 workers truly in parallel — one can serve page loads while the other
+  # runs a CPU-bound sim batch without stalling the site. The extra RAM
+  # keeps the in-memory result cache (app.py) from getting evicted under load.
+  size = "performance-2x"
+  memory = "4096mb"

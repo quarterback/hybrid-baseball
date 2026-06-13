@@ -386,6 +386,9 @@ def pitching_change(
             sb_allowed=state.pitcher_sb_allowed_this_spell,
             cs_caught=state.pitcher_cs_caught_this_spell,
             fo_induced=state.pitcher_fo_induced_this_spell,
+            balks=state.pitcher_balks_this_spell,
+            catchers_balks=state.pitcher_catchers_balk_this_spell,
+            ci_allowed=state.pitcher_ci_this_spell,
             er_arc=list(state.pitcher_er_arc_this_spell),
             k_arc=list(state.pitcher_k_arc_this_spell),
             fo_arc=list(state.pitcher_fo_arc_this_spell),
@@ -419,6 +422,9 @@ def pitching_change(
     state.pitcher_sb_allowed_this_spell = 0
     state.pitcher_cs_caught_this_spell = 0
     state.pitcher_fo_induced_this_spell = 0
+    state.pitcher_balks_this_spell = 0
+    state.pitcher_catchers_balk_this_spell = 0
+    state.pitcher_ci_this_spell = 0
     state.pitcher_errors_this_spell = 0
     state.pitcher_er_arc_this_spell = [0, 0, 0]
     state.pitcher_k_arc_this_spell  = [0, 0, 0]
