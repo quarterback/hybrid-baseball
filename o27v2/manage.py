@@ -573,7 +573,29 @@ def cmd_runserver(config_id: str = "30teams"):
     print(f"  Dashboard:  http://localhost:{port}/")
     print(f"  Standings:  http://localhost:{port}/standings")
     print(f"  Teams:      http://localhost:{port}/teams")
-    app.run(host="0.0.0.0", port=port, debug=False)
+
+    # Production: use gunicorn for multi-worker concurrency so CPU-bound sim
+    # work on one worker doesn't block page loads on another. Worker count
+    # defaults to 2 (one per dedicated CPU on performance-2x); override with
+    # GUNICORN_WORKERS env var. Falls back to Flask dev server if gunicorn
+    # isn't installed (local dev without pip install gunicorn).
+    try:
+        import gunicorn.app.wsgiapp as _wsgi
+        workers = int(os.environ.get("GUNICORN_WORKERS", "2"))
+        print(f"  Server:     gunicorn ({workers} workers)")
+        sys.argv = [
+            "gunicorn",
+            f"--workers={workers}",
+            f"--bind=0.0.0.0:{port}",
+            "--timeout=120",       # sim batches can run long
+            "--access-logfile=-",  # stdout so fly logs capture it
+            "--error-logfile=-",
+            "o27v2.web.app:app",
+        ]
+        _wsgi.run()
+    except ImportError:
+        print("  Server:     flask dev (install gunicorn for production)")
+        app.run(host="0.0.0.0", port=port, debug=False)
 
 
 def main():

@@ -2263,6 +2263,14 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     p_throws = (getattr(pitcher, "throws", "") or "") if pitcher else ""
     p_stuff  = float(getattr(pitcher, "pitcher_skill", 0.5) or 0.5) if pitcher else 0.5
 
+    # Pitcher's balk: with runners on, rare illegal motion; all runners advance.
+    if state.runners_on_base and rng.random() < cfg.BALK_PROB_PER_PITCH:
+        return {"type": "balk"}
+
+    # Catcher's balk: illegal pre-pitch catcher action; automatic ball in count.
+    if rng.random() < cfg.CATCHERS_BALK_PROB_PER_PITCH:
+        return {"type": "catchers_balk"}
+
     # Pickoff attempt: only meaningful with a runner on 1B (idx=0) or 2B.
     # 3B pickoffs do exist but are rare; we ignore them.
     for base_idx in (0, 1):
@@ -2360,6 +2368,17 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
         speed = _get_speed(pid, state)
         if speed < speed_thresh:
             continue
+        # Defensive indifference: if the fielding team is so far ahead/behind this
+        # deep in the half, they wave off the throw. Scored as DI — no SB/CS credit.
+        bat = state.batting_team
+        fld = state.fielding_team
+        bat_score = state.score.get(bat.team_id, 0)
+        fld_score = state.score.get(fld.team_id, 0)
+        run_diff = abs(bat_score - fld_score)
+        if (state.outs >= cfg.DI_MIN_OUTS
+                and run_diff >= cfg.DI_RUN_DIFF_THRESHOLD
+                and rng.random() < attempt_prob):
+            return {"type": "defensive_indifference", "base_idx": base_idx}
         if rng.random() < attempt_prob:
             # Probability of success: speed + tired-battery + catcher-arm aware.
             pitcher = state.get_current_pitcher()
@@ -2825,6 +2844,21 @@ class ProbabilisticProvider:
             if outcome in ("contact", "swinging_strike"):
                 state.hit_and_run_active = False
 
+        # Catcher's interference: on a swing, rarely the catcher's mitt contacts
+        # the bat. Batter awarded 1B regardless of the swing outcome.
+        if outcome in ("swinging_strike", "contact"):
+            if rng.random() < cfg.CATCHER_INTERFERENCE_PROB:
+                return {"type": "catcher_interference"}
+
+        # Dropped third strike: on a would-be third swinging strike, catcher
+        # occasionally drops the ball. Batter races to 1B if it's unoccupied.
+        if (outcome == "swinging_strike"
+                and state.count.strikes == 2
+                and state.bases[0] is None):
+            if rng.random() < cfg.DROPPED_THIRD_STRIKE_BASE_PROB:
+                safe = rng.random() >= cfg.DROPPED_THIRD_STRIKE_OUT_AT_FIRST
+                return {"type": "dropped_third_strike", "safe": safe}
+
         if outcome != "contact":
             return {"type": outcome, "pitch_type": sel_pitch}
 
@@ -3162,6 +3196,14 @@ class ProbabilisticProvider:
             outcome_dict["runner_out_idx"] = None
             outcome_dict["extra_runner_outs"] = []
             outcome_dict["toa_runner_idxs"] = []
+
+        # Fielder's obstruction: on a play where a runner would be thrown out,
+        # rarely the fielder blocks the base path and the runner is called safe.
+        if outcome_dict.get("runner_out_idx") is not None:
+            if rng.random() < cfg.FIELDER_OBSTRUCTION_PROB:
+                outcome_dict = dict(outcome_dict)
+                outcome_dict["runner_out_idx"] = None
+                outcome_dict["fielder_obstruction"] = True
 
         return {
             "type": "ball_in_play",
