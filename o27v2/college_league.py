@@ -579,13 +579,34 @@ def rename_synthetic_names(rng_seed: int = 0) -> dict:
     import re
     from o27v2.league import make_name_picker
     init_college_schema()
-    rng = random.Random((rng_seed or 0) ^ 0x5CED01)
-    name_picker = make_name_picker(rng, gender="mixed",
-                                   region_weights={"us": 1.0})
+
+    # One name picker per gender, each on its own derived RNG so the
+    # backfill stays deterministic regardless of how the per-player
+    # genders interleave. Gender is resolved per the player's own program
+    # season (via college_meta) so a male league gets male replacements,
+    # a mixed league gets mixed, etc. — rather than the old hardcoded mix.
+    _SALT = {"male": 1, "female": 2, "mixed": 3}
+    picker_cache: dict = {}
+
+    def _picker_for(gender: str):
+        g = gender if gender in ("male", "female", "mixed") else "mixed"
+        if g not in picker_cache:
+            prng = random.Random((rng_seed or 0) ^ 0x5CED01 ^ _SALT[g])
+            picker_cache[g] = make_name_picker(prng, gender=g,
+                                               region_weights={"us": 1.0})
+        return picker_cache[g]
+
+    gender_cache: dict = {}
+
+    def _gender_for_season(season) -> str:
+        if season not in gender_cache:
+            gender_cache[season] = _college_gender(season)
+        return gender_cache[season]
 
     programs = db.fetchall(
-        "SELECT id, short_name FROM college_programs"
+        "SELECT id, short_name, season FROM college_programs"
     )
+    season_by_id = {p["id"]: p["season"] for p in programs}
     canonical_positions = ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
     pat_pos    = re.compile(r"^(?P<sn>.+?)\s+(?P<pos>[A-Z0-9]{1,3})$")
     pat_bk     = re.compile(r"^(?P<sn>.+?)\s+bk-(?P<pos>[A-Z0-9]{1,3})$")
@@ -595,7 +616,7 @@ def rename_synthetic_names(rng_seed: int = 0) -> dict:
     by_short = {p["short_name"]: p["id"] for p in programs}
     renamed = 0
     scanned = 0
-    rows = db.fetchall("SELECT id, name FROM college_players")
+    rows = db.fetchall("SELECT id, name, program_id FROM college_players")
     for r in rows:
         scanned += 1
         nm = r["name"] or ""
@@ -614,7 +635,8 @@ def rename_synthetic_names(rng_seed: int = 0) -> dict:
                 is_synth = True
         if not is_synth:
             continue
-        new_name, _country = name_picker()
+        gender = _gender_for_season(season_by_id.get(r["program_id"]))
+        new_name, _country = _picker_for(gender)()
         db.execute(
             "UPDATE college_players SET name = ? WHERE id = ?",
             (new_name, r["id"]),
