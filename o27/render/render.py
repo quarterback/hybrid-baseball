@@ -1766,6 +1766,11 @@ class Renderer:
                 "outs_after": outs_after,
                 "bases_after": bases_after_mask,
                 "score_diff_after": score_diff_after,
+                # Ball-strike count the ball was put in play on. ctx is the
+                # pre-event snapshot, so this is the pre-contact count — the
+                # count the swing happened at (matches HR-by-count analysis).
+                "balls": ctx.get("count_balls"),
+                "strikes": ctx.get("count_strikes"),
             })
 
             if choice == "stay":
