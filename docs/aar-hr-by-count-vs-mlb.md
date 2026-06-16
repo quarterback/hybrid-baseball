@@ -108,3 +108,74 @@ python3 scripts/hr_by_count.py --games 2500 --seed 1000
 ```
 
 Real-MLB reference values are embedded in the script (`REAL`).
+
+---
+
+## Update (2026-06-16) — logging + tuning shipped
+
+The audit above was an analysis only. In the same session the findings were
+acted on. Three changes landed.
+
+### 1. Persist the count (`balls`, `strikes` on `game_pa_log`)
+
+The count an outcome happened on was previously discarded (no column on
+`game_pa_log`), so this analysis could only run on the headless harness. Added
+`balls`/`strikes` columns (CREATE TABLE + idempotent ALTER migration in
+`o27v2/db.py`), stamped from the renderer's pre-event context
+(`ctx.count_balls/count_strikes`, i.e. the pre-contact count) in
+`render.py`, and threaded through the `sim.py` insert. HR-by-count is now a
+live-DB query, not just a harness artifact.
+
+### 2. Earned power — count-aware contact authority
+
+A home run was count-agnostic (~4% of every BIP at every count). Added an EV
+shift in `resolve_contact` of `CONTACT_COUNT_EV_SCALE` (2.0) mph per unit of
+`(balls − strikes)`, clamped ±6 mph, flowing through the existing physics path.
+It is **zero at 0-0** (so the realism identity contract at a fresh count holds —
+the live identity tests stay green) and ~mean-zero over the BIP-by-count
+distribution (redistributes HRs toward hitters' counts, doesn't inflate volume).
+Effect: hitter's-count HR share 25% → 32% (MLB 31.4%), HR volume flat.
+
+### 3. Smart-batter `PITCH_BASE` — far less first-pitch swinging
+
+Per the project owner's direction (batters should be *smarter*: take more
+pitches, force deeper counts, make pitchers work harder — **not** chase the old
+run-environment numbers, which were never firm targets). Rewrote `PITCH_BASE`
+so early-count contact drops sharply (0-0 contact 0.23 → 0.11) with the removed
+weight routed into **taken** pitches (called strikes + balls), not whiffs; with
+two strikes batters **protect** (whiff rate trimmed, weight to fouls) so the
+strikeout rate doesn't balloon. 3-0 is a near-automatic take.
+
+Before → after (1,500-game harness, Foxes vs Bears):
+
+| Metric | Before | After | MLB ref |
+| --- | ---: | ---: | ---: |
+| pitches / PA | 3.19 | 3.95 | ~3.9 |
+| 0-0 HR share | 34% | 22% | 18.3% |
+| 0-strike-row HR share | 57% | 41% | 36.5% |
+| deep (2-2, 3-2) HR share | 6.6% | 12.8% | 18.3% |
+| HR-by-count error (½·Σ\|Δ\|) | 23.9 | 12.5 | 0 |
+| K% / BB% | 16 / 8 | 19 / 13 | — |
+| runs / game | 23.4 | 21.6 | — |
+
+The deep-count share is still under MLB — O27 batters remain more aggressive
+than real hitters by design, so fewer PAs reach 3-2 — but the gross first-pitch
+HR tilt is roughly halved and the at-bat now has the texture of worked counts.
+The run-environment shifts (more walks, more pitches, slightly lower scoring)
+are *consequences* reported for visibility, not tuned-to targets.
+
+### Not changed / noted
+
+`test_resolve_contact_table_unchanged_when_park_neutral_and_power_neutral`
+fails on the pre-existing baseline as well — a stale guard from the earlier
+physics-first batted-ball rework that retired the `HARD_CONTACT` categorical
+table. Left as-is (out of scope; unrelated to these changes).
+
+### Reproduce the tuning comparison
+
+```
+python3 scripts/hr_count_tradeoff.py 1500
+```
+
+Prints baseline vs the work-the-count candidates with HR-by-count **and**
+run-environment readouts (runs/game, K%, BB%, pitches/PA).
