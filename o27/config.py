@@ -102,28 +102,31 @@ from __future__ import annotations
 
 PITCH_BASE: dict[tuple, tuple] = {
     # "Smart batter" / work-the-count pass. Batters in O27 are disciplined:
-    # they swing far less at early-count pitches (the removed contact weight is
-    # routed into TAKEN pitches — called strikes + balls — NOT whiffs), so
-    # counts deepen, pitchers work harder (~4 pitches/PA), and cheap first-pitch
-    # home runs collapse. With two strikes they PROTECT the plate — swinging
-    # (whiff) rates are trimmed and the weight goes to fouls, keeping at-bats
-    # alive and the strikeout rate in check. 3-0 is a near-automatic take.
-    # Paired with the count-aware contact authority in resolve_contact, this
-    # makes the home-run-by-count distribution earned rather than front-loaded.
+    # they swing far less at early-count pitches, and the removed contact weight
+    # is routed into TAKEN pitches (called strikes + balls) — NOT fouls. This is
+    # the key O27 rule constraint: a foul is NOT free protection (3 fouls in an
+    # AB = foul-out, pa.py), so the ONLY rules-legal way to deepen a count is to
+    # take. Foul rates stay at/below the prior baseline. With two strikes,
+    # trimmed whiff weight goes into CONTACT (put the ball in play — which also
+    # feeds deep-count home runs), never into fouls, so the foul-out rate is not
+    # inflated. 3-0 is a near-automatic take. Counts deepen (~3.6 pitches/PA),
+    # pitchers work harder, and cheap first-pitch home runs collapse. Paired with
+    # the count-aware contact authority in resolve_contact, this makes the
+    # home-run-by-count distribution earned rather than front-loaded.
     # See docs/aar-hr-by-count-vs-mlb.md.
     # Format: (p_ball, p_called_strike, p_swinging_strike, p_foul, p_contact)
-    (0, 0): (0.37, 0.27, 0.10, 0.15, 0.11),
-    (1, 0): (0.41, 0.23, 0.08, 0.15, 0.13),
-    (2, 0): (0.46, 0.19, 0.05, 0.15, 0.15),
-    (3, 0): (0.54, 0.21, 0.03, 0.13, 0.09),
-    (0, 1): (0.33, 0.19, 0.13, 0.20, 0.15),
-    (1, 1): (0.36, 0.16, 0.12, 0.20, 0.16),
-    (2, 1): (0.40, 0.13, 0.09, 0.21, 0.17),
+    (0, 0): (0.38, 0.26, 0.10, 0.14, 0.12),
+    (1, 0): (0.40, 0.24, 0.08, 0.14, 0.14),
+    (2, 0): (0.45, 0.21, 0.05, 0.14, 0.15),
+    (3, 0): (0.53, 0.22, 0.03, 0.13, 0.09),
+    (0, 1): (0.33, 0.21, 0.13, 0.18, 0.15),
+    (1, 1): (0.36, 0.17, 0.12, 0.19, 0.16),
+    (2, 1): (0.40, 0.14, 0.09, 0.20, 0.17),
     (3, 1): (0.46, 0.13, 0.07, 0.20, 0.14),
-    (0, 2): (0.25, 0.10, 0.12, 0.33, 0.20),
-    (1, 2): (0.28, 0.08, 0.12, 0.31, 0.21),
-    (2, 2): (0.32, 0.07, 0.10, 0.29, 0.22),
-    (3, 2): (0.36, 0.05, 0.08, 0.28, 0.23),
+    (0, 2): (0.25, 0.11, 0.13, 0.29, 0.22),
+    (1, 2): (0.28, 0.09, 0.13, 0.28, 0.22),
+    (2, 2): (0.32, 0.07, 0.11, 0.27, 0.23),
+    (3, 2): (0.34, 0.05, 0.10, 0.27, 0.24),
 }
 
 # ---------------------------------------------------------------------------

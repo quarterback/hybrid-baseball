@@ -141,22 +141,33 @@ Effect: hitter's-count HR share 25% → 32% (MLB 31.4%), HR volume flat.
 Per the project owner's direction (batters should be *smarter*: take more
 pitches, force deeper counts, make pitchers work harder — **not** chase the old
 run-environment numbers, which were never firm targets). Rewrote `PITCH_BASE`
-so early-count contact drops sharply (0-0 contact 0.23 → 0.11) with the removed
-weight routed into **taken** pitches (called strikes + balls), not whiffs; with
-two strikes batters **protect** (whiff rate trimmed, weight to fouls) so the
-strikeout rate doesn't balloon. 3-0 is a near-automatic take.
+so early-count contact drops sharply (0-0 contact 0.23 → 0.12) with the removed
+weight routed into **taken** pitches (called strikes + balls).
 
-Before → after (1,500-game harness, Foxes vs Bears):
+**O27 rule constraint (the correction).** A first cut of this table "protected
+the plate" at two strikes by raising foul rates — importing the MLB idea that a
+hitter can foul off tough pitches indefinitely. **That is illegal logic in
+O27**: three fouls in an at-bat is a *foul-out* (`pa.py`; README §rules), so a
+foul is a path to an out, not free protection. The buggy table inflated the
+foul-out rate from **5.2% → 8.0%** of PAs. The shipped table fixes this:
+fouls stay at/below the prior baseline, and at two strikes the trimmed whiff
+weight is routed into **contact** (put the ball in play — which also feeds
+deep-count HRs), never into fouls. Foul-out rate lands at **6.5%** — the small
+residual above baseline is legitimate (more PAs reach two strikes, so more
+batters are exposed to the third foul). 3-0 is a near-automatic take.
+
+Before → after (1,500-game harness, Foxes vs Bears; shipped = "take, don't foul"):
 
 | Metric | Before | After | MLB ref |
 | --- | ---: | ---: | ---: |
-| pitches / PA | 3.19 | 3.95 | ~3.9 |
-| 0-0 HR share | 34% | 22% | 18.3% |
-| 0-strike-row HR share | 57% | 41% | 36.5% |
-| deep (2-2, 3-2) HR share | 6.6% | 12.8% | 18.3% |
-| HR-by-count error (½·Σ\|Δ\|) | 23.9 | 12.5 | 0 |
-| K% / BB% | 16 / 8 | 19 / 13 | — |
-| runs / game | 23.4 | 21.6 | — |
+| pitches / PA | 3.03 | 3.57 | ~3.9 |
+| 0-0 HR share | 34% | 23% | 18.3% |
+| 0-strike-row HR share | 58% | 42% | 36.5% |
+| deep (2-2, 3-2) HR share | 6.4% | 12.6% | 18.3% |
+| HR-by-count error (½·Σ\|Δ\|) | 24.6 | 12.9 | 0 |
+| foul-out % of PA | 5.2 | 6.5 | — |
+| K% / BB% | 15 / 8 | 18 / 12 | — |
+| runs / game | 23.1 | 22.1 | — |
 
 The deep-count share is still under MLB — O27 batters remain more aggressive
 than real hitters by design, so fewer PAs reach 3-2 — but the gross first-pitch
@@ -177,5 +188,6 @@ table. Left as-is (out of scope; unrelated to these changes).
 python3 scripts/hr_count_tradeoff.py 1500
 ```
 
-Prints baseline vs the work-the-count candidates with HR-by-count **and**
-run-environment readouts (runs/game, K%, BB%, pitches/PA).
+Prints ORIG vs the buggy foul-protect table vs the shipped "take, don't foul"
+table, each with HR-by-count **and** run-environment readouts — including the
+**foul-out rate**, which is the tell that exposed the rule error.
