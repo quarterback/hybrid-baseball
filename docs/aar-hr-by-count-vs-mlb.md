@@ -1,44 +1,79 @@
-# After-Action Report — Home-runs-by-count: O27 vs real MLB
+# After-Action Report — Home-runs-by-count: O27 vs real MLB (audit → tuning)
 
 **Date completed:** 2026-06-16
 **Branch:** `claude/new-session-w4nwix`
+**Scope:** realism audit of the HR-by-count distribution, then a three-part fix
+(persist the count, earned-power model, smart-batter pitch table) including a
+mid-flight O27 rules bug and its correction.
 
 ---
 
-## Context
+## TL;DR
 
-The user shared a heatmap (Philip Bump / CT Insider, source: Retrosheet)
-showing **what share of all MLB home runs from 1910–2025 were hit on each
-ball-strike count**. The classic finding: 18.3% of all home runs are hit on
-0-0 (the first-pitch ambush), the count distribution then spreads across the
-grid, and deep counts stay live — 2-2 and 3-2 each account for ~9% of homers.
+A chart of real MLB home-runs-by-count (Retrosheet, 1910–2025) showed O27 was
+hitting **~35% of all home runs on the first pitch (0-0)** vs MLB's 18.3% — and
+that a home run in O27 was **count-agnostic** (≈4% of every ball-in-play became
+a HR at *every* count). We:
 
-The task was to **compare O27's home-run-by-count distribution against that
-real-world reference** — an engine-realism check, not a tuning change.
+1. **Logged the count** — `game_pa_log` now stores `balls`/`strikes`, so
+   outcome-by-count is a live-DB query, not just a headless harness trick.
+2. **Made power earned** — contact ahead in the count carries (EV shift by
+   `balls − strikes`); HR/BIP now rises in hitters' counts instead of being flat.
+3. **Made batters smarter** — rewrote `PITCH_BASE` so they take far more
+   early-count pitches (work the count, ~3.6 pitches/PA), which collapses the
+   cheap first-pitch HR.
 
-## Method
+Net: **0-0 HR share 34% → 22%**, total HR-by-count error (½·Σ|Δ| vs MLB)
+**halved (50.2 → 24.5)**, HR volume preserved, identity guards green.
 
-The engine *does* model pitches and a ball-strike count (`Count` in
-`o27/engine/state.py`), and the per-count pitch outcome probabilities live in
-`o27/config.py:PITCH_BASE`. But the count at which an outcome occurs is **not
-persisted** — `game_pa_log` (`o27v2/db.py`) has no balls/strikes columns. So
-the live DB can't answer "how many HRs on 0-0"; the count flows through the
-render layer and is discarded.
+A subtle O27 rules error was caught and fixed along the way (see Part 3): the
+first cut of the smart-batter table tried to "protect the plate" by fouling off
+two-strike pitches — illegal logic here, because **3 fouls = a foul-out**. The
+foul-out rate is the tell, and it's now instrumented in the harness.
 
-Instead we run fresh headless games and capture `state.count` at the instant
-the provider yields each home-run `ball_in_play` event. That instant *is* the
-count the HR was hit on: the provider returns the event, and `apply_event()`
-only afterward mutates the count, so `state.count` still holds the pre-contact
-tally. Harness: `scripts/hr_by_count.py` (Foxes vs Bears, the `main.py`
-rosters; `ProbabilisticProvider` wrapped to tally HRs *and* all balls-in-play
-by count).
+---
 
-Sample: 2,500 games → 5,311 home runs / 126,718 balls in play.
+## The reference chart (the target)
 
-## Results
+Philip Bump / CT Insider, source Retrosheet, regular-season MLB 1910–2025.
+Share of **all** home runs hit on each count (and raw counts):
 
-| Count | O27 HR% | MLB HR% | diff | O27 BIP% | HR / BIP |
-|-------|--------:|--------:|-----:|---------:|---------:|
+| | balls 0 | 1 | 2 | 3 |
+|---|---:|---:|---:|---:|
+| **0 strikes** | 18.3% (35,578) | 12.0% (23,301) | 5.6% (10,858) | 0.6% (1,233) |
+| **1 strike** | 9.7% (18,742) | 11.1% (21,561) | 8.3% (16,128) | 4.9% (9,589) |
+| **2 strikes** | 3.5% (6,857) | 7.6% (14,678) | 9.1% (17,669) | 9.2% (17,920) |
+
+Key real-world features: a big 0-0 ambush spike (18.3%), damage concentrated in
+hitters' counts, and **deep counts staying live** — 2-2 and 3-2 each ~9%
+because so many real PAs grind that deep.
+
+---
+
+## Part 1 — The audit
+
+### Method
+
+The engine models pitches and a ball-strike count (`Count`,
+`o27/engine/state.py:42`), with per-count pitch-outcome probabilities in
+`o27/config.py:PITCH_BASE`. But the count an outcome happened on was **not
+persisted** — `game_pa_log` (`o27v2/db.py`) had no balls/strikes columns, and
+the count flowed through the render layer only to be discarded. So the live DB
+couldn't answer "how many HRs on 0-0".
+
+The harness `scripts/hr_by_count.py` runs fresh headless games (Foxes vs Bears,
+the `main.py` rosters) and captures `state.count` at the instant the provider
+yields each home-run `ball_in_play`. That instant *is* the count the HR was hit
+on: the provider returns the event and `apply_event()` only afterward mutates
+the count, so `state.count` still holds the pre-contact tally. It tallies HRs
+**and** all balls-in-play by count, so HR/BIP is observable.
+
+Sample: 2,500 games → 5,311 HRs / 126,718 balls in play.
+
+### Results (pre-tuning)
+
+| Count | O27 HR% | MLB HR% | diff | O27 BIP% | HR/BIP |
+|-------|--------:|--------:|-----:|---------:|-------:|
 | 0-0 | 35.0 | 18.3 | **+16.7** | 34.8 | 4.22% |
 | 1-0 | 12.4 | 12.0 | +0.4 | 11.8 | 4.38% |
 | 2-0 | 5.4 | 5.6 | −0.2 | 4.5 | 4.99% |
@@ -52,142 +87,229 @@ Sample: 2,500 games → 5,311 home runs / 126,718 balls in play.
 | 2-2 | 3.6 | 9.1 | **−5.5** | 4.0 | 3.83% |
 | 3-2 | 2.4 | 9.2 | **−6.8** | 2.4 | 4.33% |
 
-Summary readings:
+Total variation: sum of |Δ| = **50.2** (≈2× TV).
 
-- **First-pitch (0-0):** O27 35.0% vs MLB 18.3% — nearly **double**.
-- **Two-strike:** O27 18.0% vs MLB 20.2% — close in aggregate…
-- **…but the deepest counts are missing:** 2-2 is −5.5 pts and 3-2 is −6.8 pts.
-- Sum of absolute differences (≈2× total variation): **50.2**.
+### Diagnosis — two findings, one root cause
 
-## Diagnosis
+**1. A home run was count-agnostic.** The HR/BIP column was flat (3.7–5.0% at
+every count). So the O27 HR% column was essentially the O27 BIP% column — the
+HR-by-count distribution *was* the ball-in-play-by-count distribution. Real
+baseball isn't like that: hitters do disproportionate damage ahead in the count
+and put weaker, defensive contact in play with two strikes, so HR/BIP rises in
+hitters' counts.
 
-Two findings, one root cause.
+**2. O27 put far too many balls in play on the first pitch.** 34.8% of *all*
+balls in play happened at 0-0 because every PA flows through 0-0 and
+`PITCH_BASE[(0,0)]` gave the first pitch a 0.23 contact probability. With
+at-bats ending that early, the deep counts (2-2, 3-2) that carry ~18% of real
+homers saw only ~6% of O27's. The pitch model was **front-loaded and
+count-flat** (contact ~0.23 at 0-0 → 0.20 with two strikes), so the contact
+distribution decayed monotonically from 0-0 instead of bulging in deep counts.
 
-**1. A home run in O27 is count-agnostic.** The `HR / BIP` column is flat —
-between 3.7% and 5.0% at every count, with no systematic tilt toward hitters'
-counts. As a result the O27 `HR%` column is nearly identical to the O27 `BIP%`
-column: **the HR-by-count distribution is just the ball-in-play-by-count
-distribution.** In real baseball it is not — hitters do disproportionate damage
-ahead in the count (2-0, 3-1) and put weaker, more defensive contact in play
-with two strikes, so HR/BIP rises in hitters' counts. O27 has no such effect.
+---
 
-**2. O27 puts far too many balls in play on the first pitch.** 34.8% of all
-balls in play happen at 0-0, because every plate appearance flows through 0-0
-and `PITCH_BASE[(0,0)]` assigns a 0.23 contact (ball-in-play) probability to
-the first pitch. Real hitters take the first pitch roughly two-thirds of the
-time; O27 puts it in play ~23% of the time. That single number drives the
-+16.7-pt 0-0 spike — and, because at-bats end early, it starves the deep
-counts (2-2, 3-2) that carry ~18% of real homers but only ~6% of O27's.
+## Part 2 — The build (what shipped)
 
-The shapes diverge because O27's pitch model is **front-loaded and
-count-flat**: contact probability barely moves across the count (0.23 at 0-0 →
-0.20 with two strikes in `PITCH_BASE`), so the count-distribution of contact
-decays monotonically from 0-0 instead of bulging in the deep two-strike counts
-the way real plate appearances do.
+### Change 1 — Persist the count
 
-## What this is (and isn't)
+`game_pa_log` gains `balls` / `strikes` (INTEGER, NULL on legacy rows):
+- `o27v2/db.py`: columns in CREATE TABLE + idempotent `ALTER TABLE` migration
+  (mirrors the existing `outs_before`/`fielder_id` migration pattern).
+- `o27/render/render.py`: stamp `ctx.count_balls` / `ctx.count_strikes` on each
+  `ball_in_play` `_pa_log` row. `ctx` is the **pre-event** snapshot, so it is
+  the pre-contact count — the count the swing happened at.
+- `o27v2/sim.py`: extend the `_pa_log` → `executemany` insert column list /
+  value tuple.
 
-This is a realism *audit*, not a tuning change — no engine code was modified.
-The comparison uses the two `main.py` demo rosters (a contact club and a power
-club), so absolute HR volume is roster-specific; the **count distribution**,
-however, is a property of `PITCH_BASE` + the count-agnostic HR resolution and
-is stable across seeds.
+Verified end-to-end: a 20-game sim wrote 1,091 PA rows, 100% count coverage,
+all counts in range, and the live-DB HR-by-count matched the harness.
 
-If a future session wants O27's homers to bucket like the reference chart, the
-two levers are: (a) lower the 0-0 contact weight in `PITCH_BASE` (push first
-pitches toward called strikes / balls so fewer PAs end on pitch one and more
-reach deep counts), and (b) make HR-per-contact count-aware so mistakes ahead
-in the count and defensive two-strike contact differ. Lever (a) is the
-high-order term — it alone closes most of the 0-0 gap and feeds the deep
-counts.
+### Change 2 — Earned power (count-aware contact authority)
+
+`o27/engine/prob.py:resolve_contact` gains a count term on the same `ev_shift`
+that already carries the form / RISP EV levers:
+
+```
+ev_shift += clamp(CONTACT_COUNT_EV_SCALE * (balls − strikes), ±CLAMP)
+```
+
+- `CONTACT_COUNT_EV_SCALE = 2.0` mph per unit, `CONTACT_COUNT_EV_CLAMP = 6.0`
+  (`o27/config.py`).
+- Flows through the existing physics path (EV → carry → fence in
+  `batted_ball.py`), so physics and the persisted EV never disagree.
+- **Zero at 0-0** (`balls == strikes`), so the realism identity contract at a
+  fresh count is untouched — the live identity tests (`pitch_probs`,
+  `contact_quality`) stay green.
+- **~Mean-zero** over the league BIP-by-count distribution, so it
+  **redistributes** home runs toward hitters' counts rather than inflating
+  volume.
+
+### Change 3 — Smart-batter `PITCH_BASE`
+
+Batters take far more early-count pitches; removed contact is routed into
+**taken** pitches (called strikes + balls). 3-0 is a near-automatic take. With
+two strikes, trimmed whiff weight goes into **contact** (put it in play), never
+fouls (see Part 3 for why). Full shipped table is in `o27/config.py:PITCH_BASE`.
+
+---
+
+## Part 3 — The tuning journey (all the data)
+
+### 3a. Calibrating the earned-power scale
+
+Sweeping `CONTACT_COUNT_EV_SCALE` (1,200 games, seed 5000). It fixes the
+*hitter's-count* dimension and preserves HR volume, but on its own does almost
+nothing to the 0-0 spike or the deep-count shortfall (those are BIP-distribution
+problems, not HR/BIP problems):
+
+| scale (mph/unit) | HR/game | 0-0 HR% | deep% | ahead% | TV-dist |
+|---:|---:|---:|---:|---:|---:|
+| 0.0 | 1.99 | 35.2 | 5.7 | 25.4 | 25.1 |
+| 1.5 | 1.97 | 34.3 | 6.1 | 29.8 | 23.5 |
+| **2.0** | **2.00** | **33.1** | **6.1** | **31.9** | 24.1 |
+| 2.5 | 2.10 | 33.5 | 5.8 | 33.0 | 23.6 |
+| 3.0 | 2.02 | 33.6 | 6.2 | 33.7 | 24.1 |
+
+`2.0` chosen: ahead% lands on MLB's 31.4% with flat HR volume. (MLB refs: 0-0
+18.3, deep 18.3, ahead 31.4.)
+
+### 3b. The PITCH_BASE work-the-count sweep
+
+Candidate pitch tables that reduce early contact, with `CONTACT_COUNT_EV_SCALE`
+= 2.0 active (1,500 games, seed 9000). This is where the 0-0 spike actually
+moves — but it costs run environment (more takes → more walks *and* deeper
+counts → more two-strike whiffs):
+
+| table | runs/g | K% | BB% | pitches/PA | 0-0 HR% | deep% | TV-dist |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 23.4 | 16.0 | 8.3 | 3.19 | 34.2 | 6.6 | 23.9 |
+| moderate | 20.8 | 21.1 | 11.4 | 3.69 | 26.8 | 10.7 | 16.4 |
+| strong | 20.5 | 23.4 | 13.0 | 3.93 | 20.9 | 12.5 | 12.3 |
+| smart¹ | 21.6 | 19.3 | 13.2 | 3.95 | 21.8 | 12.8 | 12.5 |
+
+¹ "smart" trimmed two-strike whiffs to keep K% down — but parked the removed
+weight in **fouls** ("protect the plate"). That is the bug fixed in 3c.
+
+### 3c. The O27 rules bug — and the foul-out tell
+
+**The rule:** in O27 a foul is not free. Three fouls in an at-bat is a
+**foul-out** (`o27/engine/pa.py:483–496`; README §rules: *"Three fouls is a
+foul-out (no infinite-foul protection like MLB)"*). The foul counter is
+independent of the strike counter and keeps climbing to 3 even after strikes
+freeze at 2. So "protect the plate by fouling off two-strike pitches" — standard
+MLB logic — **manufactures outs** here.
+
+The harness was extended to count foul-outs (a `foul` event when
+`state.count.fouls == 2`). Comparing the true pre-tuning table, the buggy
+"foul-protect" table, and the corrected "take, don't foul" table (1,500 games,
+seed 9000):
+
+| table | foul-out % of PA | 0-0 HR% | deep% | pitches/PA | K% | BB% | runs/g | TV-dist |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| ORIG (pre-tuning) | **5.2** | 34.1 | 6.4 | 3.03 | 15.2 | 7.9 | 23.1 | 24.6 |
+| SHIPPED-SMART (foul **bug**) | **8.0** | 21.3 | 13.3 | 3.63 | 17.9 | 12.0 | 21.8 | 11.9 |
+| CORRECTED (take, don't foul) | **6.5** | 22.7 | 12.6 | 3.57 | 18.2 | 11.6 | 22.1 | 12.9 |
+
+The bug spiked foul-outs **5.2% → 8.0%** of PAs (~1 in 12 PAs ending on a
+foul-out, a ~55% jump) — purely from routing two-strike weight into fouls. The
+correction deepens counts only by **taking**, keeps foul rates at/below
+baseline, and routes trimmed two-strike whiffs into **contact**. Foul-out rate
+falls back to **6.5%**; the small residual over baseline is legitimate (more PAs
+reach two strikes, so more batters are exposed to the third foul). The thing the
+owner cared about — the 0-0 HR share — still drops (34% → 23%), and deep-count
+share / pitches-per-PA are essentially unchanged from the buggy version.
+
+---
+
+## Final shipped distribution
+
+Earned power + corrected smart `PITCH_BASE` (2,500 games, seed 1000 →
+4,474 HRs / 110,055 BIP):
+
+| Count | O27 HR% | MLB HR% | diff | O27 BIP% | HR/BIP |
+|-------|--------:|--------:|-----:|---------:|-------:|
+| 0-0 | 22.1 | 18.3 | +3.8 | 21.6 | 4.15% |
+| 1-0 | 11.6 | 12.0 | −0.4 | 9.5 | 4.97% |
+| 2-0 | 5.9 | 5.6 | +0.3 | 4.1 | 5.78% |
+| 3-0 | 1.7 | 0.6 | +1.1 | 1.2 | 5.84% |
+| 0-1 | 10.8 | 9.7 | +1.1 | 12.3 | 3.56% |
+| 1-1 | 9.3 | 11.1 | −1.8 | 9.0 | 4.19% |
+| 2-1 | 5.9 | 8.3 | −2.4 | 5.3 | 4.53% |
+| 3-1 | 3.4 | 4.9 | −1.5 | 2.3 | 5.82% |
+| 0-2 | 7.7 | 3.5 | +4.2 | 11.8 | 2.66% |
+| 1-2 | 9.5 | 7.6 | +1.9 | 10.8 | 3.58% |
+| 2-2 | 7.1 | 9.1 | −2.0 | 7.2 | 3.98% |
+| 3-2 | 5.2 | 9.2 | −4.0 | 4.9 | 4.33% |
+
+Total variation: sum of |Δ| = **24.5** (down from 50.2 — error halved).
+
+Note the HR/BIP column is **no longer flat**: it's highest ahead in the count
+(2-0 5.78%, 3-0 5.84%, 3-1 5.82%) and lowest behind / two-strike-early (0-2
+2.66%). That is the earned-power model working — power is now a function of the
+count, exactly as in real baseball.
+
+---
+
+## Code map
+
+| File | Change |
+|---|---|
+| `o27v2/db.py` | `balls`/`strikes` columns on `game_pa_log` + migration |
+| `o27/render/render.py` | stamp count on each `ball_in_play` `_pa_log` row |
+| `o27v2/sim.py` | insert the two new columns |
+| `o27/engine/prob.py` | count-aware `ev_shift` in `resolve_contact` |
+| `o27/config.py` | `CONTACT_COUNT_EV_SCALE` / `_CLAMP`; rewritten `PITCH_BASE` |
+| `scripts/hr_by_count.py` | audit harness (HR + BIP by count) |
+| `scripts/hr_count_tradeoff.py` | tuning harness (HR-by-count + run env + foul-out) |
+
+---
+
+## O27 rules constraints to remember (for the next builder)
+
+- **3 fouls = foul-out.** Fouls are a risk, not protection. Never route "plate
+  protection" into fouls. To deepen a count, the only legal lever is **taking**
+  (balls + called strikes). The foul-out rate (now in the tradeoff harness) is
+  the canary — watch it whenever you touch foul probabilities.
+- **Every PA flows through 0-0.** So 0-0 is structurally the biggest single
+  bucket of any per-count distribution; the 0-0 share of *anything* is dominated
+  by how often the first pitch is put in play.
+- **O27 batters are aggressive by design.** The owner explicitly does **not**
+  want to mirror MLB exactly — the old run-environment numbers (22–24 RPG, ~18%
+  K, ~10% BB) were **never firm targets**. Report run-environment values as
+  consequences; don't tune to them.
+
+## Known issues / not changed
+
+- `tests/test_realism_identity.py::test_resolve_contact_table_unchanged_when_park_neutral_and_power_neutral`
+  fails on the **pre-existing baseline too** — a stale guard from the earlier
+  physics-first batted-ball rework that retired the `HARD_CONTACT` categorical
+  table. Untouched here (out of scope, unrelated to these changes). Worth a
+  cleanup in a future pass.
+- `pytest` is absent in the bare sandbox; identity tests were run by importing
+  and calling the test functions directly.
+
+## Where to build next
+
+- **Deep counts still trail MLB** (2-2/3-2 ≈ 12% vs 18%) — because O27 batters
+  remain more aggressive, fewer PAs reach 3-2. Closing it means dialing the take
+  harder still (a `STRONG` variant in `hr_count_tradeoff.py` gets 0-0 to ~21%
+  but at ~23% K). That's a deliberate aggression-vs-realism choice for the owner.
+- **0-2 is now slightly HR-rich** (+4.2 pts) — two-strike contact may be a touch
+  too authoritative; a small negative-strikes tweak to the earned-power curve
+  (or a 0-2-specific EV trim) could shave it without touching the rest.
+- **Per-batter discipline.** The pitch table is league-wide; a real next step is
+  making the take/swing split read batter `eye`/`discipline`, so patient hitters
+  work counts and hackers don't — turning this from a league constant into a
+  player skill.
 
 ## Reproduce
 
 ```
+# Audit / final distribution (HR + BIP by count vs MLB):
 python3 scripts/hr_by_count.py --games 2500 --seed 1000
-```
 
-Real-MLB reference values are embedded in the script (`REAL`).
-
----
-
-## Update (2026-06-16) — logging + tuning shipped
-
-The audit above was an analysis only. In the same session the findings were
-acted on. Three changes landed.
-
-### 1. Persist the count (`balls`, `strikes` on `game_pa_log`)
-
-The count an outcome happened on was previously discarded (no column on
-`game_pa_log`), so this analysis could only run on the headless harness. Added
-`balls`/`strikes` columns (CREATE TABLE + idempotent ALTER migration in
-`o27v2/db.py`), stamped from the renderer's pre-event context
-(`ctx.count_balls/count_strikes`, i.e. the pre-contact count) in
-`render.py`, and threaded through the `sim.py` insert. HR-by-count is now a
-live-DB query, not just a harness artifact.
-
-### 2. Earned power — count-aware contact authority
-
-A home run was count-agnostic (~4% of every BIP at every count). Added an EV
-shift in `resolve_contact` of `CONTACT_COUNT_EV_SCALE` (2.0) mph per unit of
-`(balls − strikes)`, clamped ±6 mph, flowing through the existing physics path.
-It is **zero at 0-0** (so the realism identity contract at a fresh count holds —
-the live identity tests stay green) and ~mean-zero over the BIP-by-count
-distribution (redistributes HRs toward hitters' counts, doesn't inflate volume).
-Effect: hitter's-count HR share 25% → 32% (MLB 31.4%), HR volume flat.
-
-### 3. Smart-batter `PITCH_BASE` — far less first-pitch swinging
-
-Per the project owner's direction (batters should be *smarter*: take more
-pitches, force deeper counts, make pitchers work harder — **not** chase the old
-run-environment numbers, which were never firm targets). Rewrote `PITCH_BASE`
-so early-count contact drops sharply (0-0 contact 0.23 → 0.12) with the removed
-weight routed into **taken** pitches (called strikes + balls).
-
-**O27 rule constraint (the correction).** A first cut of this table "protected
-the plate" at two strikes by raising foul rates — importing the MLB idea that a
-hitter can foul off tough pitches indefinitely. **That is illegal logic in
-O27**: three fouls in an at-bat is a *foul-out* (`pa.py`; README §rules), so a
-foul is a path to an out, not free protection. The buggy table inflated the
-foul-out rate from **5.2% → 8.0%** of PAs. The shipped table fixes this:
-fouls stay at/below the prior baseline, and at two strikes the trimmed whiff
-weight is routed into **contact** (put the ball in play — which also feeds
-deep-count HRs), never into fouls. Foul-out rate lands at **6.5%** — the small
-residual above baseline is legitimate (more PAs reach two strikes, so more
-batters are exposed to the third foul). 3-0 is a near-automatic take.
-
-Before → after (1,500-game harness, Foxes vs Bears; shipped = "take, don't foul"):
-
-| Metric | Before | After | MLB ref |
-| --- | ---: | ---: | ---: |
-| pitches / PA | 3.03 | 3.57 | ~3.9 |
-| 0-0 HR share | 34% | 23% | 18.3% |
-| 0-strike-row HR share | 58% | 42% | 36.5% |
-| deep (2-2, 3-2) HR share | 6.4% | 12.6% | 18.3% |
-| HR-by-count error (½·Σ\|Δ\|) | 24.6 | 12.9 | 0 |
-| foul-out % of PA | 5.2 | 6.5 | — |
-| K% / BB% | 15 / 8 | 18 / 12 | — |
-| runs / game | 23.1 | 22.1 | — |
-
-The deep-count share is still under MLB — O27 batters remain more aggressive
-than real hitters by design, so fewer PAs reach 3-2 — but the gross first-pitch
-HR tilt is roughly halved and the at-bat now has the texture of worked counts.
-The run-environment shifts (more walks, more pitches, slightly lower scoring)
-are *consequences* reported for visibility, not tuned-to targets.
-
-### Not changed / noted
-
-`test_resolve_contact_table_unchanged_when_park_neutral_and_power_neutral`
-fails on the pre-existing baseline as well — a stale guard from the earlier
-physics-first batted-ball rework that retired the `HARD_CONTACT` categorical
-table. Left as-is (out of scope; unrelated to these changes).
-
-### Reproduce the tuning comparison
-
-```
+# Tuning comparison (ORIG vs foul-bug vs shipped; with run env + foul-out rate):
 python3 scripts/hr_count_tradeoff.py 1500
 ```
 
-Prints ORIG vs the buggy foul-protect table vs the shipped "take, don't foul"
-table, each with HR-by-count **and** run-environment readouts — including the
-**foul-out rate**, which is the tell that exposed the rule error.
+Real-MLB reference values are embedded in both scripts (`REAL`).
