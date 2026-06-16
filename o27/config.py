@@ -222,6 +222,17 @@ RES_GB_FC_P: float         = 0.15   # grounder out → fielder's choice share
 # (the XBH-suppression decoupler). Both in mph; 0.0 = identity.
 RES_FORM_EV_SCALE: float   = 18.0
 RES_RISP_EV_TRIM: float    = 3.0
+# Count-aware contact authority (the HR-by-count realism fix; see
+# docs/aar-hr-by-count-vs-mlb.md). A home run should be EARNED by the count,
+# not count-flat: contact made ahead in the count (hitter sitting on a pitch)
+# carries; defensive two-strike / first-pitch-behind contact does not. Modeled
+# as an EV shift of CONTACT_COUNT_EV_SCALE mph per unit of (balls - strikes),
+# clamped to ±CONTACT_COUNT_EV_CLAMP mph. Crucially ZERO at 0-0 (balls==strikes)
+# so the realism identity contract at a fresh count is untouched, and ~mean-zero
+# over the league BIP-by-count distribution so total HR volume is ~preserved —
+# the effect REDISTRIBUTES home runs toward hitters' counts, not inflates them.
+CONTACT_COUNT_EV_SCALE: float = 2.0
+CONTACT_COUNT_EV_CLAMP: float = 6.0
 
 CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
 CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50

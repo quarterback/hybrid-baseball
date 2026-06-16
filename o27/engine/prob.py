@@ -1911,6 +1911,18 @@ def resolve_contact(
     if _is_risp(state):
         ev_shift -= cfg.RES_RISP_EV_TRIM
 
+    # Count-aware contact authority: ahead in the count → harder contact (more
+    # carry → more HR); two-strike / behind contact is defensive. Zero at 0-0,
+    # so the realism identity contract at a fresh count is preserved. Makes the
+    # HR-by-count distribution earned rather than count-flat — see
+    # docs/aar-hr-by-count-vs-mlb.md.
+    _cnt = getattr(state, "count", None)
+    if _cnt is not None:
+        _bs = int(_cnt.balls) - int(_cnt.strikes)
+        ev_shift += max(-cfg.CONTACT_COUNT_EV_CLAMP,
+                        min(cfg.CONTACT_COUNT_EV_CLAMP,
+                            cfg.CONTACT_COUNT_EV_SCALE * _bs))
+
     exit_velocity, launch_angle, spray_angle, texture = _generate_bb(
         rng, quality,
         batter_power=float(getattr(batter, "power", 0.5) or 0.5),
