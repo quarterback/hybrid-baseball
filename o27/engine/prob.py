@@ -584,6 +584,7 @@ def contact_quality(
     familiarity: float = 0.0,
     risp_penalty: float = 1.0,
     catcher_shift: float = 0.0,
+    count_hard_mult: float = 1.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -669,6 +670,16 @@ def contact_quality(
     hc_mult = wx.hard_contact_multiplier(weather)
     if hc_mult != 1.0:
         new_hard = max(0.001, hard_p * hc_mult)
+        delta = new_hard - hard_p
+        hard_p = new_hard
+        weak_p = max(0.001, weak_p - delta)
+
+    # Behind-in-the-count contact penalty — degrade the authority of the
+    # contact when the batter is defending. Same shape as the weather
+    # multiplier: cut hard contact, push the lost mass to weak. Identity at
+    # count_hard_mult == 1.0 (even/ahead counts and the neutral-count tests).
+    if count_hard_mult != 1.0:
+        new_hard = max(0.001, hard_p * count_hard_mult)
         delta = new_hard - hard_p
         hard_p = new_hard
         weak_p = max(0.001, weak_p - delta)
@@ -2897,6 +2908,12 @@ class ProbabilisticProvider:
         if state.in_seconds_phase:
             tp_shift += cfg.REBUTTAL_OFFENSE_SHIFT
 
+        # Behind-in-the-count contact penalty: degrade hard contact the deeper
+        # the batter is buried (strikes > balls). Zero at even/ahead counts.
+        _behind = state.count.strikes - state.count.balls
+        _count_hard_mult = 1.0 - min(cfg.CONTACT_BEHIND_HARD_PENALTY_CAP,
+                                     cfg.CONTACT_BEHIND_HARD_PENALTY * max(0, _behind))
+
         quality = contact_quality(
             rng, batter, pitcher, weather,
             swings_in_ab=state.current_at_bat_swings,
@@ -2906,6 +2923,7 @@ class ProbabilisticProvider:
             familiarity=familiarity,
             risp_penalty=_risp_talent_penalty(rng, state),
             catcher_shift=_catcher_gc_shift(state),
+            count_hard_mult=_count_hard_mult,
         )
         is_hr     = False
         is_triple = False

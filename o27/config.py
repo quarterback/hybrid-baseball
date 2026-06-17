@@ -242,6 +242,18 @@ RES_RISP_EV_TRIM: float    = 3.0
 # the effect REDISTRIBUTES home runs toward hitters' counts, not inflates them.
 CONTACT_COUNT_EV_SCALE: float = 2.0
 CONTACT_COUNT_EV_CLAMP: float = 6.0
+# Behind-in-the-count contact penalty (the 0-2 fix). The EV shift above moves
+# the ball's carry; this degrades the QUALITY of the contact itself. A batter
+# behind in the count is defending — whatever talent he brings, the contact is
+# less authoritative. Applied as a multiplicative hard-contact penalty (same
+# mechanism as the weather hard-contact multiplier): hard-contact probability is
+# cut and the lost mass falls to weak, so a would-be-barrel becomes mishit.
+# Penalty = PENALTY_PER_STRIKE * max(0, strikes - balls), capped at
+# PENALTY_CAP. So 0-2 takes the full ~29% hit, 1-2 / 0-1 ~14%, and even/ahead
+# counts (incl. the already-thin deep counts 2-2, 3-2) take none. Zero at 0-0,
+# so the contact-quality identity contract holds.
+CONTACT_BEHIND_HARD_PENALTY: float = 0.145   # per unit of (strikes - balls)
+CONTACT_BEHIND_HARD_PENALTY_CAP: float = 0.29
 
 CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
 CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50

@@ -23,8 +23,12 @@ a HR at *every* count). We:
    early-count pitches (work the count, ~3.6 pitches/PA), which collapses the
    cheap first-pitch HR.
 
-Net: **0-0 HR share 34% → 22%**, total HR-by-count error (½·Σ|Δ| vs MLB)
-**halved (50.2 → 24.5)**, HR volume preserved, identity guards green.
+A fourth change followed (Part 3d): a **behind-in-the-count contact penalty**
+that degrades the *quality* of two-strike-behind contact (the 0-2 fix), so a
+buried hitter's barrel becomes a mishit.
+
+Net: **0-0 HR share 34% → 23%**, total HR-by-count error (½·Σ|Δ| vs MLB)
+**from 50.2 → 21.1** (sum of |Δ|), HR volume preserved, identity guards green.
 
 A subtle O27 rules error was caught and fixed along the way (see Part 3): the
 first cut of the smart-batter table tried to "protect the plate" by fouling off
@@ -219,34 +223,70 @@ reach two strikes, so more batters are exposed to the third foul). The thing the
 owner cared about — the 0-0 HR share — still drops (34% → 23%), and deep-count
 share / pitches-per-PA are essentially unchanged from the buggy version.
 
+### 3d. The 0-2 fix — a behind-in-the-count contact penalty
+
+After the smart-batter table shipped, 0-2 was still HR-rich (+4.2 pts) — but the
+*tell* was that its over-share was **volume**, not effectiveness: 0-2 became
+~12% of all balls in play (batters take so many early strikes), so even a low
+HR/BIP carries share. The owner's call was to degrade the *contact itself* when
+behind: "make whatever contact 13–29% less effective."
+
+`contact_quality` already had the exact mechanism — the weather
+`hard_contact_multiplier` block, which cuts the hard-contact probability and
+pushes the lost mass to weak. So the fix reuses that shape with a count-driven
+multiplier (`o27/config.py`):
+
+```
+penalty   = min(CONTACT_BEHIND_HARD_PENALTY_CAP,        # 0.29
+                CONTACT_BEHIND_HARD_PENALTY * max(0, strikes − balls))  # 0.145/unit
+hard_mult = 1 − penalty
+```
+
+So 0-2 (`strikes − balls = 2`) takes the full ~29% hard-contact cut, 1-2 and 0-1
+~14%, and **even/ahead counts take none** — which deliberately spares the deep
+2-2 / 3-2 counts that are already *under* MLB. Zero at 0-0, so the
+contact-quality identity contract holds. Threaded via one new
+`count_hard_mult` kwarg to `contact_quality`, computed at the call site
+(`prob.py` ~2900) where the count is in scope.
+
+Effect (2,500-game harness): 0-2 HR/BIP **2.66% → 2.20%**, 0-2 over-share
+**+4.2 → +3.2**; 0-1 lands exactly on MLB (+0.0) and 1-2 on it (+0.2); deep
+counts unchanged. Total error 24.5 → **21.1**. Run environment essentially
+unmoved (the penalty only re-buckets contact quality at behind counts).
+
 ---
 
 ## Final shipped distribution
 
-Earned power + corrected smart `PITCH_BASE` (2,500 games, seed 1000 →
-4,474 HRs / 110,055 BIP):
+Earned power + corrected smart `PITCH_BASE` + behind-count contact penalty
+(2,500 games, seed 1000 → 4,270 HRs / 108,470 BIP):
 
 | Count | O27 HR% | MLB HR% | diff | O27 BIP% | HR/BIP |
 |-------|--------:|--------:|-----:|---------:|-------:|
-| 0-0 | 22.1 | 18.3 | +3.8 | 21.6 | 4.15% |
-| 1-0 | 11.6 | 12.0 | −0.4 | 9.5 | 4.97% |
-| 2-0 | 5.9 | 5.6 | +0.3 | 4.1 | 5.78% |
-| 3-0 | 1.7 | 0.6 | +1.1 | 1.2 | 5.84% |
-| 0-1 | 10.8 | 9.7 | +1.1 | 12.3 | 3.56% |
-| 1-1 | 9.3 | 11.1 | −1.8 | 9.0 | 4.19% |
-| 2-1 | 5.9 | 8.3 | −2.4 | 5.3 | 4.53% |
-| 3-1 | 3.4 | 4.9 | −1.5 | 2.3 | 5.82% |
-| 0-2 | 7.7 | 3.5 | +4.2 | 11.8 | 2.66% |
-| 1-2 | 9.5 | 7.6 | +1.9 | 10.8 | 3.58% |
-| 2-2 | 7.1 | 9.1 | −2.0 | 7.2 | 3.98% |
-| 3-2 | 5.2 | 9.2 | −4.0 | 4.9 | 4.33% |
+| 0-0 | 22.8 | 18.3 | +4.5 | 21.2 | 4.23% |
+| 1-0 | 12.6 | 12.0 | +0.6 | 9.6 | 5.19% |
+| 2-0 | 6.1 | 5.6 | +0.5 | 4.1 | 5.87% |
+| 3-0 | 2.1 | 0.6 | +1.5 | 1.2 | 6.99% |
+| 0-1 | 9.7 | 9.7 | +0.0 | 12.3 | 3.10% |
+| 1-1 | 9.6 | 11.1 | −1.5 | 9.0 | 4.17% |
+| 2-1 | 6.5 | 8.3 | −1.8 | 5.1 | 5.00% |
+| 3-1 | 3.4 | 4.9 | −1.5 | 2.3 | 5.70% |
+| 0-2 | 6.7 | 3.5 | +3.2 | 11.9 | 2.20% |
+| 1-2 | 7.8 | 7.6 | +0.2 | 10.9 | 2.82% |
+| 2-2 | 7.6 | 9.1 | −1.5 | 7.4 | 4.04% |
+| 3-2 | 5.0 | 9.2 | −4.2 | 4.8 | 4.14% |
 
-Total variation: sum of |Δ| = **24.5** (down from 50.2 — error halved).
+Total variation: sum of |Δ| = **21.1** (down from 50.2 at the start).
 
-Note the HR/BIP column is **no longer flat**: it's highest ahead in the count
-(2-0 5.78%, 3-0 5.84%, 3-1 5.82%) and lowest behind / two-strike-early (0-2
-2.66%). That is the earned-power model working — power is now a function of the
-count, exactly as in real baseball.
+The HR/BIP column is now a clean monotone-by-count signal: highest ahead in the
+count (3-0 6.99%, 2-0 5.87%, 3-1 5.70%) and lowest two-strike-behind (0-2
+2.20%, 1-2 2.82%). That is the earned-power EV shift **and** the behind-count
+contact penalty working together — power is now a function of the count, as in
+real baseball. The remaining over-shares (0-0, 0-2) are now **volume**, not
+effectiveness: every PA flows through 0-0, and the work-the-count table funnels
+a lot of PAs through 0-2 (11.9% of all BIP), so even at the lowest HR/BIP those
+buckets carry share. Pushing them lower means fewer PAs reaching them, not
+weaker contact.
 
 ---
 
@@ -257,8 +297,8 @@ count, exactly as in real baseball.
 | `o27v2/db.py` | `balls`/`strikes` columns on `game_pa_log` + migration |
 | `o27/render/render.py` | stamp count on each `ball_in_play` `_pa_log` row |
 | `o27v2/sim.py` | insert the two new columns |
-| `o27/engine/prob.py` | count-aware `ev_shift` in `resolve_contact` |
-| `o27/config.py` | `CONTACT_COUNT_EV_SCALE` / `_CLAMP`; rewritten `PITCH_BASE` |
+| `o27/engine/prob.py` | count-aware `ev_shift` in `resolve_contact`; `count_hard_mult` in `contact_quality` + call-site computation |
+| `o27/config.py` | `CONTACT_COUNT_EV_SCALE` / `_CLAMP`; `CONTACT_BEHIND_HARD_PENALTY` / `_CAP`; rewritten `PITCH_BASE` |
 | `scripts/hr_by_count.py` | audit harness (HR + BIP by count) |
 | `scripts/hr_count_tradeoff.py` | tuning harness (HR-by-count + run env + foul-out) |
 
@@ -294,9 +334,11 @@ count, exactly as in real baseball.
   remain more aggressive, fewer PAs reach 3-2. Closing it means dialing the take
   harder still (a `STRONG` variant in `hr_count_tradeoff.py` gets 0-0 to ~21%
   but at ~23% K). That's a deliberate aggression-vs-realism choice for the owner.
-- **0-2 is now slightly HR-rich** (+4.2 pts) — two-strike contact may be a touch
-  too authoritative; a small negative-strikes tweak to the earned-power curve
-  (or a 0-2-specific EV trim) could shave it without touching the rest.
+- **0-2 / 0-0 over-shares are now volume, not effectiveness.** HR/BIP at those
+  counts is already the lowest on the grid; further reduction has to come from
+  fewer PAs reaching them, i.e. dialing the take/swing split, not the contact
+  model. The behind-count penalty (`CONTACT_BEHIND_HARD_PENALTY`) can be pushed
+  past 0.29 if more bite is wanted, but watch that it doesn't starve XBH there.
 - **Per-batter discipline.** The pitch table is league-wide; a real next step is
   making the take/swing split read batter `eye`/`discipline`, so patient hitters
   work counts and hackers don't — turning this from a league constant into a
