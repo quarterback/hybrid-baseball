@@ -674,10 +674,10 @@ def contact_quality(
         hard_p = new_hard
         weak_p = max(0.001, weak_p - delta)
 
-    # Behind-in-the-count contact penalty — degrade the authority of the
-    # contact when the batter is defending. Same shape as the weather
-    # multiplier: cut hard contact, push the lost mass to weak. Identity at
-    # count_hard_mult == 1.0 (even/ahead counts and the neutral-count tests).
+    # Count power profile — scale the authority of the contact by the batter's
+    # approach at this count (0-0 contact-mode → <1 cut; full count / ahead →
+    # >1 lift). Same shape as the weather multiplier: move mass between hard and
+    # weak. Identity at count_hard_mult == 1.0 (the neutral-count identity test).
     if count_hard_mult != 1.0:
         new_hard = max(0.001, hard_p * count_hard_mult)
         delta = new_hard - hard_p
@@ -2908,11 +2908,11 @@ class ProbabilisticProvider:
         if state.in_seconds_phase:
             tp_shift += cfg.REBUTTAL_OFFENSE_SHIFT
 
-        # Behind-in-the-count contact penalty: degrade hard contact the deeper
-        # the batter is buried (strikes > balls). Zero at even/ahead counts.
-        _behind = state.count.strikes - state.count.balls
-        _count_hard_mult = 1.0 - min(cfg.CONTACT_BEHIND_HARD_PENALTY_CAP,
-                                     cfg.CONTACT_BEHIND_HARD_PENALTY * max(0, _behind))
+        # Per-count power profile: how much the batter commits to driving the
+        # ball at this count (0-0 = contact mode → low; full count / ahead =
+        # bomb mode → high). Degrades or lifts hard contact accordingly.
+        _count_hard_mult = cfg.COUNT_POWER_PROFILE.get(
+            (state.count.balls, state.count.strikes), 1.0)
 
         quality = contact_quality(
             rng, batter, pitcher, weather,

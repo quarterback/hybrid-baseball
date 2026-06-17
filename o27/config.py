@@ -248,12 +248,31 @@ CONTACT_COUNT_EV_CLAMP: float = 6.0
 # less authoritative. Applied as a multiplicative hard-contact penalty (same
 # mechanism as the weather hard-contact multiplier): hard-contact probability is
 # cut and the lost mass falls to weak, so a would-be-barrel becomes mishit.
-# Penalty = PENALTY_PER_STRIKE * max(0, strikes - balls), capped at
-# PENALTY_CAP. So 0-2 takes the full ~29% hit, 1-2 / 0-1 ~14%, and even/ahead
-# counts (incl. the already-thin deep counts 2-2, 3-2) take none. Zero at 0-0,
-# so the contact-quality identity contract holds.
-CONTACT_BEHIND_HARD_PENALTY: float = 0.145   # per unit of (strikes - balls)
-CONTACT_BEHIND_HARD_PENALTY_CAP: float = 0.29
+#
+# Generalized into a full per-count POWER PROFILE: a single multiplier on
+# hard-contact at each (balls, strikes) encoding the batter's APPROACH at that
+# count. The O27 design intent (project owner): on 0-0 the hitter is optimizing
+# for good contact, NOT a bomb, so first-pitch power is suppressed; the deeper /
+# fuller / more ahead the count, the more he commits to driving the ball, so a
+# full count (3-2) and hitter's counts carry the most power. Behind with two
+# strikes he defends (the original 0-2 penalty lives on as the low entries).
+# 1.0 = neutral (no change). Zero deviation at the default count used by the
+# contact-quality identity test (it calls contact_quality without a count, so
+# the multiplier defaults to 1.0 there).
+COUNT_POWER_PROFILE: dict[tuple, float] = {
+    (0, 0): 0.82,   # first pitch: square it up, don't sell out for power
+    (1, 0): 1.00,
+    (2, 0): 1.08,   # ahead — can sit on a pitch
+    (3, 0): 1.12,
+    (0, 1): 0.86,
+    (1, 1): 1.00,
+    (2, 1): 1.06,
+    (3, 1): 1.15,   # premium hitter's count
+    (0, 2): 0.71,   # buried — defending, choke up
+    (1, 2): 0.86,
+    (2, 2): 1.05,
+    (3, 2): 1.25,   # FULL COUNT — max commitment, swing to do damage
+}
 
 CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
 CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50
