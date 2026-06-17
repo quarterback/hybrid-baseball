@@ -584,6 +584,7 @@ def contact_quality(
     familiarity: float = 0.0,
     risp_penalty: float = 1.0,
     catcher_shift: float = 0.0,
+    count_hard_mult: float = 1.0,
 ) -> str:
     """
     Determine whether contact is weak, medium, or hard.
@@ -669,6 +670,16 @@ def contact_quality(
     hc_mult = wx.hard_contact_multiplier(weather)
     if hc_mult != 1.0:
         new_hard = max(0.001, hard_p * hc_mult)
+        delta = new_hard - hard_p
+        hard_p = new_hard
+        weak_p = max(0.001, weak_p - delta)
+
+    # Count power profile — scale the authority of the contact by the batter's
+    # approach at this count (0-0 contact-mode → <1 cut; full count / ahead →
+    # >1 lift). Same shape as the weather multiplier: move mass between hard and
+    # weak. Identity at count_hard_mult == 1.0 (the neutral-count identity test).
+    if count_hard_mult != 1.0:
+        new_hard = max(0.001, hard_p * count_hard_mult)
         delta = new_hard - hard_p
         hard_p = new_hard
         weak_p = max(0.001, weak_p - delta)
@@ -1911,6 +1922,18 @@ def resolve_contact(
     if _is_risp(state):
         ev_shift -= cfg.RES_RISP_EV_TRIM
 
+    # Count-aware contact authority: ahead in the count → harder contact (more
+    # carry → more HR); two-strike / behind contact is defensive. Zero at 0-0,
+    # so the realism identity contract at a fresh count is preserved. Makes the
+    # HR-by-count distribution earned rather than count-flat — see
+    # docs/aar-hr-by-count-vs-mlb.md.
+    _cnt = getattr(state, "count", None)
+    if _cnt is not None:
+        _bs = int(_cnt.balls) - int(_cnt.strikes)
+        ev_shift += max(-cfg.CONTACT_COUNT_EV_CLAMP,
+                        min(cfg.CONTACT_COUNT_EV_CLAMP,
+                            cfg.CONTACT_COUNT_EV_SCALE * _bs))
+
     exit_velocity, launch_angle, spray_angle, texture = _generate_bb(
         rng, quality,
         batter_power=float(getattr(batter, "power", 0.5) or 0.5),
@@ -2885,6 +2908,12 @@ class ProbabilisticProvider:
         if state.in_seconds_phase:
             tp_shift += cfg.REBUTTAL_OFFENSE_SHIFT
 
+        # Per-count power profile: how much the batter commits to driving the
+        # ball at this count (0-0 = contact mode → low; full count / ahead =
+        # bomb mode → high). Degrades or lifts hard contact accordingly.
+        _count_hard_mult = cfg.COUNT_POWER_PROFILE.get(
+            (state.count.balls, state.count.strikes), 1.0)
+
         quality = contact_quality(
             rng, batter, pitcher, weather,
             swings_in_ab=state.current_at_bat_swings,
@@ -2894,6 +2923,7 @@ class ProbabilisticProvider:
             familiarity=familiarity,
             risp_penalty=_risp_talent_penalty(rng, state),
             catcher_shift=_catcher_gc_shift(state),
+            count_hard_mult=_count_hard_mult,
         )
         is_hr     = False
         is_triple = False

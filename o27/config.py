@@ -101,23 +101,32 @@ from __future__ import annotations
 # Must sum to 1.0; engine normalises after adjustments.
 
 PITCH_BASE: dict[tuple, tuple] = {
-    # Pass 5 (Realism): another nudge on top of Pass 4 — 2-strike swinging
-    # rates trimmed further, with the displaced weight going to fouls so
-    # at-bats stay alive longer (contact-era feel). 0-strike ball rates
-    # nudged up ~0.01 to lift walks toward the 9-10% band.
+    # "Smart batter" / work-the-count pass. Batters in O27 are disciplined:
+    # they swing far less at early-count pitches, and the removed contact weight
+    # is routed into TAKEN pitches (called strikes + balls) — NOT fouls. This is
+    # the key O27 rule constraint: a foul is NOT free protection (3 fouls in an
+    # AB = foul-out, pa.py), so the ONLY rules-legal way to deepen a count is to
+    # take. Foul rates stay at/below the prior baseline. With two strikes,
+    # trimmed whiff weight goes into CONTACT (put the ball in play — which also
+    # feeds deep-count home runs), never into fouls, so the foul-out rate is not
+    # inflated. 3-0 is a near-automatic take. Counts deepen (~3.6 pitches/PA),
+    # pitchers work harder, and cheap first-pitch home runs collapse. Paired with
+    # the count-aware contact authority in resolve_contact, this makes the
+    # home-run-by-count distribution earned rather than front-loaded.
+    # See docs/aar-hr-by-count-vs-mlb.md.
     # Format: (p_ball, p_called_strike, p_swinging_strike, p_foul, p_contact)
-    (0, 0): (0.34, 0.18, 0.11, 0.14, 0.23),
-    (1, 0): (0.38, 0.16, 0.09, 0.14, 0.23),
-    (2, 0): (0.43, 0.14, 0.06, 0.14, 0.23),
-    (3, 0): (0.47, 0.13, 0.04, 0.13, 0.23),
-    (0, 1): (0.31, 0.15, 0.14, 0.18, 0.22),
-    (1, 1): (0.34, 0.13, 0.13, 0.19, 0.21),
-    (2, 1): (0.38, 0.11, 0.10, 0.20, 0.21),
-    (3, 1): (0.42, 0.09, 0.08, 0.20, 0.21),
-    (0, 2): (0.25, 0.10, 0.16, 0.29, 0.20),
-    (1, 2): (0.28, 0.08, 0.16, 0.28, 0.20),
-    (2, 2): (0.32, 0.07, 0.14, 0.27, 0.20),
-    (3, 2): (0.36, 0.05, 0.12, 0.27, 0.20),
+    (0, 0): (0.38, 0.26, 0.10, 0.14, 0.12),
+    (1, 0): (0.40, 0.24, 0.08, 0.14, 0.14),
+    (2, 0): (0.45, 0.21, 0.05, 0.14, 0.15),
+    (3, 0): (0.53, 0.22, 0.03, 0.13, 0.09),
+    (0, 1): (0.33, 0.21, 0.13, 0.18, 0.15),
+    (1, 1): (0.36, 0.17, 0.12, 0.19, 0.16),
+    (2, 1): (0.40, 0.14, 0.09, 0.20, 0.17),
+    (3, 1): (0.46, 0.13, 0.07, 0.20, 0.14),
+    (0, 2): (0.25, 0.11, 0.13, 0.29, 0.22),
+    (1, 2): (0.28, 0.09, 0.13, 0.28, 0.22),
+    (2, 2): (0.32, 0.07, 0.11, 0.27, 0.23),
+    (3, 2): (0.34, 0.05, 0.10, 0.27, 0.24),
 }
 
 # ---------------------------------------------------------------------------
@@ -222,6 +231,48 @@ RES_GB_FC_P: float         = 0.15   # grounder out → fielder's choice share
 # (the XBH-suppression decoupler). Both in mph; 0.0 = identity.
 RES_FORM_EV_SCALE: float   = 18.0
 RES_RISP_EV_TRIM: float    = 3.0
+# Count-aware contact authority (the HR-by-count realism fix; see
+# docs/aar-hr-by-count-vs-mlb.md). A home run should be EARNED by the count,
+# not count-flat: contact made ahead in the count (hitter sitting on a pitch)
+# carries; defensive two-strike / first-pitch-behind contact does not. Modeled
+# as an EV shift of CONTACT_COUNT_EV_SCALE mph per unit of (balls - strikes),
+# clamped to ±CONTACT_COUNT_EV_CLAMP mph. Crucially ZERO at 0-0 (balls==strikes)
+# so the realism identity contract at a fresh count is untouched, and ~mean-zero
+# over the league BIP-by-count distribution so total HR volume is ~preserved —
+# the effect REDISTRIBUTES home runs toward hitters' counts, not inflates them.
+CONTACT_COUNT_EV_SCALE: float = 2.0
+CONTACT_COUNT_EV_CLAMP: float = 6.0
+# Behind-in-the-count contact penalty (the 0-2 fix). The EV shift above moves
+# the ball's carry; this degrades the QUALITY of the contact itself. A batter
+# behind in the count is defending — whatever talent he brings, the contact is
+# less authoritative. Applied as a multiplicative hard-contact penalty (same
+# mechanism as the weather hard-contact multiplier): hard-contact probability is
+# cut and the lost mass falls to weak, so a would-be-barrel becomes mishit.
+#
+# Generalized into a full per-count POWER PROFILE: a single multiplier on
+# hard-contact at each (balls, strikes) encoding the batter's APPROACH at that
+# count. The O27 design intent (project owner): on 0-0 the hitter is optimizing
+# for good contact, NOT a bomb, so first-pitch power is suppressed; the deeper /
+# fuller / more ahead the count, the more he commits to driving the ball, so a
+# full count (3-2) and hitter's counts carry the most power. Behind with two
+# strikes he defends (the original 0-2 penalty lives on as the low entries).
+# 1.0 = neutral (no change). Zero deviation at the default count used by the
+# contact-quality identity test (it calls contact_quality without a count, so
+# the multiplier defaults to 1.0 there).
+COUNT_POWER_PROFILE: dict[tuple, float] = {
+    (0, 0): 0.82,   # first pitch: square it up, don't sell out for power
+    (1, 0): 1.00,
+    (2, 0): 1.08,   # ahead — can sit on a pitch
+    (3, 0): 1.12,
+    (0, 1): 0.86,
+    (1, 1): 1.00,
+    (2, 1): 1.06,
+    (3, 1): 1.15,   # premium hitter's count
+    (0, 2): 0.71,   # buried — defending, choke up
+    (1, 2): 0.86,
+    (2, 2): 1.05,
+    (3, 2): 1.25,   # FULL COUNT — max commitment, swing to do damage
+}
 
 CONTACT_WEAK_BASE: float     = 0.18   # offense pass: 0.38 → 0.18; far fewer weak singles
 CONTACT_MEDIUM_BASE: float   = 0.50   # offense pass: 0.40 → 0.50

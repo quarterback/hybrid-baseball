@@ -538,7 +538,13 @@ CREATE TABLE IF NOT EXISTS game_pa_log (
     -- Engine-credited fielder (player_id) on outs/errors; NULL for hits, non-
     -- BIP events, and legacy rows. Powers exact (PO-consistent) Fielding OAA;
     -- hits still fall back to trajectory-zone attribution in the analytics.
-    fielder_id        INTEGER DEFAULT NULL
+    fielder_id        INTEGER DEFAULT NULL,
+    -- Ball-strike count the batter put the ball in play on (pre-contact, the
+    -- count the swing happened at). Powers outcome-by-count analysis — e.g.
+    -- home-runs-by-count vs the MLB reference (docs/aar-hr-by-count-vs-mlb.md).
+    -- NULL on legacy rows written before count stamping was added.
+    balls             INTEGER DEFAULT NULL,
+    strikes           INTEGER DEFAULT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pa_log_game ON game_pa_log(game_id);
 CREATE INDEX IF NOT EXISTS idx_pa_log_batter ON game_pa_log(batter_id);
@@ -1890,6 +1896,14 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Ball-strike count at the moment the ball was put in play (pre-contact).
+        # Powers outcome-by-count analysis. NULL on legacy rows.
+        for col in ("balls", "strikes"):
+            try:
+                conn.execute(f"ALTER TABLE game_pa_log ADD COLUMN {col} INTEGER DEFAULT NULL")
+                conn.commit()
+            except Exception:
+                pass
         for col in ("singles_allowed", "doubles_allowed", "triples_allowed"):
             try:
                 conn.execute(f"ALTER TABLE game_pitcher_stats ADD COLUMN {col} INTEGER DEFAULT 0")

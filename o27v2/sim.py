@@ -2224,8 +2224,9 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                     was_stay, stay_credited,
                     runs_scored, rbi_credited,
                     outs_before, bases_before, score_diff_before,
-                    outs_after,  bases_after,  score_diff_after)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    outs_after,  bases_after,  score_diff_after,
+                    balls, strikes)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(game_id, role_to_db.get(e["team_id"], None),
                   int(e["batter_id"]) if e["batter_id"] is not None else None,
                   int(e["pitcher_id"]) if e["pitcher_id"] is not None else None,
@@ -2238,7 +2239,8 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
                   e["was_stay"], e["stay_credited"],
                   e["runs_scored"], e["rbi_credited"],
                   e.get("outs_before"), e.get("bases_before"), e.get("score_diff_before"),
-                  e.get("outs_after"),  e.get("bases_after"),  e.get("score_diff_after"))
+                  e.get("outs_after"),  e.get("bases_after"),  e.get("score_diff_after"),
+                  e.get("balls"), e.get("strikes"))
                  for e in pa_log
                  if e["team_id"] in role_to_db],
             )
