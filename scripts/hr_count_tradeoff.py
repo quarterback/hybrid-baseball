@@ -3,6 +3,9 @@
 Run baseline vs a candidate PITCH_BASE override, headless, and report both
 the HR-by-count distribution and run-environment proxies (runs/game, K%,
 BB%) so the tradeoff of dialing back first-pitch aggression is visible.
+
+NOTE: the MLB reference values and the "TVdist-vs-MLB" line are a DIAGNOSTIC
+MIRROR for spotting flatness, not a target. O27 is not an MLB sim.
 """
 import os, sys, random
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

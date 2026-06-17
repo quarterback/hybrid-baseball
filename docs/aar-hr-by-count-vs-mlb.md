@@ -1,19 +1,33 @@
-# After-Action Report — Home-runs-by-count: O27 vs real MLB (audit → tuning)
+# After-Action Report — Home-runs-by-count: shaping O27's count → power curve
+
+*(MLB is used below only as a diagnostic mirror — see the Framing note. O27 is
+not, and is not becoming, an MLB sim.)*
 
 **Date completed:** 2026-06-16
 **Branch:** `claude/new-session-w4nwix`
-**Scope:** realism audit of the HR-by-count distribution, then a three-part fix
-(persist the count, earned-power model, smart-batter pitch table) including a
-mid-flight O27 rules bug and its correction.
+**Scope:** diagnose and fix the HR-by-count distribution (persist the count,
+earned-power model, smart-batter pitch table, per-count power profile),
+including a mid-flight O27 rules bug and its correction.
+
+> **Framing — this is NOT an MLB sim.** A real-MLB chart is used throughout as a
+> *diagnostic mirror* — it's good at exposing structural problems (a flat,
+> count-agnostic HR rate; first-pitch bombs everywhere). It is **not the
+> target**, and "distance to MLB" is **not** the success criterion. O27 is its
+> own sport with its own incentives. The actual objective is an internally
+> coherent **count → power ordering** that matches how O27 should play:
+> contact-mode on 0-0, committed/bomb-mode on a full count, defending when
+> buried. The MLB columns below are kept because they're a handy reference for
+> spotting flatness, not because we're trying to land on them.
 
 ---
 
 ## TL;DR
 
-A chart of real MLB home-runs-by-count (Retrosheet, 1910–2025) showed O27 was
-hitting **~35% of all home runs on the first pitch (0-0)** vs MLB's 18.3% — and
-that a home run in O27 was **count-agnostic** (≈4% of every ball-in-play became
-a HR at *every* count). We:
+A real-MLB home-runs-by-count chart (Retrosheet, 1910–2025), used as a
+diagnostic, exposed two structural problems in O27: it was hitting **~35% of all
+home runs on the first pitch (0-0)**, and a home run was **count-agnostic**
+(≈4% of every ball-in-play became a HR at *every* count — power was unrelated to
+the count). We:
 
 1. **Logged the count** — `game_pa_log` now stores `balls`/`strikes`, so
    outcome-by-count is a live-DB query, not just a headless harness trick.
@@ -26,12 +40,14 @@ a HR at *every* count). We:
 A fourth change followed (Part 3d): a per-count **power profile** — one
 multiplier on hard contact per count, encoding the batter's *approach* (0-0 =
 square it up, not a bomb; full count / ahead = commit to power). It subsumes an
-earlier behind-count penalty and flips the HR/BIP curve to the real-baseball
-shape.
+earlier behind-count penalty and gives the HR/BIP curve the intended O27 shape.
 
-Net: **0-0 HR share 35% → 20%** (now +1.3 vs MLB), full-count HR/BIP now well
-*above* 0-0's (5.4% vs 3.7%) as it should be, total HR-by-count error
-**from 50.2 → 15.2** (sum of |Δ|), HR volume preserved, identity guards green.
+Net (the win, stated in O27 terms): power is now **ordered by the count's
+implied approach** — lowest on 0-0 and when buried, highest on a full count and
+ahead. A full-count homer is now more likely per contact than a first-pitch one
+(HR/BIP 5.4% vs 3.7%), where before it was *backwards*. 0-0's share of all
+homers fell from ~35% to ~20%. HR volume preserved, identity guards green. (For
+reference only, the spread-vs-the-MLB-mirror narrowed from 50.2 to 15.2.)
 
 A subtle O27 rules error was caught and fixed along the way (see Part 3): the
 first cut of the smart-batter table tried to "protect the plate" by fouling off
@@ -270,33 +286,37 @@ unmoved (the profile only re-buckets contact quality by count).
 Earned power + corrected smart `PITCH_BASE` + count power profile
 (2,500 games, seed 1000 → 4,365 HRs / 108,205 BIP):
 
-| Count | O27 HR% | MLB HR% | diff | O27 BIP% | HR/BIP |
-|-------|--------:|--------:|-----:|---------:|-------:|
-| 0-0 | 19.6 | 18.3 | +1.3 | 21.5 | 3.67% |
-| 1-0 | 13.0 | 12.0 | +1.0 | 9.5 | 5.52% |
-| 2-0 | 6.0 | 5.6 | +0.4 | 4.0 | 6.08% |
-| 3-0 | 2.2 | 0.6 | +1.6 | 1.2 | 7.37% |
-| 0-1 | 10.2 | 9.7 | +0.5 | 12.4 | 3.31% |
-| 1-1 | 10.3 | 11.1 | −0.8 | 9.0 | 4.61% |
-| 2-1 | 6.8 | 8.3 | −1.5 | 5.2 | 5.29% |
-| 3-1 | 4.2 | 4.9 | −0.7 | 2.3 | 7.31% |
-| 0-2 | 6.4 | 3.5 | +2.9 | 11.9 | 2.17% |
-| 1-2 | 7.2 | 7.6 | −0.4 | 10.7 | 2.72% |
-| 2-2 | 7.6 | 9.1 | −1.5 | 7.4 | 4.12% |
-| 3-2 | 6.5 | 9.2 | −2.7 | 4.8 | 5.44% |
+The `HR/BIP` column is the one that matters — it's the per-contact power by
+count, the thing we set out to shape. (`MLB%` is the reference mirror, not a
+target.)
 
-Total variation: sum of |Δ| = **15.2** (down from 50.2 at the start — a 70%
-reduction).
+| Count | O27 HR% | O27 BIP% | **HR/BIP** | MLB% (ref) |
+|-------|--------:|---------:|-----------:|-----------:|
+| 0-0 | 19.6 | 21.5 | 3.67% | 18.3 |
+| 1-0 | 13.0 | 9.5 | 5.52% | 12.0 |
+| 2-0 | 6.0 | 4.0 | 6.08% | 5.6 |
+| 3-0 | 2.2 | 1.2 | 7.37% | 0.6 |
+| 0-1 | 10.2 | 12.4 | 3.31% | 9.7 |
+| 1-1 | 10.3 | 9.0 | 4.61% | 11.1 |
+| 2-1 | 6.8 | 5.2 | 5.29% | 8.3 |
+| 3-1 | 4.2 | 2.3 | 7.31% | 4.9 |
+| 0-2 | 6.4 | 11.9 | 2.17% | 3.5 |
+| 1-2 | 7.2 | 10.7 | 2.72% | 7.6 |
+| 2-2 | 7.6 | 7.4 | 4.12% | 9.1 |
+| 3-2 | 6.5 | 4.8 | 5.44% | 9.2 |
 
-The HR/BIP column now reads exactly like the O27 design intent: lowest when
-buried (0-2 2.17%, 1-2 2.72%), low-and-contacty early (0-0 3.67%, 0-1 3.31%),
-hot when ahead (3-0 7.37%, 3-1 7.31%, 2-0 6.08%), and a genuine **full-count
-spike** (3-2 5.44% — well above 0-0). Power is now a function of the count's
-implied approach. The largest residual over-shares (0-0 +1.3, 0-2 +2.9) are
-**volume**, not effectiveness — their HR/BIP is the lowest on the grid; every PA
-flows through 0-0, and the work-the-count table funnels ~12% of all BIP through
-0-2. Shrinking them further means fewer PAs reaching those counts (the
-take/swing split), not weaker contact.
+The HR/BIP column now reads exactly like the O27 design intent, which is the
+success criterion: lowest when buried (0-2 2.17%, 1-2 2.72%), low-and-contacty
+early (0-0 3.67%, 0-1 3.31%), hot when ahead (3-0 7.37%, 3-1 7.31%, 2-0 6.08%),
+and a genuine **full-count spike** (3-2 5.44% — well above 0-0). Power is now a
+function of the count's implied approach; before, it was flat (~4% everywhere).
+
+0-0 and 0-2 carry the largest *share* of homers, but that's now **volume**, not
+power: their per-contact HR rate is the lowest on the grid. Every PA flows
+through 0-0, and the work-the-count table funnels ~12% of all balls in play
+through 0-2 — so those counts accumulate share even at a low HR/BIP. Moving
+them is a take/swing-split question, not a contact-power one. **This is a
+deliberate stopping point — the count→power ordering is where it should be.**
 
 ---
 
@@ -340,19 +360,20 @@ take/swing split), not weaker contact.
 
 ## Where to build next
 
-- **Deep counts still trail MLB** (2-2/3-2 ≈ 12% vs 18%) — because O27 batters
-  remain more aggressive, fewer PAs reach 3-2. Closing it means dialing the take
-  harder still (a `STRONG` variant in `hr_count_tradeoff.py` gets 0-0 to ~21%
-  but at ~23% K). That's a deliberate aggression-vs-realism choice for the owner.
-- **0-0 / 0-2 over-shares are now volume, not effectiveness.** HR/BIP at those
-  counts is already the lowest on the grid; further reduction has to come from
-  fewer PAs reaching them, i.e. dialing the take/swing split, not the contact
-  model. The `COUNT_POWER_PROFILE` entries can be pushed further (lower 0-0,
-  higher 3-2) if more bite is wanted — it's a single readable dict — but watch
-  total HR volume and that the deep counts don't get starved of XBH.
-- **Deep counts (2-2, 3-2) still trail MLB** (−1.5, −2.7) — the profile lifts
-  their HR/BIP, but O27 batters reach them less often than real hitters, so the
-  share gap is a BIP-volume floor more than a power one.
+(All optional — the count→power ordering is at a deliberate stopping point.
+These are levers, not deficiencies-vs-MLB.)
+
+- **The whole curve is one readable dict.** `COUNT_POWER_PROFILE` (and the
+  `CONTACT_COUNT_EV_SCALE`) are the only knobs for "how much power at each
+  count." Want a bigger full-count thump, a quieter 0-0, hotter hitter's counts?
+  Edit the dict and re-run the harness — no formula or engine surgery. Watch
+  total HR volume (the profile re-buckets, but big swings on the high-BIP counts
+  move the total) and that the deep counts don't get starved of XBH.
+- **Count share vs count power are different levers.** A count's *share* of all
+  homers = how often a ball is put in play there × its HR/BIP. The power profile
+  controls the second; the first is the take/swing split in `PITCH_BASE`. If you
+  ever want fewer homers concentrated on 0-0/0-2, that's a `PITCH_BASE` (work-
+  the-count) change, not a power one — the power at those counts is already low.
 - **Per-batter discipline.** The pitch table is league-wide; a real next step is
   making the take/swing split read batter `eye`/`discipline`, so patient hitters
   work counts and hackers don't — turning this from a league constant into a

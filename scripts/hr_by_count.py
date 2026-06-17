@@ -1,5 +1,10 @@
 """
-Compare O27's home-runs-by-count distribution against real MLB.
+Report O27's home-runs-by-count distribution.
+
+NOTE: the MLB column is a DIAGNOSTIC MIRROR, not a target. O27 is its own sport;
+the goal is a coherent count -> power curve (low on 0-0 / when buried, high on a
+full count / ahead), not matching MLB. "diff" / the total-variation line are
+just convenient flatness detectors.
 
 The engine models pitches and a ball-strike count but does NOT persist the
 count at which each plate-appearance outcome occurs (see db.py game_pa_log —
