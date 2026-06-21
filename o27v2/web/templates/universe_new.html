@@ -361,19 +361,26 @@
   // user can drop in a configured league with one click instead of typing.
   // Keeps the locale list aligned with what the backend already accepts.
   const QUICK_PRESETS = [
-    {label: '⚾ O27 MLB',     name: 'O27 MLB',     teams: 8, divisions: 2, style: 'dominican', locale: 'americas_pro'},
+    {label: '⚾ O27 MLB',     name: 'O27 MLB',     teams: 8, divisions: 2, style: 'dominican', locale: 'mlb'},
     {label: '🇯🇵 O27 NPB',     name: 'O27 NPB',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
     {label: '🇰🇷 O27 KBO',     name: 'O27 KBO',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
-    {label: '🇪🇺 European',    name: 'O27 EBL',     teams: 6, divisions: 1, style: 'european',  locale: 'european'},
-    {label: '🌴 Caribbean',    name: 'O27 LIDOM',   teams: 6, divisions: 1, style: 'caribbean', locale: 'latin_america'},
+    {label: '🇪🇺 European',    name: 'O27 EBL',     teams: 6, divisions: 1, style: 'european',  locale: 'europe_full'},
+    {label: '🌴 Caribbean',    name: 'O27 LIDOM',   teams: 6, divisions: 1, style: 'caribbean', locale: 'caribbean_full'},
+    {label: '🌎 Latin America', name: 'O27 LATAM',  teams: 8, divisions: 2, style: 'dominican', locale: 'latin_america_full'},
     {label: '🏃 Athletic',     name: 'O27 ABL',     teams: 6, divisions: 1, style: 'athletic',  locale: 'us_majority'},
     {label: '🌍 Zaryanovia',   name: 'Z-League',    teams: 8, divisions: 2, style: 'balanced',  locale: 'zaryanovia'},
     {label: '🌏 Far East',     name: 'O27 FE',      teams: 8, divisions: 2, style: 'npb',       locale: 'far_east'},
+    {label: '🀄 East/SE Asia', name: 'O27 ASIA',    teams: 8, divisions: 2, style: 'npb',       locale: 'east_asia_full'},
     {label: '🇲🇳 Mongolia',     name: 'O27 MBL',     teams: 6, divisions: 1, style: 'balanced',  locale: 'zaryan_mongolia'},
     {label: '🇰🇵 North Korea',  name: 'O27 DPRK',    teams: 6, divisions: 1, style: 'npb',       locale: 'north_korea'},
     {label: '🌍 Africa',       name: 'O27 AFC',     teams: 6, divisions: 1, style: 'balanced',  locale: 'africa_pro'},
     {label: '🇦🇺 Oceania',     name: 'O27 OBL',     teams: 6, divisions: 1, style: 'balanced',  locale: 'oceania'},
+    {label: '🏔 Nordic/Baltic', name: 'O27 NBL',    teams: 6, divisions: 1, style: 'balanced',  locale: 'nordic_baltic'},
+    {label: '🏛 Balkans',       name: 'O27 BBL',    teams: 6, divisions: 1, style: 'european',  locale: 'balkans'},
+    {label: '🕌 Middle East',   name: 'O27 MEL',    teams: 6, divisions: 1, style: 'balanced',  locale: 'middle_east'},
+    {label: '⛰ Caucasus/CA',    name: 'O27 CCA',    teams: 6, divisions: 1, style: 'balanced',  locale: 'caucasus_central_asia'},
     {label: '🌐 Global mix',   name: 'O27 Global',  teams: 8, divisions: 2, style: 'balanced',  locale: 'global'},
+    {label: '🗺 All Nations',   name: 'O27 World',   teams: 8, divisions: 2, style: 'balanced',  locale: 'all_nations'},
   ];
 
   function clamp(v) { return Math.max(-STYLE_MAX, Math.min(STYLE_MAX, v)); }
