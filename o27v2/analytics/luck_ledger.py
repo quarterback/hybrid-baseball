@@ -190,13 +190,16 @@ def _build_estimator(team_ids=None):
 
 @functools.lru_cache(maxsize=2)
 def _fitted_run_model(version: int):
-    """League-fitted BaseRuns coefficients + run-scale, memoized on a DB
-    version key so the (mildly expensive) refit runs once per sim state."""
+    """League-fitted BaseRuns coefficients + run-scale + the running-game
+    run values (SB/CS), memoized on a DB version key so the (mildly
+    expensive) league refit runs once per sim state."""
     from o27v2.analytics.base_runs import build_base_runs_table, _DEFAULT_COEFFS
+    from o27v2.analytics.linear_weights import derive_linear_weights
     tbl = build_base_runs_table()
     coeffs = tbl.get("fitted_coeffs") or _DEFAULT_COEFFS
     scale = tbl.get("fitted_b_scale_off") or 1.0
-    return tuple(coeffs), float(scale)
+    rv = derive_linear_weights().get("rv", {})
+    return tuple(coeffs), float(scale), float(rv.get("SB", 0.0)), float(rv.get("CS", 0.0))
 
 
 def _run_model():
@@ -257,7 +260,8 @@ def build_game_ledger(game_id: int) -> dict | None:
     line_rows = db.fetchall(
         """SELECT team_id,
                   COALESCE(SUM(bb), 0) AS bb, COALESCE(SUM(hbp), 0) AS hbp,
-                  COALESCE(SUM(ab), 0) AS ab
+                  COALESCE(SUM(ab), 0) AS ab,
+                  COALESCE(SUM(sb), 0) AS sb, COALESCE(SUM(cs), 0) AS cs
            FROM game_batter_stats
            WHERE game_id = ? AND phase = 0
            GROUP BY team_id""",
@@ -300,33 +304,44 @@ def build_game_ledger(game_id: int) -> dict | None:
             "luck": round(bases - e["bases"], 2),
         })
 
-    coeffs, scale = _run_model()
+    coeffs, scale, sb_rv, cs_rv = _run_model()
 
     def _walks(tid):
         ln = lines.get(tid)
         return ((ln["bb"] or 0) + (ln["hbp"] or 0)) if ln else 0
 
     # Expected runs per team from the contact-quality event line + actual
-    # walks/HBP/AB, via league-fitted BaseRuns.
+    # walks/HBP/AB via league-fitted BaseRuns, plus the running game (actual
+    # SB/CS at O27-derived run values — invisible to BaseRuns, so additive).
     est_runs = {}
+    run_steals = {}
     for tid, a in agg.items():
         ln = lines.get(tid)
         bb = (ln["bb"] or 0) if ln else 0
         hbp = (ln["hbp"] or 0) if ln else 0
         ab = (ln["ab"] or 0) if ln else 0
+        sb = (ln["sb"] or 0) if ln else 0
+        cs = (ln["cs"] or 0) if ln else 0
         # Guard: AB must cover the expected hits for C = AB − H ≥ 0.
         ab = max(ab, int(round(a["xh"])))
-        est_runs[tid] = _expected_runs(
+        base = _expected_runs(
             coeffs, scale, a["xh"], a["x2b"], a["x3b"], a["xhr"], bb, hbp, ab)
+        run_steals[tid] = sb * sb_rv + cs * cs_rv
+        est_runs[tid] = base + run_steals[tid]
 
-    ea, eh = est_runs[away_id], est_runs[home_id]
+    # Clamp to >= 0 for the Pythagorean (a CS-heavy line can in principle
+    # net below zero; a negative base would corrupt the win share).
+    ea, eh = max(0.0, est_runs[away_id]), max(0.0, est_runs[home_id])
     denom = (ea ** _DTW_EXPONENT) + (eh ** _DTW_EXPONENT)
     dtw_home = ((eh ** _DTW_EXPONENT) / denom * 100.0) if denom > 0 else 50.0
     dtw_away = 100.0 - dtw_home
 
     def _side(tid, name, abbrev, actual_runs, dtw_pct):
         a = agg[tid]
+        ln = lines.get(tid)
         bb = _walks(tid)
+        sb = (ln["sb"] or 0) if ln else 0
+        cs = (ln["cs"] or 0) if ln else 0
         a["swings"].sort(key=lambda s: -abs(s["luck"]))
         est_total = a["est_batted"] + bb
         actual_total = a["actual_batted"] + bb
@@ -339,6 +354,9 @@ def build_game_ledger(game_id: int) -> dict | None:
             "est_runs": round(er, 1),
             "run_luck": round((actual_runs or 0) - er, 1),
             "dtw_pct": round(dtw_pct, 0),
+            "sb": sb,
+            "cs": cs,
+            "run_steals": round(run_steals[tid], 1),
             "bip": a["bip"],
             "bb": bb,
             "walks": bb,
