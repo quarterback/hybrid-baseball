@@ -9764,7 +9764,7 @@ _BUILTIN_CONFIG_IDS = {
 
 def _universe_style_options():
     from o27v2.league import style_profile_label
-    keys = ["balanced", "npb", "dominican", "european", "caribbean", "athletic"]
+    keys = ["balanced", "mlb", "npb", "dominican", "european", "caribbean", "athletic"]
     return [{"key": k, "label": style_profile_label(k)} for k in keys]
 
 
@@ -9797,7 +9797,7 @@ def _universe_custom_meta():
               for (k, lbl, g, h) in _CUSTOM_ATTR_META if g == "hitter"]
     pitcher = [{"key": k, "label": lbl, "hint": h}
                for (k, lbl, g, h) in _CUSTOM_ATTR_META if g == "pitcher"]
-    preset_keys = ["npb", "dominican", "european", "caribbean", "athletic"]
+    preset_keys = ["mlb", "npb", "dominican", "european", "caribbean", "athletic"]
     presets = [{"key": k,
                 "label": style_profile_label(k),
                 "biases": dict(_STYLE_PROFILES.get(k) or {})}
