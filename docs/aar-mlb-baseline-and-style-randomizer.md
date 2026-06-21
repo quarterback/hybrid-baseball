@@ -55,14 +55,37 @@ Two concrete gaps:
   non-degenerate; no unknown shape keys; both templates parse; `app.py` /
   `league.py` compile.
 
+## 3b. Talent styles (the actual ask)
+
+Owner clarified twice: **not** nationality stereotypes, **not** game-mechanic
+strategies — *talent styles*, i.e. ways the player **generator** produces
+different kinds of players, named purely for what the talent pool is like.
+Same machinery as the regional profiles, reframed as abstract talent
+archetypes. Added to `_STYLE_PROFILES` (labels + both builder menus, listed
+ahead of the regional flavors):
+
+| key | the players it produces |
+| --- | --- |
+| `sluggers` | big raw power, some swing-and-miss |
+| `pure_hitters` | bat-to-ball contact, line drives, modest pop |
+| `on_base` | disciplined eye, works counts, gets on |
+| `speedsters` | fast, athletic, base-stealing, rangy |
+| `defenders` | glove-and-arm gifted, light bats |
+| `power_arms` | velocity & strikeouts, less precise |
+| `finesse_arms` | command & movement over velocity |
+| `five_tool` | loud raw tools, undeveloped polish (boom/bust) |
+| `polished` | refined, sound, few extremes (high-floor) |
+| `hitting_rich` | pool skews to bats over arms |
+| `pitching_rich` | pool skews to arms over bats |
+
+All validated: keys ∈ `_CUSTOM_STYLE_ATTRS`, magnitudes within ±`_CUSTOM_STYLE_MAX`, labeled.
+
 ## 4. Not done / deliberate
 
-- **Existing regional profiles not retuned.** Owner also flagged the
-  profiles as "antiquated for how the game has evolved." Rewriting the
-  bias numbers is a calibration exercise that needs sim validation against
-  the current engine, so I added the missing MLB baselines + randomizer
-  rather than blindly re-weighting npb/dominican/etc. Retuning them (or
-  the new `mlb` magnitudes) should be a calibration pass — flagged for the
-  owner.
+- **Existing regional + new profiles not sim-calibrated.** The bias
+  numbers are hand-set from the attribute semantics, not measured against
+  the live engine. A calibration pass (sim each profile, read the run
+  environment / K-BB-HR / SB / decay it actually produces, adjust) is the
+  honest next step before trusting the magnitudes.
 - **Randomizer is talent-style only**, not parks. Park randomization is a
   trivial follow-up (random pick from `park_options`) if wanted.
