@@ -348,6 +348,8 @@ def build_base_runs_table(team_ids=None) -> dict:
         "default_sse":          round(sse_default, 1),
 
         "fitted_coeffs":        tuple(round(x, 3) for x in fitted_coeffs),
+        "fitted_b_scale_off":   round(fit_scale_off, 4),
+        "fitted_b_scale_def":   round(fit_scale_def, 4),
         "fitted_sse":           round(fitted_sse, 1),
         "improvement_pct":      round(improvement, 1),
 

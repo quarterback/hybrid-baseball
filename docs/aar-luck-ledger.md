@@ -108,6 +108,40 @@ right per ball; it's **deserve-to-win** that needs a runs-based currency
 advancement) rather than a bases proxy. Flagged for the owner as the next
 decision.
 
+## 4d. Deserve-to-win moved to expected runs (owner decision)
+
+Owner chose to fix §4c properly: deserve-to-win now predicts **expected
+runs**, not a bases proxy. Each ball's (EV, LA) bin yields an expected
+event mix (P[1B], P[2B], P[3B], P[HR]) alongside expected bases; summed
+over a team's contact and combined with its *actual* walks/HBP/AB, that
+line is run through the league-fitted **BaseRuns** estimator
+(`o27v2/analytics/base_runs.py`), and a Pythagorean on the two expected-run
+totals gives the win share. BaseRuns is already calibrated to O27's run
+environment and values walks/singles with diminishing returns, so a
+contact-light, walk-and-advance offense (game #794) is no longer undersold.
+
+Changes:
+- `base_runs.py`: `build_base_runs_table` now also returns
+  `fitted_b_scale_off` / `fitted_b_scale_def` (the fitted-coeff run scale),
+  which the ledger needs to put a single game's BaseRuns on the league run
+  scale.
+- `luck_ledger.py`: `_event_components` is the one event→(bases, hit, 2B,
+  3B, HR) definition shared by both lenses; the estimator now returns the
+  full expected vector per bin; `_run_model()` memoizes the fitted
+  BaseRuns coeffs+scale on a DB-version key (count of played regulation
+  games) so the refit runs once per sim state.
+- Template leads with **deserve-to-win % + expected runs**, shows actual
+  vs expected runs (sequencing luck), and keeps the per-ball **contact
+  luck** table as the batted-ball lens.
+
+The two lenses are now clearly separated: *contact luck* (batted-ball,
+per ball) and *run luck* (sequencing, actual − expected runs). DTW is the
+expected-runs comparison.
+
+Validated on a synthetic 600-game league: a 9-HR power line gets ~91% DTW
+(and reads sequencing-unlucky when it under-scores), while a 6-single +
+7-walk line produces a sensible ~5 expected runs instead of being undersold.
+
 ## 5. Follow-ups
 
 - Smoke against a live DB; sanity-check league-wide that team luck sums to
