@@ -142,6 +142,39 @@ Validated on a synthetic 600-game league: a 9-HR power line gets ~91% DTW
 (and reads sequencing-unlucky when it under-scores), while a 6-single +
 7-walk line produces a sensible ~5 expected runs instead of being undersold.
 
+## 4e. Running game folded into expected runs (owner ask)
+
+Owner: "if the running game makes sense to add, add it." It does — stolen
+bases and caught stealing are invisible to BaseRuns' event line (a CS is a
+baserunning out, not an AB / not in H-2B-3B-HR-BB-HBP), so adding them
+doesn't double-count.
+
+- `linear_weights.py`: `_steal_run_values(re_map, state_p)` derives SB/CS
+  run values from the same O27 run-expectancy map the wOBA weights use
+  (steal-of-second model: SB advances 1B→2B, CS erases the runner and
+  adds an out, each averaged over PA-start state occupation). Surfaced as
+  `rv["SB"]` / `rv["CS"]` in `derive_linear_weights`. On synthetic RE data
+  these come out SB ≈ +0.17, CS ≈ −0.38 (correct signs/magnitudes).
+- `luck_ledger.py`: `_run_model` now also returns the SB/CS run values;
+  `build_game_ledger` reads each team's actual SB/CS and adds
+  `sb·rv_SB + cs·rv_CS` to BaseRuns expected runs. Pythagorean inputs are
+  clamped ≥ 0 (a CS-heavy line can in principle net below zero).
+- Template shows a `running: N SB · M CS (± runs)` line per team.
+
+Scope note (owner explicitly fine with non-1:1 vs MLB): the model only
+counts SB/CS, not first-to-third on a single or other extra-base taking —
+that advancement is already inside the actual runs and partly inside
+BaseRuns. Good enough; the goal was to display the running game's value,
+not to fully decompose baserunning.
+
+## 4f. Build/deploy state (for the record)
+
+`main`'s live build `46f8e79` is the PR #264 merge that shipped **v1**
+(coarse grid, bases-based DTW). The finer grid (§4b), expected-runs DTW
+(§4d), and running game (§4e) are on branch
+`claude/vigilant-davinci-hn34xy` ahead of that merge and need a fresh
+merge to `main` to go live.
+
 ## 5. Follow-ups
 
 - Smoke against a live DB; sanity-check league-wide that team luck sums to
