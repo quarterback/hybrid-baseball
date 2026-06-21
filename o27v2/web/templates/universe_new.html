@@ -288,13 +288,17 @@
           <span class="font-semibold">0 = neutral</span> · range −{{ custom_style_max }}…+{{ custom_style_max }} grade points
           (50 = league-average). Type a number or drag the knob; the two stay in sync.
         </div>
-        <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-          Start from
-          <select class="lg-preset rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
-            <option value="">preset…</option>
-            {% for p in style_presets %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
-          </select>
-        </label>
+        <div class="flex items-center gap-2 whitespace-nowrap">
+          <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            Start from
+            <select class="lg-preset rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+              <option value="">preset…</option>
+              {% for p in style_presets %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+            </select>
+          </label>
+          <button type="button" class="lg-randomize inline-flex items-center gap-1 rounded-md border border-indigo-300 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-950 px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900"
+                  title="Roll a coherent random talent profile — re-click to re-roll. Great for spinning up several distinct styles to compare.">🎲 Randomize</button>
+        </div>
       </div>
 
       <div class="mb-3">
@@ -356,12 +360,15 @@
   const STYLE_MAX = {{ custom_style_max }};
   const PRESETS = {};
   ({{ style_presets | tojson }}).forEach(p => { PRESETS[p.key] = p.biases || {}; });
+  // Attribute keys split by side, for the talent-profile randomizer.
+  const HITTER_KEYS  = ({{ hitter_attrs  | map(attribute='key') | list | tojson }});
+  const PITCHER_KEYS = ({{ pitcher_attrs | map(attribute='key') | list | tojson }});
 
   // Quick-add preset shapes — fill the name, teams, style, and locale so the
   // user can drop in a configured league with one click instead of typing.
   // Keeps the locale list aligned with what the backend already accepts.
   const QUICK_PRESETS = [
-    {label: '⚾ O27 MLB',     name: 'O27 MLB',     teams: 8, divisions: 2, style: 'dominican', locale: 'mlb'},
+    {label: '⚾ O27 MLB',     name: 'O27 MLB',     teams: 8, divisions: 2, style: 'mlb', locale: 'mlb', park: 'mlb_standard'},
     {label: '🇯🇵 O27 NPB',     name: 'O27 NPB',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
     {label: '🇰🇷 O27 KBO',     name: 'O27 KBO',     teams: 6, divisions: 1, style: 'npb',       locale: 'east_asia_majority'},
     {label: '🇪🇺 European',    name: 'O27 EBL',     teams: 6, divisions: 1, style: 'european',  locale: 'europe_full'},
@@ -412,6 +419,25 @@
       if (v) out[inp.dataset.attr] = v;
     });
     hidden.value = Object.keys(out).length ? JSON.stringify(out) : '';
+  }
+
+  // Roll a COHERENT random talent profile: emphasize a handful of knobs
+  // (a recognizable identity) instead of jittering all twelve into noise.
+  // A few hitter knobs + a couple pitcher knobs, each a meaningful ±magnitude.
+  function rollRandomBiases() {
+    const pick = (arr, n) => {
+      const a = arr.slice(), out = [];
+      while (out.length < n && a.length) out.push(a.splice(Math.floor(Math.random() * a.length), 1)[0]);
+      return out;
+    };
+    const mag = () => {                       // 8..STYLE_MAX, random sign
+      const m = 8 + Math.floor(Math.random() * (STYLE_MAX - 7));
+      return Math.random() < 0.5 ? -m : m;
+    };
+    const biases = {};
+    pick(HITTER_KEYS,  3 + Math.floor(Math.random() * 2)).forEach(k => biases[k] = mag());
+    pick(PITCHER_KEYS, 1 + Math.floor(Math.random() * 2)).forEach(k => biases[k] = mag());
+    return biases;
   }
 
   function applyPreset(panel, hidden, biases) {
@@ -542,6 +568,14 @@
 
     presetSel.addEventListener('change', () => {
       if (PRESETS[presetSel.value]) applyPreset(panel, hidden, PRESETS[presetSel.value]);
+    });
+
+    const randomizeBtn = panel.querySelector('.lg-randomize');
+    if (randomizeBtn) randomizeBtn.addEventListener('click', () => {
+      // Zero everything first so unselected knobs reset, then apply the roll.
+      const fresh = {};
+      panel.querySelectorAll('.cust-attr').forEach(s => { fresh[s.dataset.attr] = 0; });
+      applyPreset(panel, hidden, Object.assign(fresh, rollRandomBiases()));
     });
 
     card.querySelector('.lg-remove').addEventListener('click', () => {

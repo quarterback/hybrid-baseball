@@ -1163,6 +1163,77 @@ _STYLE_PROFILES: dict[str, dict[str, int]] = {
         "run_aggressiveness": 6, "contact": -5, "eye": -6,
         "pitcher_skill": 8, "command": -7, "movement": -3,        # pitchers
     },
+    # Modern MLB baseline — the conventional big-league game (not a regional
+    # flavor). Three-true-outcomes lean but disciplined: real HR power, decent
+    # plate patience, and high-velocity high-K pitching, with fly-ball tilt.
+    # NET → MLB-shaped K/BB/HR rather than O27's exotic regional poles. Use
+    # this (with the mlb_standard park profile) for an "MLB-style" league.
+    "mlb": {
+        "power": 7, "eye": 3, "contact": -3,                      # hitters
+        "pitcher_skill": 9, "command": 2, "movement": -2,         # pitchers
+    },
+    # ----------------------------------------------------------------------
+    # TALENT styles — abstract descriptions of the kind of PLAYERS the
+    # generator produces, with no nationality attached. Same machinery as the
+    # regional profiles, but named for what the talent pool is *like*
+    # (sluggers, contact hitters, glovemen, power arms …) instead of leaning
+    # on national stereotypes. Pick one to shape how a league's players come
+    # out; mix several across a universe to compare populations.
+    # ----------------------------------------------------------------------
+
+    # Sluggers — big raw power, some swing-and-miss for it.
+    "sluggers": {
+        "power": 15, "eye": 3, "contact": -6, "speed": -3,
+    },
+    # Pure hitters — bat-to-ball contact, sprays line drives, modest pop.
+    "pure_hitters": {
+        "contact": 14, "eye": 5, "power": -6,
+    },
+    # On-base — disciplined eyes, work the count, get on base.
+    "on_base": {
+        "eye": 14, "contact": 6, "power": -4,
+    },
+    # Speedsters — fast, athletic, base-stealing, rangy.
+    "speedsters": {
+        "speed": 15, "baserunning": 10, "arm": 6, "defense": 6,
+        "contact": 3, "power": -8,
+    },
+    # Defenders — glove-and-arm gifted; bats are an afterthought.
+    "defenders": {
+        "defense": 14, "arm": 9, "contact": 3, "power": -5,
+    },
+    # Power arms — velocity and strikeouts, less precise.
+    "power_arms": {
+        "pitcher_skill": 15, "command": -4, "movement": -3, "stamina": -3,
+    },
+    # Finesse arms — command and movement over velocity; pitch to contact.
+    "finesse_arms": {
+        "command": 12, "movement": 12, "stamina": 4, "pitcher_skill": -11,
+    },
+    # Five-tool — loud raw tools across the board, undeveloped polish
+    # (boom-or-bust): power, speed, arm, live arms, but spotty contact/eye/
+    # command.
+    "five_tool": {
+        "power": 9, "speed": 9, "arm": 8, "defense": 6, "baserunning": 6,
+        "contact": -4, "eye": -5,                                  # hitters
+        "pitcher_skill": 8, "command": -6,                        # pitchers
+    },
+    # Polished — refined, fundamentally sound, few extremes (high-floor):
+    # good contact, discipline, command and glove; less top-end power/stuff.
+    "polished": {
+        "contact": 9, "eye": 8, "defense": 5, "power": -3,        # hitters
+        "command": 9, "movement": 5, "pitcher_skill": -3,        # pitchers
+    },
+    # Hitting-rich — the pool skews toward bats over arms.
+    "hitting_rich": {
+        "power": 8, "contact": 7, "eye": 6,                       # hitters
+        "pitcher_skill": -8, "command": -5,                      # pitchers
+    },
+    # Pitching-rich — the pool skews toward arms over bats.
+    "pitching_rich": {
+        "pitcher_skill": 9, "command": 7, "movement": 5, "stamina": 4,
+        "power": -7, "contact": -5,                              # hitters
+    },
     # Balanced — explicit no-op so a config can name it without special-casing.
     "balanced": {},
 }
@@ -1209,6 +1280,18 @@ def style_profile_label(name: str | None) -> str:
     if isinstance(name, str) and name.startswith("{"):
         return "Custom"
     return {
+        "mlb":           "MLB (modern baseline)",
+        "sluggers":      "Sluggers (power bats)",
+        "pure_hitters":  "Pure Hitters (bat-to-ball)",
+        "on_base":       "On-Base (plate discipline)",
+        "speedsters":    "Speedsters (fast & athletic)",
+        "defenders":     "Defenders (glove & arm)",
+        "power_arms":    "Power Arms (velocity & K)",
+        "finesse_arms":  "Finesse Arms (command & movement)",
+        "five_tool":     "Five-Tool (toolsy, raw ceiling)",
+        "polished":      "Polished (refined, high-floor)",
+        "hitting_rich":  "Hitting-Rich (bats over arms)",
+        "pitching_rich": "Pitching-Rich (arms over bats)",
         "npb":           "Nippon (contact / command)",
         "dominican":     "Dominican (power / TTO)",
         "european":      "European (discipline / OBP)",
@@ -1409,6 +1492,15 @@ _PARK_SHAPE_WEIGHTS = (
 # need not sum to 1 (rng.choices normalises). Unknown shape keys are ignored.
 # --------------------------------------------------------------------------
 _PARK_PROFILES: dict[str, dict[str, float]] = {
+    # Conventional MLB ballparks — mostly balanced fields with the classic
+    # asymmetric quirks (a short porch here, deep gaps there) and the
+    # occasional bandbox or Fenway-style triangle. The "normal baseball"
+    # geometry: no futsal courts, no oval cricket grounds. Pair with the
+    # "mlb" talent profile for an MLB-style league.
+    "mlb_standard": {
+        "balanced": 0.50, "short_porch_rf": 0.12, "short_porch_lf": 0.10,
+        "cavernous": 0.12, "bandbox": 0.08, "oval": 0.04, "triangle": 0.04,
+    },
     # Tiny urban footprints wedged into dense cities — short fences forced by
     # the lot, tall "spite" walls to claw back the cheapest HRs. A power-and-
     # walkback game with nowhere to hide a slow outfielder.
@@ -1455,6 +1547,7 @@ _PARK_SHAPE_NAMES = frozenset(s[0] for s in _PARK_SHAPES)
 # Human labels for the named park profiles, surfaced in the league-builder UI
 # so the geometry presets are pickable from a menu instead of read from source.
 _PARK_PROFILE_LABELS: dict[str, str] = {
+    "mlb_standard":       "MLB standard — conventional parks, balanced + classic asymmetry",
     "urban_small":        "Urban small-footprint — short fences, HR + walkback game",
     "brazil_futsal":      "Futsal-tiny — extreme HR, absurd scoring",
     "cricket_grounds":    "Converted cricket grounds — oval, few HR, gappers & triples",
