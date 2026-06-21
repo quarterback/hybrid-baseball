@@ -433,5 +433,63 @@
 </div>
 {% endif %}
 
+{# ───── Luck Ledger (estimated-vs-actual bases / deserve-to-win) ───── #}
+{% if luck_ledger %}
+{% macro luck_side(s) -%}
+<div class="dense p-2" style="flex:1 1 0;min-width:320px">
+  <div class="panel-title">{{ s.name }}</div>
+  <div class="d-flex align-items-baseline gap-2 mb-1">
+    <span style="font-size:1.6rem;font-weight:700">{{ '%.1f'|format(s.est_total) }}</span>
+    <span class="text-secondary small">est. bases &nbsp;·&nbsp; {{ s.dtw_pct|int }}% deserve-to-win</span>
+  </div>
+  <div class="text-secondary small mb-2">
+    {{ '%.1f'|format(s.est_batted) }} batted + {{ s.walks }} walk{{ '' if s.walks == 1 else 's' }}/HBP
+    &nbsp;·&nbsp; actual {{ '%.1f'|format(s.actual_total) }}
+    {%- if s.luck > 0.05 %}
+    &nbsp;·&nbsp; <span style="color:#3a9d4a;font-weight:600">+{{ '%.1f'|format(s.luck) }} lucky</span>
+    {%- elif s.luck < -0.05 %}
+    &nbsp;·&nbsp; <span style="color:#c0392b;font-weight:600">{{ '%.1f'|format(s.luck) }} unlucky</span>
+    {%- else %}
+    &nbsp;·&nbsp; <span class="text-secondary">on script</span>
+    {%- endif %}
+  </div>
+  {% if s.swings %}
+  <table class="table table-sm small mb-0" style="width:100%">
+    <thead>
+      <tr class="text-secondary">
+        <th>Player</th><th>EV/LA</th><th>Spray</th><th>Result</th>
+        <th class="text-end">Est→Act</th><th class="text-end">Luck</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sw in s.swings %}
+      <tr>
+        <td><a href="{{ url_for('player_detail', player_id=sw.player_id) }}">{{ sw.player_name }}</a></td>
+        <td class="text-secondary">{{ sw.ev|int }} / {{ '%+d'|format(sw.la|int) }}°</td>
+        <td>{{ sw.spray }}</td>
+        <td>{{ sw.result }}</td>
+        <td class="text-end">{{ '%.1f'|format(sw.est) }} → {{ sw.act }}</td>
+        <td class="text-end" style="font-weight:600;color:{{ '#3a9d4a' if sw.luck > 0 else ('#c0392b' if sw.luck < 0 else '#888') }}">
+          {{ '%+.2f'|format(sw.luck) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{%- endmacro %}
+<div class="mt-3 mb-3">
+  <div class="d-flex flex-wrap gap-3 align-items-center mb-2" style="font-size:.86rem">
+    <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Luck Ledger</span>
+    <span class="text-secondary small">Estimated bases from each ball's (EV, LA) contact quality vs. what it actually produced. The gap is luck — hard contact that found a glove, or weak contact that fell in. Walks/HBP count one base each. Deserve-to-win is a Pythagorean estimate on estimated bases.</span>
+  </div>
+  <div class="d-flex flex-wrap gap-3">
+    {{ luck_side(luck_ledger.teams.away) }}
+    {{ luck_side(luck_ledger.teams.home) }}
+  </div>
+</div>
+{% endif %}
+
 {% endif %}
 {% endblock %}
