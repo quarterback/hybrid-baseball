@@ -4156,6 +4156,15 @@ def game_detail(game_id: int):
         (game_id,),
     )
 
+    # Luck Ledger — estimated-vs-actual bases ("deserve-to-win") from the
+    # EV/LA contact physics on game_pa_log. None on legacy games without
+    # stamped batted-ball data, in which case the template skips the panel.
+    try:
+        from o27v2.analytics.luck_ledger import build_game_ledger
+        luck_ledger = build_game_ledger(game_id)
+    except Exception:
+        luck_ledger = None
+
     return _serve(
         "game.html",
         game=game,
@@ -4183,6 +4192,7 @@ def game_detail(game_id: int):
         park_dims=park_dims,
         fence_points=fence_points,
         scoring_events=scoring_events,
+        luck_ledger=luck_ledger,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),
     )
