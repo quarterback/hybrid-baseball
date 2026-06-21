@@ -219,6 +219,32 @@ def _walk_run_value(re_map: dict[tuple[int, int], float],
     return s
 
 
+def _steal_run_values(re_map: dict[tuple[int, int], float],
+                      state_p: dict[tuple[int, int], float]) -> tuple[float, float]:
+    """Empirical run values of a stolen base and a caught stealing, from
+    the O27 RE map. Steal-of-second model (the overwhelming majority of
+    steals): from any state with a runner on first and second base open,
+    SB advances 1B→2B (no run) and CS removes that runner and adds an out.
+    Each value is the RE-transition delta averaged over PA-start state
+    occupation, restricted to steal-eligible states. CS comes out negative
+    (it costs both the runner and an out)."""
+    sb_s = cs_s = wsum = 0.0
+    for (b, o), p in state_p.items():
+        if o >= 27:
+            continue
+        if not (b & 1) or (b & 2):      # need a runner on 1st, 2nd open
+            continue
+        re_b  = _re_lookup(re_map, b, o)
+        b_sb  = (b & ~1) | 2            # 1B → 2B
+        b_cs  = b & ~1                  # runner erased
+        sb_s += p * (_re_lookup(re_map, b_sb, o) - re_b)
+        cs_s += p * (_re_lookup(re_map, b_cs, o + 1) - re_b)
+        wsum += p
+    if wsum <= 0:
+        return 0.0, 0.0
+    return sb_s / wsum, cs_s / wsum
+
+
 def derive_linear_weights(team_ids=None) -> dict:
     """Empirically derive wOBA weights and Game Score coefficients.
 
@@ -288,6 +314,7 @@ def derive_linear_weights(team_ids=None) -> dict:
         rv.setdefault(_et, 0.0)
     rv["BB"]  = _walk_run_value(re_map, state_p)
     rv["HBP"] = rv["BB"]   # same state transition
+    rv["SB"], rv["CS"] = _steal_run_values(re_map, state_p)
 
     # K run value: subset of "out" — game_pa_log doesn't separately tag
     # Ks (they aren't BIP events). For GSc purposes we approximate

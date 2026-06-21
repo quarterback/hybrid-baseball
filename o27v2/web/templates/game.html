@@ -439,18 +439,30 @@
 <div class="dense p-2" style="flex:1 1 0;min-width:320px">
   <div class="panel-title">{{ s.name }}</div>
   <div class="d-flex align-items-baseline gap-2 mb-1">
-    <span style="font-size:1.6rem;font-weight:700">{{ '%.1f'|format(s.est_total) }}</span>
-    <span class="text-secondary small">est. bases &nbsp;·&nbsp; {{ s.dtw_pct|int }}% deserve-to-win</span>
+    <span style="font-size:1.6rem;font-weight:700">{{ s.dtw_pct|int }}%</span>
+    <span class="text-secondary small">deserve-to-win &nbsp;·&nbsp; {{ '%.1f'|format(s.est_runs) }} expected runs</span>
   </div>
-  <div class="text-secondary small mb-2">
-    {{ '%.1f'|format(s.est_batted) }} batted + {{ s.walks }} walk{{ '' if s.walks == 1 else 's' }}/HBP
-    &nbsp;·&nbsp; actual {{ '%.1f'|format(s.actual_total) }}
-    {%- if s.luck > 0.05 %}
-    &nbsp;·&nbsp; <span style="color:#3a9d4a;font-weight:600">+{{ '%.1f'|format(s.luck) }} lucky</span>
-    {%- elif s.luck < -0.05 %}
-    &nbsp;·&nbsp; <span style="color:#c0392b;font-weight:600">{{ '%.1f'|format(s.luck) }} unlucky</span>
+  <div class="text-secondary small mb-1">
+    actual {{ s.actual_runs }} run{{ '' if s.actual_runs == 1 else 's' }}
+    {%- if s.run_luck > 0.05 %}
+    &nbsp;·&nbsp; <span style="color:#3a9d4a;font-weight:600">+{{ '%.1f'|format(s.run_luck) }} vs expected</span>
+    {%- elif s.run_luck < -0.05 %}
+    &nbsp;·&nbsp; <span style="color:#c0392b;font-weight:600">{{ '%.1f'|format(s.run_luck) }} vs expected</span>
     {%- else %}
-    &nbsp;·&nbsp; <span class="text-secondary">on script</span>
+    &nbsp;·&nbsp; <span class="text-secondary">as expected</span>
+    {%- endif %}
+  </div>
+  <div class="text-secondary small mb-2" style="opacity:.85">
+    contact: {{ '%.1f'|format(s.est_batted) }} est bases + {{ s.walks }} walk{{ '' if s.walks == 1 else 's' }}/HBP
+    &nbsp;·&nbsp; actual batted {{ '%.1f'|format(s.actual_batted) }}
+    {%- if s.luck > 0.05 %} (<span style="color:#3a9d4a">+{{ '%.1f'|format(s.luck) }} on contact</span>)
+    {%- elif s.luck < -0.05 %} (<span style="color:#c0392b">{{ '%.1f'|format(s.luck) }} on contact</span>)
+    {%- endif %}
+    {%- if s.sb or s.cs %}
+    <br>running: {{ s.sb }} SB · {{ s.cs }} CS
+    {%- if s.run_steals > 0.05 %} (<span style="color:#3a9d4a">+{{ '%.1f'|format(s.run_steals) }} runs</span>)
+    {%- elif s.run_steals < -0.05 %} (<span style="color:#c0392b">{{ '%.1f'|format(s.run_steals) }} runs</span>)
+    {%- endif %}
     {%- endif %}
   </div>
   {% if s.swings %}
@@ -482,7 +494,7 @@
 <div class="mt-3 mb-3">
   <div class="d-flex flex-wrap gap-3 align-items-center mb-2" style="font-size:.86rem">
     <span class="text-secondary" style="text-transform:uppercase;letter-spacing:.04em;font-size:.72rem">Luck Ledger</span>
-    <span class="text-secondary small">Estimated bases from each ball's (EV, LA) contact quality vs. what it actually produced. The gap is luck — hard contact that found a glove, or weak contact that fell in. Walks/HBP count one base each. Deserve-to-win is a Pythagorean estimate on estimated bases.</span>
+    <span class="text-secondary small">Deserve-to-win is a Pythagorean on expected runs — each ball's (EV, LA) contact quality turned into an expected event line, plus actual walks/HBP, run through O27-fitted BaseRuns (so a walk-and-advance offense counts). The table below is the batted-ball view: estimated bases per ball vs. what it produced. The gap is contact luck — hard contact that found a glove, or weak contact that fell in.</span>
   </div>
   <div class="d-flex flex-wrap gap-3">
     {{ luck_side(luck_ledger.teams.away) }}
