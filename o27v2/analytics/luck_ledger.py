@@ -34,13 +34,40 @@ from __future__ import annotations
 from collections import defaultdict
 
 from o27v2 import db
-from o27v2.analytics.expected_woba import _ev_la_bin_sql
 
 # Pythagorean exponent for the bases-proxy deserve-to-win. O27's run
 # environment is higher and more variant than MLB's; 2.0 is a stable,
 # config-agnostic default for a single-game proxy (the full season-fit
 # exponent lives in analytics/pythag.py and is overkill for one game).
 _DTW_EXPONENT = 2.0
+
+# Fine EV/LA grid for the estimated-bases surface. Deliberately finer than
+# the 5x5 (EV, LA) grid the xwOBA analytics use: that grid lumped every
+# 100-110 mph / 24-40 deg barrel into ONE bin whose league-average bases
+# (~2.0, dragged down by caught flies) made genuine home runs read as
+# "+2 lucky" and a 9-HR blowout look fortunate. A finer grid lets elite
+# contact estimate near its true value (a 108/35 ball lands in a bin that
+# is mostly home runs). Kept local to this module so the xwOBA calibration
+# is untouched.
+_LL_EV_EDGES = (70.0, 80.0, 88.0, 95.0, 100.0, 104.0, 108.0, 112.0)
+_LL_LA_EDGES = (-10.0, 0.0, 8.0, 16.0, 24.0, 32.0, 40.0, 48.0)
+# Minimum balls in a bin before we trust its average; below this we fall
+# back to the EV-marginal average, then the global BIP average. Keeps
+# sparse fine bins from injecting noise.
+_MIN_BIN_N = 20
+
+
+def _bin_of(value: float, edges: tuple) -> int:
+    for i, e in enumerate(edges):
+        if value < e:
+            return i
+    return len(edges)
+
+
+def _edge_case(col: str, edges: tuple) -> str:
+    """SQL CASE bucketing `col` by `edges` (mirrors _bin_of)."""
+    whens = " ".join(f"WHEN {col} < {e} THEN {i}" for i, e in enumerate(edges))
+    return f"CASE {whens} ELSE {len(edges)} END"
 
 _HIT_BASES = {
     "hr": 4, "home_run": 4,
@@ -89,11 +116,12 @@ def _result_label(hit_type: str | None, was_stay: int, stay_credited: int) -> st
     return _RESULT_LABEL.get(hit_type or "", (hit_type or "Out").title())
 
 
-def _bin_baseline(team_ids=None) -> tuple[dict, float]:
-    """League-average estimated bases per (EV, LA) bin, plus the global
-    BIP average (fallback for empty bins). Regulation BIP only, matching
-    the xwOBA surface."""
-    ev_sql, la_sql = _ev_la_bin_sql()
+def _build_estimator(team_ids=None):
+    """Return est(ev, la) -> league-average estimated bases on the fine
+    grid, with EV-marginal and global fallbacks for sparse bins.
+    Regulation BIP only, matching the xwOBA surface."""
+    ev_sql = _edge_case("exit_velocity", _LL_EV_EDGES)
+    la_sql = _edge_case("launch_angle", _LL_LA_EDGES)
     rows = db.fetchall(
         f"""
         SELECT {ev_sql} AS ev_bin, {la_sql} AS la_bin,
@@ -105,17 +133,31 @@ def _bin_baseline(team_ids=None) -> tuple[dict, float]:
     )
     bsum: dict[tuple, float] = defaultdict(float)
     bcnt: dict[tuple, int] = defaultdict(int)
+    evsum: dict[int, float] = defaultdict(float)
+    evcnt: dict[int, int] = defaultdict(int)
     gsum = gcnt = 0.0
     for r in rows:
         b = event_bases(r["hit_type"], r["was_stay"], r["stay_credited"])
+        n = r["n"]
         key = (r["ev_bin"], r["la_bin"])
-        bsum[key] += b * r["n"]
-        bcnt[key] += r["n"]
-        gsum += b * r["n"]
-        gcnt += r["n"]
-    table = {k: (bsum[k] / bcnt[k]) for k in bcnt}
+        bsum[key] += b * n
+        bcnt[key] += n
+        evsum[r["ev_bin"]] += b * n
+        evcnt[r["ev_bin"]] += n
+        gsum += b * n
+        gcnt += n
     global_avg = (gsum / gcnt) if gcnt else 0.0
-    return table, global_avg
+
+    def est(ev: float, la: float) -> float:
+        eb = _bin_of(ev, _LL_EV_EDGES)
+        key = (eb, _bin_of(la, _LL_LA_EDGES))
+        if bcnt.get(key, 0) >= _MIN_BIN_N:
+            return bsum[key] / bcnt[key]
+        if evcnt.get(eb, 0) >= _MIN_BIN_N:
+            return evsum[eb] / evcnt[eb]
+        return global_avg
+
+    return est
 
 
 def build_game_ledger(game_id: int) -> dict | None:
@@ -151,7 +193,7 @@ def build_game_ledger(game_id: int) -> dict | None:
     if not game:
         return None
 
-    bins, global_avg = _bin_baseline()
+    estimate = _build_estimator()
 
     # Per-BIP events for this game with the contact physics.
     bips = db.fetchall(
@@ -166,16 +208,6 @@ def build_game_ledger(game_id: int) -> dict | None:
     )
     if not bips:
         return None
-
-    # EV/LA bin edges, recomputed here so we can bin a single row in Python
-    # without round-tripping through SQL. Kept in sync with expected_woba.
-    from o27v2.analytics.expected_woba import _EV_EDGES, _LA_EDGES
-
-    def _bin_of(value: float, edges: tuple) -> int:
-        for i, e in enumerate(edges):
-            if value < e:
-                return i
-        return len(edges)
 
     # Walks / HBP per team for this game (one base each), like the
     # reference ledger's "+ walks".
@@ -198,8 +230,7 @@ def build_game_ledger(game_id: int) -> dict | None:
         if tid not in agg:
             continue
         ev, la = r["ev"], r["la"]
-        key = (_bin_of(ev, _EV_EDGES), _bin_of(la, _LA_EDGES))
-        est = bins.get(key, global_avg)
+        est = estimate(ev, la)
         act = event_bases(r["hit_type"], r["was_stay"], r["stay_credited"])
         a = agg[tid]
         a["est_batted"] += est

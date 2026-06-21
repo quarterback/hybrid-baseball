@@ -74,6 +74,40 @@ consumer.
 - **Not done:** run against a real `o27v2.db` (none in the sandbox), and a
   visual check of the panel. Both are the obvious next step before release.
 
+## 4b. Recalibration — finer EV/LA grid (same day)
+
+First live look at real games (#758, #791, #813 — all power blowouts)
+showed the failure mode the AAR's §3 only half-anticipated: the 5×5
+(EV, LA) grid borrowed from xwOBA lumps *every* 100–110 mph / 24–40°
+barrel into ONE bin whose league-average bases (~2.0, dragged down by
+caught flies) made genuine home runs read as "+2.0 lucky." A 9-HR, 39-run
+demolition came out "+16.2 lucky," which is nonsense — crushing the ball
+isn't luck.
+
+Fix: `luck_ledger.py` now uses its **own** finer grid
+(`_LL_EV_EDGES` 8 bands 70→112, `_LL_LA_EDGES` 8 bands −10→48), kept local
+so the xwOBA calibration is untouched, with a sample-size fallback
+(fine bin → EV-marginal → global, `_MIN_BIN_N = 20`) so sparse fine bins
+don't inject noise. Validated on a dense synthetic league: a 100°/35°
+barrel now estimates ~3.2 bases (was 2.0), so a HR there reads ~+0.8
+instead of +2.0, and the per-player luck table surfaces real luck
+(a hard liner caught, a flare that dropped) instead of "lucky home runs."
+
+## 4c. Known limitation surfaced by real data — the currency is incomplete
+
+Game #794 (Karaj 11, Nevelsk 8) is the important one: Karaj scored **11
+runs on 6 singles, 0 XBH**, off walks + the stay/advancement game. The
+estimated-bases model (batter total bases + 1/walk) can only see batter
+contact, so it rated Karaj's offense weak (7.7 est batted) and even gave
+the *opponent* the higher deserve-to-win. In O27 a large share of run
+production is **runner advancement (RAD) and on-base/sequencing**, not the
+batter's own total bases — so a batter-TB proxy systematically mis-ranks
+games won by small-ball/walks. The contact-quality *luck table* is still
+right per ball; it's **deserve-to-win** that needs a runs-based currency
+(BaseRuns / linear weights over the full event set, incl. walks and
+advancement) rather than a bases proxy. Flagged for the owner as the next
+decision.
+
 ## 5. Follow-ups
 
 - Smoke against a live DB; sanity-check league-wide that team luck sums to
