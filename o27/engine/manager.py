@@ -18,6 +18,7 @@ from .state import GameState, Player, SpellRecord, Substitution
 from typing import Optional
 from o27 import config as cfg
 from o27.engine import cricket_order
+from o27.engine import defense as _defense
 
 
 def _in_regulation(state: GameState) -> bool:
@@ -167,15 +168,21 @@ def _log_substitution(
     lineup_index: Optional[int] = None,
     trigger_score: float = 0.0,
     reason: str = "",
+    one_way: bool = True,
 ) -> None:
-    """Append a Substitution to state.substitution_log and add the
-    outgoing player to the team's one-way exit set.
+    """Append a Substitution to state.substitution_log and (by default) add
+    the outgoing player to the team's one-way exit set.
 
     Centralized so every substitution path stamps the invariant. Callers
     that pass an empty out_player_id (e.g., joker insertion where the
     "out" player is the one whose lineup spot is hijacked for a PA only)
     skip the one-way enforcement — those callers are responsible for
     handling re-entry rules themselves.
+
+    `one_way=False` records the substitution for the box score WITHOUT
+    retiring the outgoing player. Used by tactical (non-injury) defensive
+    subs: the glove changes in the field but the displaced starter is "not
+    out" and keeps batting in his lineup-card slot.
     """
     score_for = state.score.get(team_id, 0)
     other_id = "home" if team_id == "visitors" else "visitors"
@@ -194,8 +201,9 @@ def _log_substitution(
         reason=reason,
     ))
     # One-way enforcement — the outgoing player is gone for the rest of
-    # the game. Look up which team owns them.
-    if out_player_id:
+    # the game. Look up which team owns them. Skipped for field-only subs
+    # (one_way=False), where the displaced starter stays eligible to bat.
+    if out_player_id and one_way:
         for t in (state.visitors, state.home):
             if t.team_id == team_id:
                 t.substituted_out.add(out_player_id)
@@ -1323,26 +1331,71 @@ def defensive_sub(
     state: GameState,
     player_out: Player,
     player_in: Player,
+    injury: bool = False,
 ) -> list:
-    """O27-specific tactical sub: replace a lineup player with a bench
-    bat for defensive upgrade reasons. Unlike `pinch_hit` (which
-    replaces the current scheduled batter for offense), this can target
-    ANY lineup slot and is called by the FIELDING team's manager.
+    """O27 defensive substitution, called by the FIELDING team's manager.
 
-    The swap-in takes the lineup slot, so when their slot comes up to
-    bat in the team's offensive half (or in super-innings), they're the
-    one batting. Frees the manager to "spend" a slugger after they've
-    already banked PAs and lock in defensive specialists for the rest
-    of the fielding half.
+    O27 treats the batting order as a fixed lineup card: both teams submit
+    a card at first pitch and that is the order they bat all game,
+    *regardless of what happens defensively*. A tactical defensive sub
+    therefore swaps the GLOVE on the field but does NOT change the batting
+    order — the displaced starter is "not out" (think of the substitute as
+    a nickel fielder who only takes the field) and keeps batting in his slot
+    the whole game. This is the default path.
+
+    `injury=True` is the one exception: an injured fielder is a genuine
+    "out", so his replacement takes both the field position AND his
+    lineup-card slot, and the injured player is retired one-way.
     """
     fielding = state.fielding_team
     if player_out not in fielding.lineup:
         return [f"  [MANAGER ERROR] {player_out.name} not in fielding lineup."]
     idx = fielding.lineup.index(player_out)
-    fielding.lineup[idx] = player_in
+    out_pos = (getattr(player_out, "game_position", "")
+               or getattr(player_out, "position", "") or "")
+
+    # Move team defense by the real marginal value of this glove swap at the
+    # vacated position — talent and fit decide, so it can help or hurt. Keyed
+    # on the player's canonical position to match the game-start computation.
+    _defense.apply_sub_to_team_defense(
+        fielding, player_out, player_in,
+        getattr(player_out, "position", "") or out_pos,
+    )
+
+    if injury:
+        # Real exit: the replacement inherits the glove and the batting slot.
+        fielding.lineup[idx] = player_in
+        if (not getattr(player_in, "game_position", "")) and out_pos:
+            player_in.game_position = out_pos
+        log = [
+            f"  DEFENSIVE SUB: {player_in.name} replaces {player_out.name} "
+            f"in the field (and takes their lineup slot)."
+        ]
+        state.events.append({
+            "type": "defensive_sub",
+            "team_id": fielding.team_id,
+            "out_id":  player_out.player_id,
+            "in_id":   player_in.player_id,
+        })
+        _log_substitution(
+            state,
+            kind="pinch_field",
+            team_id=fielding.team_id,
+            in_player_id=player_in.player_id,
+            out_player_id=player_out.player_id,
+            lineup_index=idx,
+            reason="defensive_sub_injury",
+        )
+        return log
+
+    # Field-only tactical sub: the batting order (lineup card) is untouched.
+    if out_pos:
+        player_in.game_position = out_pos
+    fielding.field_replacements[player_out.player_id] = player_in
     log = [
-        f"  DEFENSIVE SUB: {player_in.name} replaces {player_out.name} "
-        f"in the field (and takes their lineup slot)."
+        f"  DEFENSIVE SUB: {player_in.name} takes the field for "
+        f"{player_out.name}{(' at ' + out_pos) if out_pos else ''} — "
+        f"{player_out.name} keeps his spot in the batting order."
     ]
     state.events.append({
         "type": "defensive_sub",
@@ -1358,6 +1411,7 @@ def defensive_sub(
         out_player_id=player_out.player_id,
         lineup_index=idx,
         reason="defensive_sub",
+        one_way=False,
     )
     return log
 
@@ -1631,10 +1685,13 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     # catcher swap needs its own handling). Jokers aren't in the
     # batting lineup so they don't appear here.
     lineup = list(fielding.lineup)
+    # Skip starters whose glove has already been covered by a field-only
+    # defensive sub — re-covering the same slot would just churn.
     candidates_out = [
         pl for pl in lineup
         if not pl.is_pitcher
         and (getattr(pl, "position", "") not in ("C", "DH"))
+        and pl.player_id not in fielding.field_replacements
     ]
     if not candidates_out:
         return None
@@ -1644,13 +1701,16 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     )
 
     # Bench candidates: roster non-pitchers not currently in the lineup
-    # AND not already substituted out. Jokers excluded — they're a
+    # AND not already substituted out AND not already deployed as a
+    # field-only defensive replacement. Jokers excluded — they're a
     # separate tactical pool, not defensive replacements.
     lineup_ids = {pl.player_id for pl in lineup}
+    glove_ids = {p.player_id for p in fielding.field_replacements.values()}
     bench = [
         pl for pl in fielding.roster
         if not pl.is_pitcher
         and pl.player_id not in lineup_ids
+        and pl.player_id not in glove_ids
         and fielding.is_available(pl.player_id)
         and not _is_joker(pl)
     ]
