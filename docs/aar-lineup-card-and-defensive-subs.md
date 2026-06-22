@@ -97,13 +97,29 @@ update is a safe no-op.
   weighted/weight 7.25/14.5, rating 0.5; `POSITIONAL_VALUE` is now the shared
   engine object.
 
+## 5b. Follow-up (2026-06-22): joker/phase subs + position eligibility
+
+Two consistency items from §5 are now done:
+
+- **`joker_to_field` and `phase_transition_swap` are field-only too.** Both now
+  install the incoming glove and move team defense by the swap's marginal value
+  but leave the batting order alone — the outgoing players are "not out" and
+  keep their slots (recorded via `field_replacements` + `one_way=False`). The
+  joker is still removed from the joker pool (committed to the field); the
+  phase-transition regulars (who have already batted) keep batting into
+  super-innings.
+- **Position eligibility is enforced on every defensive placement.** New
+  `defense.eligible_positions(player)` = primary `position` ∪ the
+  `role_field_pos` list (the per-position glove-threshold encoding already
+  produced at generation/development). `should_defensive_sub`,
+  `should_joker_to_field` and `should_phase_transition_swap` now only place a
+  player at a position he's eligible for — an error-prone first baseman can't
+  be slid to center unless his glove cleared the center-field bar. Forced
+  injury replacements remain the one exception (emergencies can field a player
+  out of position).
+
 ## 5. Follow-ups / not done
 
-- `joker_to_field` and `phase_transition_swap` still mutate the batting order
-  the old way. The former is rare and usually injury-forced; the latter fires
-  only after a team has batted (cycle ≥ 1), so neither causes the
-  first-cycle "missing position" symptom. Converting them to the lineup-card
-  model is a consistency follow-up.
 - The marginal defense update keys on a player's canonical `position` to match
   the game-start basis. For a starter assigned out of his canonical position
   at game build (rare), the delta basis can differ slightly from his

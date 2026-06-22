@@ -173,3 +173,63 @@ def test_team_defense_identity_at_all_defaults():
     p = Player(player_id="Z", name="Z", position="SS")
     assert abs(dfn.position_defense_rating(p, "SS") - 0.5) < 1e-9
     assert abs(dfn.position_defense_rating(p, "CF") - 0.5) < 1e-9
+
+
+# --- joker-to-field and phase-transition swap obey the lineup card ---------
+
+def test_joker_to_field_is_field_only():
+    st = _fielding_state()
+    home = st.home
+    before = list(home.lineup)
+    out = home.lineup[1]                              # SS starter
+    joker = Player(player_id="HJ1", name="Jok", position="SS",
+                   defense=0.9, defense_infield=0.9)
+    home.jokers_available = [joker]
+    _stash_defense(home)
+    mgr.joker_to_field(st, joker, out)
+    assert _same_order(home.lineup, before)           # batting order intact
+    assert out in home.lineup and joker not in home.lineup
+    assert out.player_id not in home.substituted_out  # starter is "not out"
+    assert joker not in home.jokers_available          # committed to the field
+    assert home.field_replacements.get(out.player_id) is joker
+    assert joker.game_position.startswith("J→")
+
+
+def test_phase_transition_swap_is_field_only():
+    st = _fielding_state()
+    bat = st.batting_team                              # the team about to field
+    bat.lineup_cycle_number = 1
+    before = list(bat.lineup)
+    out = bat.lineup[0]                                # a CF starter
+    glove = Player(player_id="VD1", name="Dglove", position="CF",
+                   defense=0.95, defense_outfield=0.95)
+    bat.roster.append(glove)
+    _stash_defense(bat)
+    mgr.phase_transition_swap(st, [{"player_out": out, "player_in": glove}])
+    assert _same_order(bat.lineup, before)            # batting order intact
+    assert out in bat.lineup and glove not in bat.lineup
+    assert out.player_id not in bat.substituted_out
+    assert bat.field_replacements.get(out.player_id) is glove
+
+
+# --- position eligibility --------------------------------------------------
+
+def test_defensive_sub_only_uses_position_eligible_gloves():
+    st = _fielding_state()                             # worst is the SS
+    d = mgr.should_defensive_sub(st)
+    assert d is not None
+    pos = d["player_out"].game_position or d["player_out"].position
+    assert dfn.is_eligible_at(d["player_in"], pos)
+
+
+def test_defensive_sub_skips_when_no_eligible_glove():
+    st = _fielding_state()                             # worst is the SS (0.01)
+    home = st.home
+    # Make every bench glove eligible only at 1B — none can cover short.
+    for p in home.roster:
+        if p.player_id.startswith("HB"):
+            p.position = "1B"
+            p.role_field_pos = ""
+            p.defense_infield = 0.99
+    d = mgr.should_defensive_sub(st)
+    assert d is None                                   # no SS-eligible glove

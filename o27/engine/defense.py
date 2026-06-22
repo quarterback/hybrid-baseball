@@ -94,6 +94,35 @@ def position_defense_rating(player, pos: str) -> float:
     return base
 
 
+def eligible_positions(player) -> set:
+    """The set of positions a player may legally defend: his primary
+    `position` plus every entry in his `role_field_pos` eligibility list.
+
+    A player can only be put on the field at a position in this set — an
+    error-prone first baseman is not eligible to play center unless his
+    glove cleared the center-field bar at generation/development time.
+    """
+    out = set()
+    pos = (getattr(player, "position", "") or "").strip().upper()
+    if pos:
+        out.add(pos)
+    raw = getattr(player, "role_field_pos", "") or ""
+    for tok in raw.split(","):
+        tok = tok.strip().upper()
+        if tok:
+            out.add(tok)
+    return out
+
+
+def is_eligible_at(player, pos: str) -> bool:
+    """True if `player` may defend `pos`. An empty/unknown target position is
+    treated as allowed (nothing to enforce against)."""
+    pos = (pos or "").strip().upper()
+    if not pos:
+        return True
+    return pos in eligible_positions(player)
+
+
 def apply_sub_to_team_defense(team, player_out, player_in, pos: str) -> float | None:
     """Move `team.defense_rating` by the marginal value of replacing
     `player_out` with `player_in` at `pos` on defense.
