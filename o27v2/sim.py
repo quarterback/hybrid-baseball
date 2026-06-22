@@ -61,27 +61,16 @@ class GameAlreadyPlayedError(ValueError):
 # Centralised here so app.py and sim.py read the same numbers.
 # ---------------------------------------------------------------------------
 
-POSITIONAL_VALUE: dict[str, float] = {
-    "C":  +1.5,
-    "SS": +1.0,
-    "CF": +0.5,
-    "2B": +0.5,
-    "3B": +0.3,
-    "LF": -0.3,
-    "RF": -0.3,
-    "1B": -0.7,
-    "DH": -1.5,
-    "UT":  0.0,
-    "P":  -2.0,   # pitchers rarely field; their "defense" mostly reflects PFP
-}
+# Position-aware defense math now lives in the engine (o27/engine/defense.py)
+# so the pre-game team-defense computation here and the in-game defensive-sub
+# delta in o27.engine.manager share one source of truth. These aliases keep
+# the existing local names working.
+from o27.engine import defense as _defense
 
-
-_INFIELD_POSITIONS  = frozenset(("1B", "2B", "3B", "SS"))
-_OUTFIELD_POSITIONS = frozenset(("LF", "CF", "RF"))
-
-# Canonical 8 fielding positions (excluding pitcher). Every starting
-# fielder must land on exactly one of these.
-_CANONICAL_FIELDING_8 = ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
+POSITIONAL_VALUE       = _defense.POSITIONAL_VALUE
+_INFIELD_POSITIONS     = _defense.INFIELD_POSITIONS
+_OUTFIELD_POSITIONS    = _defense.OUTFIELD_POSITIONS
+_CANONICAL_FIELDING_8  = _defense.CANONICAL_FIELDING_8
 
 
 def _assign_game_positions(starters: list, sp: list, dhs: list) -> None:
@@ -150,53 +139,18 @@ def _assign_game_positions(starters: list, sp: list, dhs: list) -> None:
         p.game_position = "J"
 
 
-_SPEED_RANGE_POSITIONS = {
-    # Position → fraction of the rating that's driven by foot speed
-    # (closing range, first-step quickness, taking the extra base on
-    # cutoffs). Speed = 0.5 is neutral (zero contribution); deviations
-    # from neutral push the position-defense rating up or down.
-    "CF":  0.30, "LF":  0.22, "RF":  0.22,
-    "SS":  0.18, "2B":  0.18,
-    "3B":  0.08, "1B":  0.04,
-    "C":   0.00,
-}
+# Position-aware single-player rating (general + group fit + speed + arm).
+# Thin alias to the shared engine helper.
+_position_defense_rating = _defense.position_defense_rating
 
 
-def _position_defense_rating(player, pos: str) -> float:
-    """Return the player's effective defense at the given position.
+def _team_defense_components(lineup: list, roster: list[dict]) -> tuple[float, float]:
+    """Return (weighted_sum, weight_sum) for the team-defense mean.
 
-    Blends general `defense` with the position-group sub-rating so a
-    specialist gets a real boost at their primary group and a real
-    penalty out of group. 60% sub-group, 40% general. A speed adjustment
-    is then layered on top for positions where foot speed translates to
-    range — heavily weighted for CF, moderate for corner OF and middle
-    IF, and basically nil at 1B / C. Identity preserved at speed = 0.5.
-    """
-    general = float(getattr(player, "defense", 0.5) or 0.5)
-    if pos == "C":
-        sub = float(getattr(player, "defense_catcher", 0.5) or 0.5)
-    elif pos in _INFIELD_POSITIONS:
-        sub = float(getattr(player, "defense_infield", 0.5) or 0.5)
-    elif pos in _OUTFIELD_POSITIONS:
-        sub = float(getattr(player, "defense_outfield", 0.5) or 0.5)
-    else:
-        sub = general
-    base = 0.6 * sub + 0.4 * general
-    speed = float(getattr(player, "speed", 0.5) or 0.5)
-    speed_w = _SPEED_RANGE_POSITIONS.get(pos, 0.0)
-    return base + speed_w * (speed - 0.5)
-
-
-def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
-    """Compute a single 0..1 team defense rating as a positional-value-
-    weighted mean of fielders' position-aware defense ratings.
-
-    `lineup` is the engine-side Player list (8 fielders + SP + 3 DH).
-    `roster` is the original DB-side player rows so we can look up the
-    canonical position string by player_id (engine Players don't carry
-    position).
-
-    Identity: at all defaults (defense = 0.5 for everyone) → returns 0.5.
+    Separating the components (rather than just the ratio) lets the engine
+    apply an exact marginal update to `defense_rating` when a defensive sub
+    swaps one glove for another mid-game — the sub moves the weighted sum by
+    the real value of that swap, then the rating is re-derived as the ratio.
     """
     pos_by_id: dict[str, str] = {
         str(r["id"]): str(r.get("position") or "") for r in roster
@@ -207,11 +161,19 @@ def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
         pos = pos_by_id.get(player.player_id, "")
         if pos in ("DH", "P"):
             continue   # DH and starting pitchers don't contribute to fielding
-        # Weight = max(0.5, 1.5 + positional_value) so even -bias positions
-        # contribute, but valuable positions count more.
-        w = max(0.5, 1.5 + POSITIONAL_VALUE.get(pos, 0.0))
-        weighted_sum += w * _position_defense_rating(player, pos)
+        w = _defense.positional_weight(pos)
+        weighted_sum += w * _defense.position_defense_rating(player, pos)
         weight_sum   += w
+    return weighted_sum, weight_sum
+
+
+def _team_defense_rating(lineup: list, roster: list[dict]) -> float:
+    """Single 0..1 team defense rating — a positional-value-weighted mean of
+    fielders' position-aware ratings.
+
+    Identity: at all defaults (defense/speed/arm = 0.5) → returns 0.5.
+    """
+    weighted_sum, weight_sum = _team_defense_components(lineup, roster)
     return (weighted_sum / weight_sum) if weight_sum > 0 else 0.5
 
 
@@ -687,6 +649,23 @@ def _db_team_to_engine(
     starting_fielders = list(fielders[:8])
     bench_fielders = list(fielders[8:])
 
+    # Position-coverage floor: a half-inning must put the full nine in the
+    # batting order (eight fielders + the pitcher) so the lineup card covers
+    # every defensive position. If the active fielder pool somehow came up
+    # short — a position drained by injuries with no reserve to promote — top
+    # it up from the joker/DH pool so no position is ever left unmanned at
+    # first pitch. _assign_game_positions then spreads the eight across the
+    # canonical slots. Normally a no-op (rosters carry 19 fielders).
+    if len(starting_fielders) < 8:
+        topup = list(dhs) + list(jokers)
+        while len(starting_fielders) < 8 and topup:
+            extra = topup.pop(0)
+            starting_fielders.append(extra)
+            if extra in jokers:
+                jokers.remove(extra)
+            elif extra in dhs:
+                dhs.remove(extra)
+
     # Phase 5e/5f: habit-bench pass. Fires BEFORE the rest-day pass so
     # a cold-cup starter can be swapped for a hot-cup bench fielder of
     # comparable skill before the manager's rest-day logic considers
@@ -904,8 +883,13 @@ def _db_team_to_engine(
         and p.player_id not in lineup_ids
         and p.player_id not in joker_ids
     ]
-    # Compute aggregate defense rating from the lineup's fielding 8.
-    team.defense_rating = _team_defense_rating(lineup, players)
+    # Compute aggregate defense rating from the lineup's fielding 8. Stash the
+    # weighted/weight sums so the engine can move the rating by the exact
+    # marginal value of an in-game defensive sub (o27.engine.manager).
+    _def_wsum, _def_wt = _team_defense_components(lineup, players)
+    team.defense_weighted_sum = _def_wsum
+    team.defense_weight_sum   = _def_wt
+    team.defense_rating = (_def_wsum / _def_wt) if _def_wt > 0 else 0.5
     # Stamp manager persona — bias hook/joker/PH/run-game decisions.
     team.manager_archetype        = str(team_row.get("manager_archetype") or "")
     team.mgr_quick_hook           = float(team_row.get("mgr_quick_hook") or 0.5)

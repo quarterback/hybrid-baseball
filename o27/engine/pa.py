@@ -405,7 +405,9 @@ def _apply_injury_sub(state: GameState, event: dict) -> list[str]:
     elif kind == "runner":
         log += mgr.pinch_run(state, event["base_idx"], event["replacement"])
     elif kind == "fielder":
-        log += mgr.defensive_sub(state, victim, event["replacement"])
+        # An injured fielder is a genuine exit — his replacement takes both
+        # the glove and the batting-order slot (not a field-only sub).
+        log += mgr.defensive_sub(state, victim, event["replacement"], injury=True)
 
     state.in_game_injuries.append({
         "player_id":   victim.player_id,

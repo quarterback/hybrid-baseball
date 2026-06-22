@@ -418,6 +418,14 @@ class Team:
     # at game start by sim.py:_db_team_to_engine. 0.5 = neutral; higher =
     # better collective defense → fewer hits, fewer errors.
     defense_rating: float = 0.5
+    # Components of defense_rating (the positional-value-weighted mean):
+    # rating = defense_weighted_sum / defense_weight_sum. Stashed at game start
+    # so an in-game defensive sub can move the rating by the exact marginal
+    # value of swapping one glove for another at one position, then re-derive
+    # the ratio. Zero weight_sum (simple sims that hard-set defense_rating)
+    # disables the live update — the rating just stays put.
+    defense_weighted_sum: float = 0.0
+    defense_weight_sum:   float = 0.0
     # Catcher's arm rating, stamped at game start. Drives SB-success
     # suppression. 0.5 = neutral.
     catcher_arm:    float = 0.5
@@ -517,6 +525,15 @@ class Team:
     # super-innings and Declared Seconds.
     bench: list = field(default_factory=list)
     substituted_out: set = field(default_factory=set)
+    # Field-only defensive replacements. Maps {out_player_id: in_player} for
+    # tactical (non-injury) defensive subs. In O27 the batting order is a
+    # fixed lineup card: a defensive sub swaps the GLOVE in the field but the
+    # displaced starter is "not out" and keeps his slot in the batting order
+    # for the whole game (the substitute fields without taking a bat). This
+    # set lets the manager avoid re-replacing an already-covered starter and
+    # avoid re-using a glove that's already in the field — without ever
+    # touching `lineup` (the batting order) or `substituted_out` (true exits).
+    field_replacements: dict = field(default_factory=dict)
     # Phase-transition swap — fires at most once per game. The first-batting
     # team swaps in a defensive unit late in their offensive phase so the
     # better gloves are in place when they take the field. Reset per game
