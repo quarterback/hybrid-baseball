@@ -853,6 +853,110 @@ def _sub_footnotes_for(rows: list[dict]) -> str:
     return _render_sub_footnotes(lineup_ordered, footnotes, row_by_id)
 
 
+_DEF_LOG_POSITIONS = [
+    ("P",  "PITCHER (P)"),
+    ("C",  "CATCHER (C)"),
+    ("1B", "FIRST BASE (1B)"),
+    ("2B", "SECOND BASE (2B)"),
+    ("3B", "THIRD BASE (3B)"),
+    ("SS", "SHORTSTOP (SS)"),
+    ("LF", "LEFT FIELD (LF)"),
+    ("CF", "CENTER FIELD (CF)"),
+    ("RF", "RIGHT FIELD (RF)"),
+]
+_DEF_LOG_LABEL_W = max(len(lbl) for _, lbl in _DEF_LOG_POSITIONS)
+_DEF_LOG_CANON8 = {"C", "1B", "2B", "3B", "SS", "LF", "CF", "RF"}
+
+
+def _def_log_field_pos(gp: str) -> str:
+    """Canonical fielding position from a stored game_position, unwrapping the
+    joker-to-field form ('J->SS' / 'J→SS' -> 'SS')."""
+    g = (gp or "").strip().upper()
+    for sep in ("→", "->"):
+        if sep in g:
+            g = g.split(sep)[-1]
+    return g.strip()
+
+
+def _defensive_log_for(team_name: str, batting: list[dict],
+                       pitching: list[dict]) -> str:
+    """Per-position field coverage by out-envelope for one team's fielding
+    stint(s).
+
+    O27 separates the batting card from the fielding alignment: a defensive
+    substitution swaps the glove without touching the batting order, so this
+    log is the right place to see who actually covered each position and when.
+    The pitcher envelope comes from each arm's outs recorded (cumulative); the
+    eight field positions come from the starter plus any defensive entries
+    (DEF / joker-to-field). Offensive subs (PH / PR) never appear — they don't
+    change who is in the field.
+    """
+    half_total = sum(int(p.get("ip_outs", 0) or 0) for p in pitching)
+    if half_total <= 0:
+        return ""
+
+    def seg(name: str, a: int, b: int) -> str:
+        return f"{name} (Outs {a}-{b})"
+
+    # Pitcher row: cumulative outs recorded, in appearance order.
+    pit_segs: list[str] = []
+    cum = 0
+    for p in pitching:
+        ipo = int(p.get("ip_outs", 0) or 0)
+        if ipo <= 0:
+            continue
+        nm = _last_name(p.get("player_name") or "")
+        pit_segs.append(seg(nm, cum + 1, cum + ipo))
+        cum += ipo
+
+    # Fielders: starter + defensive entries per position (never PH / PR).
+    starters: dict[str, dict] = {}
+    subs_by_pos: dict[str, list[dict]] = {}
+    for r in batting:
+        pos = _def_log_field_pos(r.get("game_position"))
+        if pos not in _DEF_LOG_CANON8:
+            continue
+        et = r.get("entry_type", "starter")
+        if et == "starter":
+            starters[pos] = r
+        elif et in ("DEF", "joker_field"):
+            if int(r.get("entered_inning", 0) or 0) > 0:
+                subs_by_pos.setdefault(pos, []).append(r)
+
+    def fielder_cov(pos: str) -> str:
+        holders: list[dict] = []
+        if pos in starters:
+            holders.append(starters[pos])
+        holders.extend(sorted(subs_by_pos.get(pos, []),
+                              key=lambda r: int(r.get("entered_inning", 0) or 0)))
+        if not holders:
+            return "—"
+        segs: list[str] = []
+        start = 1
+        for i, h in enumerate(holders):
+            nm = _last_name(h.get("player_name") or "")
+            if i + 1 < len(holders):
+                nxt_inn = int(holders[i + 1].get("entered_inning", 0) or 0)
+                b = max(start, min((nxt_inn - 1) * 3, half_total))
+                segs.append(seg(nm, start, b))
+                start = b + 1
+            else:
+                segs.append(seg(nm, max(start, 1), half_total))
+        return " → ".join(segs)
+
+    lines = [
+        f"{team_name.upper()} DEFENSIVE LOG (OUTS 1-{half_total})",
+        "-" * RULE_WIDTH,
+        f"{'POSITION'.ljust(_DEF_LOG_LABEL_W)} | FIELD COVERAGE BY OUT-ENVELOPE",
+        "-" * RULE_WIDTH,
+    ]
+    for code, label in _DEF_LOG_POSITIONS:
+        cov = (" → ".join(pit_segs) if pit_segs else "—") if code == "P" \
+            else fielder_cov(code)
+        lines.append(f"{label.ljust(_DEF_LOG_LABEL_W)} | {cov}")
+    return "\n".join(lines)
+
+
 def render_box_score(
     game: dict,
     phases: list[int],
@@ -899,6 +1003,10 @@ def render_box_score(
         "",
         render_pitching_table(game.get("home_name", "Home"), home_pitching,
                               decisions, season_wl, finisher_pid, finisher_to),
+        "",
+        _defensive_log_for(game.get("away_name", "Away"), away_batting, away_pitching),
+        "",
+        _defensive_log_for(game.get("home_name", "Home"), home_batting, home_pitching),
         "",
         notes,
         rule,

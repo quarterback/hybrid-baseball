@@ -156,6 +156,24 @@ offensive batting card from the defensive alignment. The engine is correct;
 the current renderer reuses the DEF-row convention. Box-score redesign is a
 nice-to-have, not core.
 
+## 5e. Follow-up (2026-06-22): the defensive log
+
+With the batting card and the fielding alignment now decoupled, the box score
+gained a per-team **DEFENSIVE LOG** — each position's coverage by out-envelope,
+the natural way to read field-only subs. Built in the **live** path
+(`o27v2/web/box_score.py`, not the engine renderer, which the web app doesn't
+use for the box). Pitcher envelopes come from cumulative `ip_outs`; the eight
+field positions from the starter plus any defensive entries (DEF /
+joker-to-field), ordered by `entered_inning` with boundaries at
+`(entered_inning − 1) × 3`. Offensive subs (PH / PR) are excluded — they change
+the batting card, not the field, so a pinch-hit-for starter still shows as the
+fielder. All nine positions always listed; unchanged ones read "(Outs 1-N)".
+No schema change — it reuses already-persisted `game_position` / `entry_type` /
+`entered_inning` / `ip_outs`. Inning-granularity boundaries (a sub mid-inning
+rounds to the inning edge); exact-out envelopes would need an `entered_outs`
+column, deferred. Owner deferred a broader offense/defense box redesign; this
+is the targeted slice that makes the field-only model legible.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match
