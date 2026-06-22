@@ -5,8 +5,10 @@ Symptom that motivated this: box scores showed teams churning the bench
 through the order, before the starting fielded lineup had even batted once.
 Diagnosis: the tactical deciders (should_pinch_hit / should_pinch_run /
 should_defensive_sub) had no first-cycle gate. The fix gates them on
-Team.lineup_cycle_number >= 1; jokers stay ungated; injuries bypass the gate
-(they route through the executors, not the deciders).
+Team.lineup_cycle_number >= 1. Joker insertion is gated the same way — the
+first trip through the order belongs to the nine base batters (every fielder
+and the pitcher hits once before any tactical insertion). Injuries bypass the
+gate (they route through the executors, not the deciders).
 """
 import random
 
@@ -76,16 +78,33 @@ def test_tactical_subs_allowed_after_first_cycle():
     assert mgr.should_pinch_hit(st, rng=random.Random(1)) is not None
 
 
-def test_jokers_ungated_at_cycle_zero():
+def _joker_fires_setup(st):
+    """Stack the deck so the weak-hitter joker override WOULD fire: the batter
+    due up is below replacement and every joker is a clear upgrade, with a
+    maximally joker-happy manager. Only the cycle gate should be able to veto."""
+    team = st.batting_team
+    team.mgr_joker_aggression = 1.0
+    team.lineup[team.lineup_position % len(team.lineup)].skill = 0.10
+    for j in team.jokers_available:
+        j.skill = 0.95
+
+
+def test_jokers_gated_before_first_cycle():
     st = _high_leverage_state()
     st.batting_team.lineup_cycle_number = 0
-    # Jokers are intentionally exempt from the first-cycle gate; the decider
-    # must still be reachable (returns a Player or None by its own logic, but
-    # never raises and isn't hard-gated by cycle).
-    rng = random.Random(1)
-    # Should not raise; result type is Player or None.
-    res = mgr.should_insert_joker(st, rng=rng)
-    assert res is None or isinstance(res, Player)
+    _joker_fires_setup(st)
+    # Even in a spot where the joker override would otherwise fire, the
+    # first-cycle gate must hold it — the nine base batters hit first.
+    assert mgr.should_insert_joker(st, rng=random.Random(0)) is None
+
+
+def test_jokers_allowed_after_first_cycle():
+    st = _high_leverage_state()
+    st.batting_team.lineup_cycle_number = 1
+    _joker_fires_setup(st)
+    # Gate lifted: the weak-hitter override fires and returns a joker Player.
+    res = mgr.should_insert_joker(st, rng=random.Random(0))
+    assert isinstance(res, Player)
 
 
 def test_injury_event_bypasses_gate_at_cycle_zero():

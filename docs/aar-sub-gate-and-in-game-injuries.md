@@ -50,9 +50,23 @@ already used by `should_swap_offensive_for_defense`. Added
 `if <team>.lineup_cycle_number < 1: return None` to `should_pinch_hit`,
 `should_pinch_run`, and `should_defensive_sub` (the last keyed on the
 *batting* team, since the fielding side holds its defense until the
-opposing order turns over once). **Jokers stay ungated** — they are O27's
-intended per-cycle tactical mechanic. Monotonic counter, never reset
+opposing order turns over once). Monotonic counter, never reset
 per-half, so extras stay allowed.
+
+**Follow-up (2026-06-22): jokers gated too.** The first pass left
+`should_insert_joker` ungated as an "intended per-cycle mechanic." That was
+wrong: a joker insertion bats *in place of* the scheduled batter and does
+**not** advance the lineup (`batter_override`, cleared in `_end_at_bat`
+without `advance_lineup`), and the weak-hitter override path fires at
+0.75–0.95 specifically on the worst bats. So in the very first trip the
+catcher and first baseman — the weakest hitters, batting last — got
+repeatedly jokered and barely batted; box scores showed teams fielding only
+six or seven of their nine before jokers appeared. Added the same
+`lineup_cycle_number < 1` gate to `should_insert_joker`, so the first turn
+through the order is always the nine base batters (eight fielders + the
+pitcher), each hitting once before any joker. Side effect: cycle 0 is now
+always joker-free, so a Cricket-Order flip is reliably armed entering cycle
+1 — consistent with the rule, not a regression.
 
 ### Part B — in-game injuries (forced mid-game subs)
 New engine module `o27/engine/injury.py`, rolled once per PA in the
@@ -87,10 +101,10 @@ the engine-tunables dashboard; `INJURY_INGAME_ENABLED=False` disables it.
 
 ## 4. Validation
 
-- `pytest o27/tests` — 134 passed (incl. new
-  `test_sub_first_cycle.py`: deciders return None at cycle 0, fire at
-  cycle ≥ 1, jokers ungated, injury bypasses the gate, injury roll
-  reproduces under a fixed seed).
+- `pytest o27/tests` — 135 passed (incl.
+  `test_sub_first_cycle.py`: deciders **and jokers** return None at cycle 0,
+  fire at cycle ≥ 1, injury bypasses the gate, injury roll reproduces under a
+  fixed seed).
 - **Determinism**: same seed + same roster state → identical injuries
   (CLAUDE.md invariant). An earlier "flip" was a test artifact from two
   *identical* dummy teams (home-bats-first coin flip resolving by object

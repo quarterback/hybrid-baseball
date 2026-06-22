@@ -580,7 +580,9 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     """Joker insertion decision: weak-hitter override + leverage path.
 
     Per-PA call: returns a Player from the team's joker pool to insert,
-    or None to let the base lineup proceed normally. Two decision paths:
+    or None to let the base lineup proceed normally. Held off entirely until
+    the lineup has turned over once (lineup_cycle_number >= 1) so the nine base
+    batters each hit before any joker appears. Two decision paths:
 
       1. Weak-hitter override: if the current batter's skill is below
          JOKER_WEAK_BATTER_THRESHOLD AND at least one eligible joker
@@ -607,6 +609,13 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
         return None
     team = state.batting_team
     if not team.jokers_available:
+        return None
+    # Lineup-integrity gate: no joker insertion until the starting lineup has
+    # batted through once (lineup_cycle_number >= 1). The first trip through the
+    # order belongs to the nine base batters — every fielder and the pitcher
+    # hits before any tactical insertion. Mirrors should_pinch_hit/_run and the
+    # defensive-sub gate. Forced injury subs bypass this via the executor path.
+    if team.lineup_cycle_number < 1:
         return None
     # A joker on base from a prior PA can't physically also be at bat —
     # Bonds can't be at 2B and "also" inserted to bat again. And a joker
