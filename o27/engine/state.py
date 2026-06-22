@@ -703,14 +703,6 @@ class GameState:
     # tallies how many scored into pitcher_ir_scored_this_spell.
     inherited_runner_ids: set = field(default_factory=set)
 
-    # --- In-game injuries (forced mid-game removals) ---
-    # One dict per player hurt mid-game and removed:
-    #   {player_id, team_id, kind, outs, replaced_by}
-    # The engine forces the substitution and records here; o27v2's post-game
-    # layer draws severity (DTD/short/long), sets injured_until/il_tier, and
-    # logs the transaction. See o27/engine/injury.py.
-    in_game_injuries: list = field(default_factory=list)
-
     # --- Multi-hit tracking (within one at-bat) ---
     current_at_bat_hits: int = 0
     # Count of contact events (swings that put ball in play) so far in

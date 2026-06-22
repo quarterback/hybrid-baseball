@@ -1,21 +1,18 @@
-"""Lineup-integrity substitution gate + in-game-injury bypass.
+"""Lineup-integrity substitution gate.
 
 Symptom that motivated this: box scores showed teams churning the bench
 (pinch hitters / pinch runners / defensive subs) inside the first turn
 through the order, before the starting fielded lineup had even batted once.
-Diagnosis: the tactical deciders (should_pinch_hit / should_pinch_run /
-should_defensive_sub) had no first-cycle gate. The fix gates them on
-Team.lineup_cycle_number >= 1. Joker insertion is gated the same way — the
-first trip through the order belongs to the nine base batters (every fielder
-and the pitcher hits once before any tactical insertion). Injuries bypass the
-gate (they route through the executors, not the deciders).
+Diagnosis: the offensive-substitution deciders (should_pinch_hit /
+should_pinch_run) and joker insertion had no first-cycle gate. The fix gates
+them on Team.lineup_cycle_number >= 1 — every lineup slot's current occupant
+must bat once before any offensive sub. The gate is ABSOLUTE: this variant has
+no in-game injuries, so there is no bypass.
 """
 import random
 
 from o27.engine.state import Team, GameState, Player
 from o27.engine import manager as mgr
-from o27.engine import injury
-from o27 import config as cfg
 
 
 _POS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
@@ -146,33 +143,3 @@ def test_weak_hitter_is_not_benched_in_low_leverage():
             fires += 1
     # gap_factor is 0 here so leverage is 0 — effectively never fires.
     assert fires == 0, fires
-
-
-def test_injury_event_bypasses_gate_at_cycle_zero():
-    st = _high_leverage_state()
-    st.batting_team.lineup_cycle_number = 0
-    st.pitcher_spell_count = 40   # deep into the arc → fatigue tax elevated
-    # Force injuries on so the roll can fire; crank rates to guarantee a hit.
-    cfg.INJURY_INGAME_ENABLED = True
-    old = (cfg.INJURY_INGAME_PITCHER_BASE, cfg.INJURY_INGAME_BATTER_BASE,
-           cfg.INJURY_INGAME_BASERUN_BASE, cfg.INJURY_INGAME_FIELD_BASE)
-    cfg.INJURY_INGAME_PITCHER_BASE = 1.0
-    try:
-        evt = injury.roll_injury_event(st, random.Random(0))
-        assert evt is not None and evt["type"] == "injury_sub"
-        # The forced replacement exists despite cycle 0 (gate bypassed).
-        assert evt.get("new_pitcher") is not None or evt.get("replacement") is not None
-    finally:
-        (cfg.INJURY_INGAME_PITCHER_BASE, cfg.INJURY_INGAME_BATTER_BASE,
-         cfg.INJURY_INGAME_BASERUN_BASE, cfg.INJURY_INGAME_FIELD_BASE) = old
-
-
-def test_injury_roll_is_deterministic():
-    st1 = _high_leverage_state(); st1.pitcher_spell_count = 40
-    st2 = _high_leverage_state(); st2.pitcher_spell_count = 40
-    cfg.INJURY_INGAME_PITCHER_BASE = 0.5
-    e1 = injury.roll_injury_event(st1, random.Random(7))
-    e2 = injury.roll_injury_event(st2, random.Random(7))
-    k1 = None if e1 is None else (e1["kind"], e1["player_out"].player_id)
-    k2 = None if e2 is None else (e2["kind"], e2["player_out"].player_id)
-    assert k1 == k2
