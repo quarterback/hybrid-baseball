@@ -381,6 +381,49 @@ def _stay_credit_strike(state: GameState) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# In-game injury substitution
+# ---------------------------------------------------------------------------
+
+def _apply_injury_sub(state: GameState, event: dict) -> list[str]:
+    """Execute a forced in-game-injury replacement via the normal executor
+    for the victim's role, record the injury on state for post-game IL
+    processing, and emit a play-by-play line. Bypasses the first-cycle
+    substitution gate by construction (it never touches the should_* deciders)."""
+    kind   = event["kind"]
+    victim = event["player_out"]
+    team   = state.fielding_team if kind in ("pitcher", "fielder") else state.batting_team
+    repl   = event.get("new_pitcher") or event.get("replacement")
+
+    pos = getattr(victim, "position", "") or ""
+    log = [f"  INJURY: {victim.name}{(' (' + pos + ')') if pos else ''} "
+           f"leaves the game hurt."]
+
+    if kind == "pitcher":
+        log += mgr.pitching_change(state, event["new_pitcher"])
+    elif kind == "batter":
+        log += mgr.pinch_hit(state, event["replacement"])
+    elif kind == "runner":
+        log += mgr.pinch_run(state, event["base_idx"], event["replacement"])
+    elif kind == "fielder":
+        log += mgr.defensive_sub(state, victim, event["replacement"])
+
+    state.in_game_injuries.append({
+        "player_id":   victim.player_id,
+        "team_id":     team.team_id,
+        "kind":        kind,
+        "outs":        state.outs,
+        "replaced_by": getattr(repl, "player_id", None),
+    })
+    state.events.append({
+        "type": "injury",
+        "player_id": victim.player_id,
+        "team_id": team.team_id,
+        "kind": kind,
+    })
+    return log
+
+
+# ---------------------------------------------------------------------------
 # Main event dispatcher
 # ---------------------------------------------------------------------------
 
@@ -698,6 +741,10 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
     if etype == "pinch_hit":
         replacement = event["replacement"]
         log += mgr.pinch_hit(state, replacement)
+        return log
+
+    if etype == "injury_sub":
+        log += _apply_injury_sub(state, event)
         return log
 
     if etype == "pitching_change":

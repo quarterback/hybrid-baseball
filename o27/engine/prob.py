@@ -23,6 +23,7 @@ from typing import Optional
 from .state import GameState, Player
 from . import stay as stay_mod
 from . import manager as mgr
+from . import injury
 from . import weather as wx
 from o27 import config as cfg
 from o27.engine import power_play
@@ -2450,6 +2451,7 @@ class ProbabilisticProvider:
         self.rng = rng
         self._last_batter_id: Optional[str] = None
         self._manager_checked: bool = False
+        self._injury_checked: bool = False
         # Daily form tracking — every time a fresh pitcher takes the mound
         # (half start or pitching change) we re-roll their today_form so
         # the same SP can throw a gem one start and a clunker the next.
@@ -2511,6 +2513,7 @@ class ProbabilisticProvider:
         if current_batter_id != self._last_batter_id:
             self._last_batter_id = current_batter_id
             self._manager_checked = False
+            self._injury_checked = False
             state.current_ab_shift_decided = False
             state.current_ab_shift_type = "none"
             state.power_play_checked_this_ab = False
@@ -2646,6 +2649,16 @@ class ProbabilisticProvider:
           3. Pinch hit (fallback when jokers exhausted and pitcher is up in
              a tie-game, runners-in-scoring-position situation).
         """
+        # In-game injury — rolled once per PA, before any tactical decision.
+        # A forced injury replacement preempts the manager's voluntary moves
+        # this PA and bypasses the first-cycle substitution gate (it routes
+        # through the executors in apply_event, not the should_* deciders).
+        if not self._injury_checked:
+            self._injury_checked = True
+            inj = injury.roll_injury_event(state, self.rng)
+            if inj is not None:
+                return inj
+
         # Declared Seconds — checked first so a declaration doesn't waste
         # a pitching change / joker / pinch hit. Recomputed every PA in
         # the eligible window (out 22+); fires when the AI's target save

@@ -2,13 +2,8 @@
 
 **Date:** 2026-06-22
 **Branch:** `claude/vigilant-davinci-hn34xy`
-**Status:** Part A (lineup-integrity gate) shipped and still live.
-**⚠️ Part B (in-game injuries) was REMOVED the same day** — this variant has
-no in-game injuries; the offensive-substitution gate is absolute, with no
-bypass. See `docs/aar-no-ingame-injuries.md`. Everything below about Part B is
-historical; the Part-B code (engine `injury.py`, the `prob.py`/`pa.py` hooks,
-`state.in_game_injuries`, the `INJURY_INGAME_*` config, and
-`o27v2.injuries.apply_in_game_injuries`) no longer exists.
+**Status:** Shipped. 134 engine tests pass; new gate/injury regression
+suite passes; 224-game DB sim persists in-game injuries cleanly.
 
 ---
 

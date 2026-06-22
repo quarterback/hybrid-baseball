@@ -182,11 +182,24 @@ FATIGUE_SWINGING: float = -0.09   # fatigue-dominance: -0.06 → -0.09 (gassed p
 FATIGUE_FOUL: float     = -0.06   # fatigue-dominance: -0.04 → -0.06
 
 # ---------------------------------------------------------------------------
-# In-game injuries (forced mid-game substitutions) — REMOVED.
-# This variant has no in-game injuries: a player who is in the lineup must bat
-# (the offensive-sub gate is absolute, with no injury bypass). Off-field /
-# between-game injuries still live in o27v2/injuries.py.
+# In-game injuries (forced mid-game substitutions)
 # ---------------------------------------------------------------------------
+# Per-plate-appearance probabilities that a participant gets hurt and must
+# leave the game. The engine only decides WHO leaves and forces the swap;
+# severity (DTD / short / long IL) is drawn post-game in o27v2.injuries.
+# Tuned for "moderate" volume — bench/bullpen depth matters, on the order of
+# roughly half a forced removal per game. Tune via the engine-tunables
+# dashboard. Set INJURY_INGAME_ENABLED=False to disable entirely.
+INJURY_INGAME_ENABLED: bool          = True
+INJURY_INGAME_PITCHER_BASE: float    = 0.0008  # current pitcher, before fatigue ramp
+INJURY_INGAME_FATIGUE_SCALE: float   = 0.06    # per BF past his stamina threshold
+INJURY_INGAME_FATIGUE_MULT_MAX: float = 6.0    # cap on the fatigue multiplier
+INJURY_INGAME_BATTER_BASE: float     = 0.0006  # the batter due up
+INJURY_INGAME_BASERUN_BASE: float    = 0.0011  # each runner on base (running is risky)
+INJURY_INGAME_FIELD_BASE: float      = 0.0005  # one random fielder per PA
+# Roster floor — never force a sub that would drop the active non-joker
+# position pool below this; the player plays through instead.
+INJURY_INGAME_ROSTER_FLOOR: int      = 7
 
 # ---------------------------------------------------------------------------
 # Contact quality distribution
