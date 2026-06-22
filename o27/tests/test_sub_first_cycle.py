@@ -5,8 +5,10 @@ Symptom that motivated this: box scores showed teams churning the bench
 through the order, before the starting fielded lineup had even batted once.
 Diagnosis: the tactical deciders (should_pinch_hit / should_pinch_run /
 should_defensive_sub) had no first-cycle gate. The fix gates them on
-Team.lineup_cycle_number >= 1; jokers stay ungated; injuries bypass the gate
-(they route through the executors, not the deciders).
+Team.lineup_cycle_number >= 1. Joker insertion is gated the same way — the
+first trip through the order belongs to the nine base batters (every fielder
+and the pitcher hits once before any tactical insertion). Injuries bypass the
+gate (they route through the executors, not the deciders).
 """
 import random
 
@@ -76,16 +78,74 @@ def test_tactical_subs_allowed_after_first_cycle():
     assert mgr.should_pinch_hit(st, rng=random.Random(1)) is not None
 
 
-def test_jokers_ungated_at_cycle_zero():
+def _joker_fires_setup(st):
+    """Stack the deck so a joker insertion WOULD fire: the batter due up is far
+    below the joker pool (a real upgrade) and the manager is maximally
+    joker-happy. Only leverage and the cycle gate decide whether it actually
+    fires."""
+    team = st.batting_team
+    team.mgr_joker_aggression = 1.0
+    team.lineup[team.lineup_position % len(team.lineup)].skill = 0.10
+    for j in team.jokers_available:
+        j.skill = 0.95
+
+
+def test_jokers_gated_before_first_cycle():
     st = _high_leverage_state()
     st.batting_team.lineup_cycle_number = 0
-    # Jokers are intentionally exempt from the first-cycle gate; the decider
-    # must still be reachable (returns a Player or None by its own logic, but
-    # never raises and isn't hard-gated by cycle).
-    rng = random.Random(1)
-    # Should not raise; result type is Player or None.
-    res = mgr.should_insert_joker(st, rng=rng)
-    assert res is None or isinstance(res, Player)
+    _joker_fires_setup(st)
+    # Even in a spot where the joker would otherwise fire, the first-cycle gate
+    # must hold it — the nine base batters hit first.
+    assert mgr.should_insert_joker(st, rng=random.Random(0)) is None
+
+
+def test_jokers_fire_in_late_high_leverage():
+    # Late, bases loaded, tied, joker-happy manager, big upgrade over the
+    # batter due up: the leverage path should send a joker in.
+    st = _high_leverage_state()
+    st.batting_team.lineup_cycle_number = 1
+    st.outs = 24                       # late in the half → high late_factor
+    st.bases = ["V1", "V2", "V3"]      # bases loaded → max runner_factor
+    _joker_fires_setup(st)
+    res = mgr.should_insert_joker(st, rng=random.Random(1))
+    assert isinstance(res, Player)
+
+
+def test_jokers_do_not_fire_for_a_better_bat():
+    # Upgrade guard: even in a max-leverage spot, no joker comes in for a
+    # batter the pool can't out-hit (manager never pinch-hits his good bats).
+    st = _high_leverage_state()
+    st.batting_team.lineup_cycle_number = 1
+    st.outs = 24
+    st.bases = ["V1", "V2", "V3"]
+    st.batting_team.mgr_joker_aggression = 1.0
+    st.batting_team.lineup[st.batting_team.lineup_position].skill = 0.95
+    for j in st.batting_team.jokers_available:
+        j.skill = 0.30   # all jokers worse than the batter
+    # Try many seeds; none should fire.
+    assert all(
+        mgr.should_insert_joker(st, rng=random.Random(s)) is None
+        for s in range(50)
+    )
+
+
+def test_weak_hitter_is_not_benched_in_low_leverage():
+    # The old override fired ~0.75-0.95 every cycle on weak bats. Now, with no
+    # leverage (blowout, no runners, early), a weak hitter almost never draws a
+    # joker — he gets to bat.
+    fires = 0
+    rng = random.Random(99)
+    for _ in range(500):
+        st = _high_leverage_state()
+        st.batting_team.lineup_cycle_number = 1
+        st.outs = 3                              # early → low late_factor
+        st.bases = [None, None, None]            # no runners → low leverage
+        st.score = {"visitors": 0, "home": 12}   # blowout → gap_factor 0
+        _joker_fires_setup(st)
+        if mgr.should_insert_joker(st, rng=rng) is not None:
+            fires += 1
+    # gap_factor is 0 here so leverage is 0 — effectively never fires.
+    assert fires == 0, fires
 
 
 def test_injury_event_bypasses_gate_at_cycle_zero():
