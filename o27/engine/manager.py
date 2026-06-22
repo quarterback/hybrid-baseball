@@ -1282,6 +1282,13 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     batter = state.current_batter
     team   = state.batting_team
 
+    # Lineup-integrity gate: the manager may not pinch-hit until the starting
+    # fielded lineup has batted through once (lineup_cycle_number >= 1).
+    # Mirrors should_swap_offensive_for_defense. Forced injury subs bypass
+    # this — they call the executor directly, not this decider.
+    if team.lineup_cycle_number < 1:
+        return None
+
     # Candidate pool: non-pitchers on the roster who aren't already in the
     # lineup AND haven't been subbed out earlier in the game (one-way
     # invariant — pinch hitters can't pinch-hit a second time). Jokers
@@ -1422,6 +1429,10 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
     Returns {'base_idx': int, 'runner_in': Player} or None.
     """
     batting = state.batting_team
+    # Lineup-integrity gate: no pinch-running until the starting lineup has
+    # batted through once. Forced injury subs bypass this (executor path).
+    if batting.lineup_cycle_number < 1:
+        return None
     # PR requires a runner on base — the brief explicitly scopes PR to
     # on-base situations.
     if not any(b is not None for b in state.bases):
@@ -1601,13 +1612,18 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     against the worst-defense fielder. Critical structural gates kept:
 
       - Regulation half only (no super-innings).
-      - state.outs >= 6 so this isn't a first-batter overreaction.
+      - The opposing (batting) order must have turned over once
+        (lineup_cycle_number >= 1) so the defense holds its starters
+        through the first trip — no first-cycle bench churn.
       - Catchers and DHs are protected (catcher arm is stamped on the
         team; DH has no defensive slot to upgrade).
 
     Returns {'player_out': Player, 'player_in': Player} or None.
     """
-    if state.outs < 6:
+    # Lineup-integrity gate: hold defensive subs until the opposing (batting)
+    # order has turned over once. Replaces the old `outs < 6` heuristic,
+    # which could still fire before the order cycled.
+    if state.batting_team.lineup_cycle_number < 1:
         return None
 
     fielding = state.fielding_team

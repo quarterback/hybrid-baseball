@@ -356,6 +356,71 @@ def process_post_game_injuries(
     return events
 
 
+def apply_in_game_injuries(
+    in_game_injuries: list[dict],
+    home_team_id: int,
+    away_team_id: int,
+    game_date: str,
+    rng: random.Random,
+) -> list[dict]:
+    """Persist injuries that occurred DURING the game.
+
+    The engine records each forced mid-game removal on
+    `state.in_game_injuries` as {player_id, team_id (role), kind, outs,
+    replaced_by}. Here we draw severity via the shared tier model, set
+    injured_until/il_tier, and log an injury transaction + depth-chart
+    cover — reusing the exact persistence the post-game roll uses.
+
+    Because this runs BEFORE process_post_game_injuries and sets
+    injured_until, the ambient roll's "healthy players only" query
+    naturally skips these players (no double injury). Returns transaction
+    dicts for the caller to log.
+    """
+    events: list[dict] = []
+    if not in_game_injuries:
+        return events
+    role_to_team = {"visitors": away_team_id, "home": home_team_id}
+    base = datetime.date.fromisoformat(game_date)
+    seen: set[int] = set()
+    for rec in in_game_injuries:
+        try:
+            pid = int(rec.get("player_id"))
+        except (TypeError, ValueError):
+            continue
+        if pid in seen:
+            continue
+        team_id = role_to_team.get(rec.get("team_id"))
+        if team_id is None:
+            continue
+        p = db.fetchone("SELECT * FROM players WHERE id = ?", (pid,))
+        if not p:
+            continue
+        seen.add(pid)
+        tier     = _draw_tier(rng)
+        duration = _tier_duration(tier, rng)
+        return_date = (base + datetime.timedelta(days=duration)).isoformat()
+        db.execute(
+            "UPDATE players SET injured_until = ?, il_tier = ? WHERE id = ?",
+            (return_date, tier, pid),
+        )
+        tier_label = {
+            "dtd":   "Day-to-Day",
+            "short": "Short-Term IL",
+            "long":  "Long-Term IL",
+        }[tier]
+        events.append({
+            "event_type": "injury",
+            "team_id": team_id,
+            "player_id": pid,
+            "detail": (
+                f"{p['name']} ({p['position']}) hurt in-game, placed on "
+                f"{tier_label}, out until {return_date} (~{duration} games)"
+            ),
+        })
+        events.extend(_depth_chart_events(p, team_id, game_date))
+    return events
+
+
 # ---------------------------------------------------------------------------
 # Active roster for simulation
 # ---------------------------------------------------------------------------

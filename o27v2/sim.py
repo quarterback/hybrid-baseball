@@ -2364,7 +2364,10 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     # -----------------------------------------------------------------------
     # Phase 9: Post-game injury draws + transaction logging
     # -----------------------------------------------------------------------
-    _post_game_roster_processing(game_id, game_date, home_team_id, away_team_id, rng, seed)
+    _post_game_roster_processing(
+        game_id, game_date, home_team_id, away_team_id, rng, seed,
+        in_game_injuries=list(getattr(final_state, "in_game_injuries", []) or []),
+    )
 
     # Phase 5e: post-game habit-cup update. Each player's cup drifts
     # toward 1.0 on a good game and toward 0.0 on a bad one. Only fires
@@ -2448,18 +2451,24 @@ def _post_game_roster_processing(
     away_team_id: int,
     rng: random.Random,
     seed: int,
+    in_game_injuries: list | None = None,
 ) -> None:
     """
     Run all Phase 9 post-game roster events:
       1. Process player returns (expired injuries).
-      2. Draw new injuries for players in this game.
+      2. Persist in-game injuries (forced mid-game removals), then draw
+         ambient post-game injuries (the latter skips anyone already hurt
+         in-game via the injured_until filter).
       3. Check for waiver claims (depleted bullpen).
       4. Check deadline / in-season trade triggers — DEFERRED until the
          last game of the calendar date so a player traded between games
          can't appear on two teams' box scores in the same day.
     All events are logged to the transactions table.
     """
-    from o27v2.injuries import process_returns, process_post_game_injuries, check_waiver_claims
+    from o27v2.injuries import (
+        process_returns, process_post_game_injuries, check_waiver_claims,
+        apply_in_game_injuries,
+    )
     from o27v2.trades import check_deadline_and_trades
     from o27v2.transactions import log_many
 
@@ -2472,8 +2481,16 @@ def _post_game_roster_processing(
     # Player returns
     all_events.extend(process_returns(game_date))
 
-    # Injury draws
+    # In-game injuries (forced mid-game removals) — persisted first so the
+    # ambient roll below skips anyone already hurt this game.
     inj_rng = random.Random(seed + game_id * 31337)
+    all_events.extend(
+        apply_in_game_injuries(
+            in_game_injuries or [], home_team_id, away_team_id, game_date, inj_rng
+        )
+    )
+
+    # Ambient post-game injury draws
     all_events.extend(
         process_post_game_injuries(game_id, game_date, home_team_id, away_team_id, inj_rng)
     )
