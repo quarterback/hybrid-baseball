@@ -577,30 +577,31 @@ def _pool_fatigue_mult(eligible: list, state: GameState) -> float:
 
 
 def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
-    """Joker insertion decision: weak-hitter override + leverage path.
+    """Joker insertion decision — a leverage-aware, late-stage tactical tool.
 
     Per-PA call: returns a Player from the team's joker pool to insert,
     or None to let the base lineup proceed normally. Held off entirely until
     the lineup has turned over once (lineup_cycle_number >= 1) so the nine base
-    batters each hit before any joker appears. Two decision paths:
+    batters each hit before any joker appears.
 
-      1. Weak-hitter override: if the current batter's skill is below
-         JOKER_WEAK_BATTER_THRESHOLD AND at least one eligible joker
-         has strictly higher skill, insert at probability
-         JOKER_WEAK_INSERT_BASE + JOKER_WEAK_INSERT_AGG_SCALE × agg
-         (0.75-0.95 across manager personas). Leverage is ignored here —
-         with unlimited jokers, leaving a weak hitter in the lineup
-         while a better bat sits available is a UI-era artifact, not a
-         strategic choice.
+    A joker comes in only when BOTH hold:
+      - it is a genuine upgrade over the batter due up (the best eligible
+        joker out-hits him on skill) — so the manager never pinch-hits for
+        his own good bats; and
+      - the spot earns it: leverage = tight game × late in the half × runners
+        on. The curve is weighted toward the end of the half (outs/27), so a
+        weak hitter draws a joker in a big late spot but still bats freely
+        early and mid-game.
 
-      2. Leverage path: for non-weak batters, fall back to the legacy
-         leverage-aware roll (capped at 35%). This still creates the
-         "managers shoot in the right spots" stat that differentiates
-         persona quality.
+    The bigger the skill gap, the more willing the manager is to spend the
+    joker here (the `1 + upgrade` term), so the weak end of the order
+    naturally draws the insertions — but always through leverage, never the
+    old unconditional "replace the weak hitter every cycle" override, which
+    benched the worst bats all game (not the intent).
 
-    Selection: freshest joker first, ties broken by skill. The rating
-    decay in prob.py makes each successive joker AB less productive, so
-    spreading usage across the three jokers is the natural play.
+    Selection: freshest joker first, ties broken by skill. The rating decay
+    in prob.py makes each successive joker AB less productive, so spreading
+    usage across the three jokers is the natural play.
     """
     if state.is_super_inning:
         return None
@@ -628,55 +629,43 @@ def should_insert_joker(state: GameState, rng=None) -> Optional[Player]:
     if not eligible:
         return None
 
+    # Upgrade guard: never joker for a batter the pool can't out-hit. This is
+    # what stops the manager pinch-hitting his own good bats, and it makes the
+    # leverage roll below naturally favor the weak end of the order.
+    batter = state.current_batter
+    batter_skill = (
+        float(getattr(batter, "skill", 0.5) or 0.5) if batter is not None else 0.5
+    )
+    best_joker_skill = max(
+        float(getattr(j, "skill", 0.5) or 0.5) for j in eligible
+    )
+    if best_joker_skill <= batter_skill:
+        return None
+    upgrade = best_joker_skill - batter_skill   # 0..1: how much better the joker is
+
     joker_agg = float(getattr(team, "mgr_joker_aggression", 0.5))
-    # Pool fatigue — collapses both insertion paths' probability once
-    # every joker has been used heavily. Identity (1.0) early in the
-    # game; near-zero past 8 PAs on the freshest joker.
+    # Pool fatigue — collapses insertion probability once every joker has been
+    # used heavily. Identity (1.0) early; near-zero past ~8 PAs on the freshest.
     pool_mult = _pool_fatigue_mult(eligible, state)
     # Cricket Batting Order opportunity cost: when the rule is on, in regulation,
     # and this trip is still joker-free, deploying a joker forfeits the chance to
     # EARN this cycle's flip. Flip-minded skippers damp their insertion rate;
-    # joker-happy ones barely flinch. Folds into BOTH insertion paths via
-    # pool_mult so the trade is situational — a high-leverage spot can still
-    # clear the (lowered) bar, which is exactly "weigh joker-now vs flip-next."
+    # joker-happy ones barely flinch.
     pool_mult *= joker_flip_damp(team, state)
 
-    # --- Path 1: weak-hitter override ----------------------------------
-    # Skip leverage entirely if the upcoming batter is below replacement
-    # and a strictly better joker is available.
-    batter = state.current_batter
-    if batter is not None:
-        batter_skill    = float(getattr(batter, "skill", 0.5) or 0.5)
-        best_joker_skill = max(
-            float(getattr(j, "skill", 0.5) or 0.5) for j in eligible
-        )
-        if (batter_skill < cfg.JOKER_WEAK_BATTER_THRESHOLD
-                and best_joker_skill > batter_skill):
-            weak_p = (cfg.JOKER_WEAK_INSERT_BASE
-                      + cfg.JOKER_WEAK_INSERT_AGG_SCALE * joker_agg) * pool_mult
-            if rng is None:
-                import random as _r
-                roll = _r.random()
-            else:
-                roll = rng.random()
-            if roll < weak_p:
-                return _pick_freshest_joker(eligible, state)
-            # Roll missed — fall through to the leverage path. Don't
-            # short-circuit to None; leverage can still pick this up.
-
-    # --- Path 2: leverage-aware roll (legacy path) ---------------------
+    # Leverage: tighter games + later innings + runners on = high leverage.
+    # This is the whole point of a joker — a strategic, late-game weapon, not
+    # an every-PA bench for weak hitters.
     score_gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
-    outs_left = max(1, 27 - state.outs)
     runners   = state.runner_count
-
-    # Tighter games + later innings + runners on = high leverage.
     gap_factor    = max(0.0, 1.0 - score_gap / 10.0)   # tied = 1.0; 10+ gap = 0
     late_factor   = state.outs / 27.0                  # 0..1, late half = high
     runner_factor = (runners + 1) / 4.0                # 0.25..1.0
     leverage = gap_factor * late_factor * runner_factor
 
-    # Per-PA insertion probability for non-weak batters.
-    insert_p = min(0.35, leverage * (0.25 + 0.5 * joker_agg)) * pool_mult
+    # Per-PA insertion probability. The (1 + upgrade) term tilts spend toward
+    # the weak end of the order; the 0.35 cap keeps even a max spot bounded.
+    insert_p = min(0.35, leverage * (0.25 + 0.5 * joker_agg) * (1.0 + upgrade)) * pool_mult
     if rng is None:
         import random as _r
         roll = _r.random()

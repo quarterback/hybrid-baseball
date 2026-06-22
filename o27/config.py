@@ -1310,23 +1310,15 @@ PLAYER_DEFAULT_GRIT: float     = 0.50   # identity
 # Manager heuristics — joker insertion (§4.6)
 # ---------------------------------------------------------------------------
 
-JOKER_WEAK_BATTER_THRESHOLD: float = 0.44   # batter.skill < this → weak hitter
 JOKER_SCORE_DIFF_MAX: int          = 4      # |score_diff| ≤ this → high leverage
 JOKER_OUTS_CEILING: int            = 22     # state.outs < this → not too late
 
-# Weak-hitter override — applied in should_insert_joker() when the next
-# batter's skill is below JOKER_WEAK_BATTER_THRESHOLD AND an eligible
-# joker exists with strictly higher skill. With unlimited joker
-# insertions, gating substitutions behind leverage was leftover logic
-# from the 3-per-game cap era — a 0.30-skill 9-spot hitter shouldn't
-# stand at the plate while a better bat sits on the bench. Insert
-# probability for the override:
-#     insert_p = JOKER_WEAK_INSERT_BASE + JOKER_WEAK_INSERT_AGG_SCALE * mgr_joker_aggression
-# Cautious manager (agg=0): 0.75. Aggressive (agg=1.0): 0.95. The
-# remaining ~5-25% slack preserves some variance — occasionally the
-# weak hitter still bats, which keeps games from feeling deterministic.
-JOKER_WEAK_INSERT_BASE: float       = 0.75
-JOKER_WEAK_INSERT_AGG_SCALE: float  = 0.20
+# NOTE: the old weak-hitter override (JOKER_WEAK_BATTER_THRESHOLD /
+# JOKER_WEAK_INSERT_BASE / JOKER_WEAK_INSERT_AGG_SCALE) was removed. It fired
+# at 0.75-0.95 every cycle on the worst bats, which benched them all game.
+# Joker insertion is now purely the leverage path in should_insert_joker(): a
+# joker comes in only when it out-hits the batter due up AND the spot is
+# high-leverage (tight, late, runners on). See o27/engine/manager.py.
 
 # ---------------------------------------------------------------------------
 # Joker rating decay — applied to a joker's effective ratings each AB
