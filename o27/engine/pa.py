@@ -798,17 +798,18 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         return log
 
     if etype == "tactical_def_swap":
-        # Mid-batting-half offensive→defensive swap. Reuse pinch_hit
-        # semantics (replace current scheduled batter, take the slot)
-        # but record our own event tag so the once-per-team cap is
-        # separate from leverage-driven pinch hits.
-        replacement = event["replacement"]
-        log += mgr.pinch_hit(state, replacement)
-        log[-1] = log[-1].replace("PINCH HIT", "DEF SWAP")
+        # Field-only offensive→defensive swap for the first-batting team:
+        # stages a glove for its fielding half without touching the batting
+        # order (lineup-card rule). player_out keeps his slot; player_in
+        # fields when the team takes the field.
+        out_p = event["player_out"]
+        in_p  = event["player_in"]
+        log += mgr.offensive_to_defensive_swap(state, out_p, in_p)
         state.events.append({
             "type": "tactical_def_swap",
             "team_id": state.batting_team.team_id,
-            "replacement_id": replacement.player_id,
+            "out_id":  out_p.player_id,
+            "in_id":   in_p.player_id,
         })
         return log
 

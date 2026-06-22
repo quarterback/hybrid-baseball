@@ -134,6 +134,28 @@ Note on persisted games: a box score is stored when the game is simmed, so
 already-played games keep their old lines — only games simmed after the engine
 restart reflect these rules.
 
+## 5d. Follow-up (2026-06-22): the last order-mutating swap
+
+A fresh box score (game #33) showed the first-batting team's order churned by
+"Replaced X at CF/C/1B" entries whose replacements *batted* — the
+single-player **offensive→defensive swap** (`tactical_def_swap`), the one
+defensive executor still routing through `pinch_hit`. Converted it to
+field-only: `should_swap_offensive_for_defense` now mirrors
+`should_defensive_sub` (worst card defender + best eligible bench glove) and
+the new `offensive_to_defensive_swap` executor stages that glove for the
+team's fielding half — team defense moves by the swap's value, but the batting
+order is untouched. The renderer's `tactical_def_swap` branch now mirrors the
+`defensive_sub` branch (DEF row for the incoming glove, no PA). With this,
+**every** defensively-motivated executor (defensive_sub, catcher rotation via
+defensive_sub, joker_to_field, phase_transition_swap, offensive→defensive
+swap) is field-only; only genuine offensive moves (pinch hit / pinch run) and
+injuries change a batting slot.
+
+Deferred (owner call): a dedicated O27 box-score layout that separates the
+offensive batting card from the defensive alignment. The engine is correct;
+the current renderer reuses the DEF-row convention. Box-score redesign is a
+nice-to-have, not core.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match
