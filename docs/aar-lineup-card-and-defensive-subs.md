@@ -118,6 +118,22 @@ Two consistency items from §5 are now done:
   injury replacements remain the one exception (emergencies can field a player
   out of position).
 
+## 5c. Follow-up (2026-06-22): defensive-sub timing gates
+
+A defensive replacement is a late-inning lock-in, not an early-game move.
+`should_defensive_sub` now has two timing gates on top of the cycle gate:
+a **hard floor** (`DEFENSIVE_SUB_MIN_OUTS`, default 3 — never in the opening
+outs of any game) and a **rarity window** before the late-game out
+(`DEFENSIVE_SUB_LATE_OUT`, default 16): even when leverage clears, an early
+defensive sub only fires on a small probability roll
+(`DEFENSIVE_SUB_EARLY_RATE`, default 0.05). Super-innings are late by
+definition and skip the rarity roll. The catcher rotation (its own out gate,
+6) and joker-to-field (out ≥ 24) already gated their own timing.
+
+Note on persisted games: a box score is stored when the game is simmed, so
+already-played games keep their old lines — only games simmed after the engine
+restart reflect these rules.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match

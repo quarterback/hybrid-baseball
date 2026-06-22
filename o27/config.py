@@ -1004,6 +1004,20 @@ CATCHER_FATIGUE_ARM_SCALE: float         = 0.25  # fatigue * this drops catcher 
 CATCHER_ROTATION_OUT_GATE: int           = 6     # no swap before this (first-batter guard)
 
 # ---------------------------------------------------------------------------
+# Defensive substitution timing
+# ---------------------------------------------------------------------------
+# A defensive replacement is a late-inning lock-in, not an early-game move.
+# Two timing gates on should_defensive_sub keep them from churning early:
+#   - a hard floor (no defensive subs in the opening outs of any game), and
+#   - a rarity window before the late-game out where they normally belong:
+#     even when leverage clears, an early defensive sub only fires on a small
+#     probability roll.
+DEFENSIVE_SUB_MIN_OUTS: int    = 3      # never before this many outs
+DEFENSIVE_SUB_LATE_OUT: int    = 16     # the late-game window opens here
+DEFENSIVE_SUB_EARLY_RATE: float = 0.05  # P(allow) when leverage clears pre-window
+
+
+# ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)
 # ---------------------------------------------------------------------------
 # In an absolute blowout, a strong-arm position player can come in to

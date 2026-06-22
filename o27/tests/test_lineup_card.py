@@ -222,6 +222,33 @@ def test_defensive_sub_only_uses_position_eligible_gloves():
     assert dfn.is_eligible_at(d["player_in"], pos)
 
 
+def test_defensive_sub_blocked_in_opening_outs():
+    st = _fielding_state()
+    st.outs = 2                                       # inside the hard floor
+    assert mgr.should_defensive_sub(st, rng=random.Random(0)) is None
+
+
+def test_defensive_sub_is_rare_before_the_late_window():
+    # Before out 16, even a leverage-clearing spot fires only occasionally.
+    fires = sum(
+        1 for s in range(300)
+        if _early_def_sub_fires(out=10, seed=s)
+    )
+    assert fires < 45                                  # ~5% expected, rare
+
+
+def test_defensive_sub_is_available_in_the_late_window():
+    st = _fielding_state()
+    st.outs = 20                                       # past the late-game gate
+    assert mgr.should_defensive_sub(st, rng=random.Random(0)) is not None
+
+
+def _early_def_sub_fires(out, seed):
+    st = _fielding_state()
+    st.outs = out
+    return mgr.should_defensive_sub(st, rng=random.Random(seed)) is not None
+
+
 def test_defensive_sub_skips_when_no_eligible_glove():
     st = _fielding_state()                             # worst is the SS (0.01)
     home = st.home

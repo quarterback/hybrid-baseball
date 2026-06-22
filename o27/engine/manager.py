@@ -1689,6 +1689,19 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     if state.batting_team.lineup_cycle_number < 1:
         return None
 
+    # Timing gates — a defensive replacement is a late-inning lock-in, not an
+    # early-game move. Hard floor in the opening outs of any game, then a
+    # rarity window: before the late-game out, even a leverage-clearing sub
+    # only fires on a small probability roll. (Super-innings are already
+    # late by definition and skip the rarity roll.)
+    if not state.is_super_inning:
+        if state.outs < int(getattr(cfg, "DEFENSIVE_SUB_MIN_OUTS", 3)):
+            return None
+        if state.outs < int(getattr(cfg, "DEFENSIVE_SUB_LATE_OUT", 16)):
+            r = rng or _local_rng()
+            if r.random() >= float(getattr(cfg, "DEFENSIVE_SUB_EARLY_RATE", 0.05)):
+                return None
+
     fielding = state.fielding_team
 
     # Identify the weakest-defense lineup spot (the candidate to-replace).
