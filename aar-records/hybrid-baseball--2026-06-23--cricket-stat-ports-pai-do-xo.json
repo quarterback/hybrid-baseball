@@ -1,0 +1,127 @@
+{
+  "record_id": "hybrid-baseball--2026-06-23--cricket-stat-ports-pai-do-xo",
+  "source_path": "docs/aar-cricket-stat-ports-pai-do-xo.md",
+  "repo": "hybrid-baseball",
+  "parsed_at": "2026-06-23",
+  "genre_confidence": "high",
+  "date": "2026-06-23",
+  "title": "After-Action Report — Cricket-stat ports: PAI, DO%, xO, DOA%, and O27 Index wiring",
+  "scope": "Scope: o27/docs/cricket_stat_ports.md, o27v2/analytics/pressure.py, o27v2/analytics/expected_woba.py, o27v2/analytics/__init__.py, o27v2/web/app.py, o27v2/web/templates/leaders.html, o27v2/web/templates/o27i_leaders.html, o27v2/web/templates/o27i_player.html, o27v2/web/templates/stats_browse.html.",
+  "rationale": [
+    {
+      "item": "The user wanted cricket-inspired Match Impact / True Strike Rate, Dot Ball Percentage, and Expected Wickets concepts ported into O27-native analytics rather than only documented as future ideas.",
+      "references": ["o27/docs/cricket_stat_ports.md"]
+    },
+    {
+      "item": "O27 already persisted enough PA state, contact quality, power-play support, and box-score counters to derive the metrics without a schema migration.",
+      "references": ["o27v2/analytics/pressure.py", "o27v2/analytics/expected_woba.py"]
+    },
+    {
+      "item": "The user clarified that a two-out double play should count as two dead outs and that xO should include defense / power-play support.",
+      "references": ["o27v2/analytics/expected_woba.py"]
+    }
+  ],
+  "delegation_events": [],
+  "actions": [
+    {
+      "description": "Added cricket-stat port design note covering PAI, DO%, xO, implementation status, and remaining hooks.",
+      "artifacts": ["o27/docs/cricket_stat_ports.md"],
+      "kind": "added"
+    },
+    {
+      "description": "Implemented PAI / PAI per PA / TRR+ as chase-pressure-weighted run value using the run-expectancy matrix.",
+      "artifacts": ["o27v2/analytics/pressure.py"],
+      "kind": "added"
+    },
+    {
+      "description": "Implemented expected outs, pitcher dead outs, hitter dead-out avoidance, pure xO, and power-play-supported xO.",
+      "artifacts": ["o27v2/analytics/expected_woba.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Exported the new analytics builders from the analytics package.",
+      "artifacts": ["o27v2/analytics/__init__.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Merged PAI/TRR+/DOA% and xO/DO% fields into leaderboard, stats browse, O27 Index, and player-page data rows.",
+      "artifacts": ["o27v2/web/app.py"],
+      "kind": "modified"
+    },
+    {
+      "description": "Added UI cards, columns, and sortable leaderboards for PAI, TRR+, DOA%, xO/27, O-xO, DO%, DO-PA%, and Dead Outs.",
+      "artifacts": [
+        "o27v2/web/templates/leaders.html",
+        "o27v2/web/templates/o27i_leaders.html",
+        "o27v2/web/templates/o27i_player.html",
+        "o27v2/web/templates/stats_browse.html"
+      ],
+      "kind": "modified"
+    }
+  ],
+  "risk_posture": [
+    "No new persistent schema was added; all metrics are derived from existing PA logs, box-score tables, and power-play support tables.",
+    "PAI intentionally does not replace WPA; it is a run-value/chase-pressure metric rather than a win-probability metric.",
+    "xO includes power-play hits saved for the production stat but retains pure_xouts and defense_support_xouts for later decomposition.",
+    "DO% counts outs and DO-PA% counts plate appearances so multi-out plays can be represented both ways."
+  ],
+  "validation_claims": [
+    {
+      "claim": "Analytics modules and web app compile after adding PAI, xO, DO%, and DOA%.",
+      "evidence_cited": "python -m py_compile o27v2/analytics/pressure.py o27v2/analytics/expected_woba.py o27v2/analytics/__init__.py o27v2/web/app.py",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the compile command from the repo root.",
+      "verified": "checked"
+    },
+    {
+      "claim": "New exported analytics builders import successfully.",
+      "evidence_cited": "python import smoke for build_pressure_impact and build_hitter_dead_outs_table",
+      "checkable_against_repo": "yes",
+      "check_method": "Import functions from o27v2.analytics.",
+      "verified": "checked"
+    },
+    {
+      "claim": "Existing linear-weight tests still pass.",
+      "evidence_cited": "python -m pytest o27v2/tests/test_linear_weights.py",
+      "checkable_against_repo": "yes",
+      "check_method": "Run the pytest command from the repo root.",
+      "verified": "checked"
+    }
+  ],
+  "non_actions": [
+    "Did not add persistent columns to game_pitcher_stats, game_batter_stats, or archive tables.",
+    "Did not add a full route-render regression test for the new UI surfaces.",
+    "Did not implement Pressure DO% or archive/export snapshots for the new metrics."
+  ],
+  "residual_risks": [
+    "PAI uses a first-pass chase-pressure proxy and may need calibration once explicit target/declaration logic is modeled more richly.",
+    "Dead-out runner advancement uses occupancy masks rather than runner identity, so edge cases remain heuristic.",
+    "xO support includes explicit power-play hits saved but not a full fielder-specific supported-xO model."
+  ],
+  "open_hooks": [
+    "Add glossary entries for PAI, TRR+, DO%, DOA%, xO/27, pure xO, and supported xO.",
+    "Add unit tests for dead-out counting, hitter DOA mirror, and pure/support xO split.",
+    "Consider archive/export persistence once metric definitions stabilize.",
+    "Consider Pressure DO% after the PAI pressure model is trusted."
+  ],
+  "section_headers_original": [
+    "After-Action Report — Cricket-stat ports: PAI, DO%, xO, DOA%, and O27 Index wiring",
+    "TL;DR",
+    "What was asked for",
+    "What changed",
+    "Why these choices were made",
+    "Validation performed",
+    "Known limitations / residual risk",
+    "Recommended follow-ups"
+  ],
+  "unmapped_content": null,
+  "quality_vector": {
+    "has_scope": true,
+    "has_rationale": true,
+    "has_delegation_record": false,
+    "has_validation": true,
+    "has_negative_space": true,
+    "has_residual_risk": true
+  },
+  "parser_notes": "Manual AAR record for the cricket-stat ports implementation sequence."
+}

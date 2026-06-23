@@ -5142,6 +5142,26 @@ def stats_browse():
             tuple(params),
         )
         _aggregate_batter_rows(batters, baselines=baselines)
+        stat_team_ids = None
+        if team_filter_id is not None:
+            stat_team_ids = [team_filter_id]
+        elif sel_lg or sel_div != "all":
+            stat_team_ids = [
+                int(t["id"]) for t in teams_list
+                if (not sel_lg or t["league"] == sel_lg)
+                and (sel_div == "all" or t["division"] == sel_div)
+            ]
+        from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
+        pai_by_player = build_pressure_impact(min_pa=1, team_ids=stat_team_ids)["by_player"]
+        hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=stat_team_ids)["by_player"]
+        for b in batters:
+            pai = pai_by_player.get(b.get("player_id"), {})
+            hdo = hdo_by_player.get(b.get("player_id"), {})
+            b["pai"] = pai.get("pai")
+            b["pai_per_pa"] = pai.get("pai_per_pa")
+            b["trr_plus"] = pai.get("trr_plus")
+            b["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
+            b["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
 
     elif side == "pit":
         where_clauses = ["ps.outs_recorded > 0"]
@@ -5204,9 +5224,32 @@ def stats_browse():
         )
         wl = _pitcher_wl_map()
         _aggregate_pitcher_rows(pitchers, wl, baselines=baselines)
+        stat_team_ids = None
+        if team_filter_id is not None:
+            stat_team_ids = [team_filter_id]
+        elif sel_lg or sel_div != "all":
+            stat_team_ids = [
+                int(t["id"]) for t in teams_list
+                if (not sel_lg or t["league"] == sel_lg)
+                and (sel_div == "all" or t["division"] == sel_div)
+            ]
+        from o27v2.analytics import build_expected_outs_table, build_dead_outs_table
+        xo_by_player = build_expected_outs_table(min_bf=1, team_ids=stat_team_ids)["by_player"]
+        do_by_player = build_dead_outs_table(min_bf=1, team_ids=stat_team_ids)["by_player"]
         for p in pitchers:
             outs = p["outs"] or 0
             p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
+            xo = xo_by_player.get(p.get("player_id"), {})
+            do = do_by_player.get(p.get("player_id"), {})
+            p["pure_xouts"] = xo.get("pure_xouts")
+            p["pure_xouts_per_27"] = xo.get("pure_xouts_per_27")
+            p["xouts"] = xo.get("xouts")
+            p["xouts_per_27"] = xo.get("xouts_per_27")
+            p["outs_minus_xouts"] = xo.get("outs_minus_xouts")
+            p["defense_support_xouts"] = xo.get("defense_support_xouts")
+            p["dead_out_pct"] = do.get("dead_out_pct")
+            p["dead_out_pa_pct"] = do.get("dead_out_pa_pct")
+            p["dead_outs"] = do.get("dead_outs")
 
     return _serve(
         "stats_browse.html",
@@ -5516,6 +5559,21 @@ def leaders():
     )
     baselines = _league_baselines(league=selected_league)
     _aggregate_batter_rows(batting, baselines=baselines)
+    from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
+    _leader_team_ids = _league_team_ids(selected_league)
+    pai_by_player = build_pressure_impact(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+    hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+    for row in batting:
+        pid = row.get("player_id")
+        pai = pai_by_player.get(pid, {})
+        hdo = hdo_by_player.get(pid, {})
+        row["pai"] = pai.get("pai")
+        row["pai_per_pa"] = pai.get("pai_per_pa")
+        row["trr_plus"] = pai.get("trr_plus")
+        row["avg_pressure"] = pai.get("avg_pressure")
+        row["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
+        row["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
+        row["dead_outs_bat"] = hdo.get("dead_outs_bat")
     # Per-base advancement conversion %, computed post-aggregate so the
     # leaderboard template can render them without the Jinja2 having to
     # do division. Returns None when no opportunity (don't display 0%).
@@ -5587,10 +5645,24 @@ def leaders():
     # Shared helper now produces wERA / xFIP / Decay / GSc / OS+ / AOR / etc.
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
+    from o27v2.analytics import build_expected_outs_table, build_dead_outs_table
+    xo_by_player = build_expected_outs_table(min_bf=1, team_ids=_league_team_ids(selected_league))["by_player"]
+    do_by_player = build_dead_outs_table(min_bf=1, team_ids=_league_team_ids(selected_league))["by_player"]
     for p in pitching:
         outs = p["outs"] or 0
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
+        xo = xo_by_player.get(p.get("player_id"), {})
+        do = do_by_player.get(p.get("player_id"), {})
+        p["pure_xouts"] = xo.get("pure_xouts")
+        p["pure_xouts_per_27"] = xo.get("pure_xouts_per_27")
+        p["xouts"] = xo.get("xouts")
+        p["xouts_per_27"] = xo.get("xouts_per_27")
+        p["outs_minus_xouts"] = xo.get("outs_minus_xouts")
+        p["defense_support_xouts"] = xo.get("defense_support_xouts")
+        p["dead_out_pct"] = do.get("dead_out_pct")
+        p["dead_out_pa_pct"] = do.get("dead_out_pa_pct")
+        p["dead_outs"] = do.get("dead_outs")
 
     # Fielding leaders are sourced from a dedicated query because PO/E are
     # credited to the player who made the play (potentially a pitcher with
@@ -7105,6 +7177,9 @@ def _league_distribution(rows: list[dict], key: str) -> dict:
 # DRIVES outcomes, so these contact-quality metrics — and the xwOBA−wOBA gap —
 # are real signal rather than an echo of the categorical roll.
 _O27I_BATTER_METRICS = [
+    ("pai",       "PAI",            "+0.2f", False),
+    ("trr_plus",  "TRR+",           "0.0f", False),
+    ("dead_out_avoid_pct", "DOA%",  "pct",  False),
     ("xwoba",     "xwOBA",          "0.3f", False),
     ("avg_ev",    "Avg Exit Velo",  "ev",   False),
     ("max_ev",    "Max Exit Velo",  "ev",   False),
@@ -7176,9 +7251,11 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
     rate_by = {r["player_id"]: r for r in rate}
     # Physics-native xwOBA: expected value per (EV, LA) bin. Meaningful now that
     # the trajectory drives the outcome (vs the weak/med/hard quality version).
-    from o27v2.analytics import build_xwoba_ev_table
+    from o27v2.analytics import build_xwoba_ev_table, build_pressure_impact, build_hitter_dead_outs_table
     xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
     xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
+    pai_by = build_pressure_impact(min_pa=1, team_ids=team_ids)["by_player"]
+    hdo_by = build_hitter_dead_outs_table(min_pa=1, team_ids=team_ids)["by_player"]
 
     rows = []
     for e in ev:
@@ -7188,6 +7265,8 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
         rt = rate_by.get(pid, {})
         pa = rt.get("pa") or 0
         xw = xwoba_by.get(pid, {})
+        pai = pai_by.get(pid, {})
+        hdo = hdo_by.get(pid, {})
         rows.append({
             "player_id": pid,
             "bip":       e["bip"],
@@ -7204,6 +7283,11 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
                           if (rt.get("risp_pa") or 0) else None),
             "woba":      xw.get("woba"),
             "xwoba":     xw.get("xwoba"),
+            "pai":       pai.get("pai"),
+            "pai_per_pa": pai.get("pai_per_pa"),
+            "trr_plus":  pai.get("trr_plus"),
+            "dead_out_avoid_pct": hdo.get("dead_out_avoid_pct"),
+            "dead_out_pa_pct_bat": hdo.get("dead_out_pa_pct_bat"),
         })
     # Attach current name / team for display (leaderboards, panels).
     if rows:
@@ -7228,6 +7312,8 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
 # (lower is better → higher percentile → red marker). K% is the exception.
 _O27I_PITCHER_METRICS = [
     ("xwoba_against",  "xwOBA Against",  "0.3f", True),
+    ("xouts_per_27",   "xO/27",          "0.2f", False),
+    ("dead_out_pct",   "DO%",            "pct",  False),
     ("avg_ev_against", "Avg EV Against", "ev",  True),
     ("hardhit",        "Hard-Hit %",     "pct", True),
     ("barrel",         "Barrel %",       "pct", True),
@@ -7265,8 +7351,10 @@ def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             WHERE phase = 0{team_in}
             GROUP BY player_id""")
     rate_by = {r["player_id"]: r for r in rate}
-    from o27v2.analytics import build_xwoba_against_table
+    from o27v2.analytics import build_xwoba_against_table, build_expected_outs_table, build_dead_outs_table
     xwa = build_xwoba_against_table(min_bf=1, team_ids=team_ids)
+    xo = build_expected_outs_table(min_bf=1, team_ids=team_ids)["by_player"]
+    do = build_dead_outs_table(min_bf=1, team_ids=team_ids)["by_player"]
 
     rows = []
     for e in ev:
@@ -7280,6 +7368,14 @@ def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             "bip":            e["bip"],
             "xwoba_against":  (xwa.get(pid) or {}).get("xwoba_against"),
             "woba_against":   (xwa.get(pid) or {}).get("woba_against"),
+            "pure_xouts":     (xo.get(pid) or {}).get("pure_xouts"),
+            "pure_xouts_per_27": (xo.get(pid) or {}).get("pure_xouts_per_27"),
+            "xouts":          (xo.get(pid) or {}).get("xouts"),
+            "xouts_per_27":   (xo.get(pid) or {}).get("xouts_per_27"),
+            "outs_minus_xouts": (xo.get(pid) or {}).get("outs_minus_xouts"),
+            "defense_support_xouts": (xo.get(pid) or {}).get("defense_support_xouts"),
+            "dead_out_pct":   (do.get(pid) or {}).get("dead_out_pct"),
+            "dead_outs":      (do.get(pid) or {}).get("dead_outs"),
             "avg_ev_against": round(e["avg_ev_against"], 1) if e["avg_ev_against"] is not None else None,
             "hardhit":        round(100 * e["hardhit"], 1),
             "barrel":         round(100 * e["barrel"], 1),
@@ -7391,6 +7487,14 @@ def player_o27i(player_id: int):
         xwoba=(me_bat or {}).get("xwoba"),
         woba_against=(me_pit or {}).get("woba_against"),
         xwoba_against=(me_pit or {}).get("xwoba_against"),
+        pure_xouts=(me_pit or {}).get("pure_xouts"),
+        pure_xouts_per_27=(me_pit or {}).get("pure_xouts_per_27"),
+        xouts=(me_pit or {}).get("xouts"),
+        xouts_per_27=(me_pit or {}).get("xouts_per_27"),
+        outs_minus_xouts=(me_pit or {}).get("outs_minus_xouts"),
+        defense_support_xouts=(me_pit or {}).get("defense_support_xouts"),
+        dead_out_pct=(me_pit or {}).get("dead_out_pct"),
+        dead_outs=(me_pit or {}).get("dead_outs"),
         n_qualified=len(bat_rows),
         n_qualified_pitchers=len(pit_rows),
         leagues=leagues, selected_league=selected_league,
@@ -7615,6 +7719,8 @@ def o27i_home():
         {"title": "Avg Exit Velo",  "rows": _top(bat_rows, "avg_ev", False)},
         {"title": "Barrel %",       "rows": _top(bat_rows, "barrel", False)},
         {"title": "Lowest xwOBA Against", "rows": _top(pit_rows, "xwoba_against", True)},
+        {"title": "xO/27 (P)", "rows": _top(pit_rows, "xouts_per_27", False)},
+        {"title": "DO% (P)", "rows": _top(pit_rows, "dead_out_pct", False)},
         {"title": "Strikeout % (P)", "rows": _top(pit_rows, "k_pct", False)},
     ]
 
@@ -7648,8 +7754,9 @@ def o27i_leaders():
     min_bip = max(15, games_played // 30)
 
     rows = _o27i_batter_rows(team_ids, min_bip)
+    pitcher_rows = _o27i_pitcher_rows(team_ids, min_bip)
 
-    # Columns = the same metric set as the slider page.
+    # Columns = the same metric sets as the slider page.
     valid_keys = {k: rev for k, _l, _f, rev in _O27I_BATTER_METRICS}
     sort_key = (request.args.get("sort") or "xwoba").lower()
     if sort_key not in valid_keys:
@@ -7658,22 +7765,41 @@ def o27i_leaders():
     ranked = [r for r in rows if r.get(sort_key) is not None]
     ranked.sort(key=lambda r: r[sort_key], reverse=not reverse)
 
+    pitcher_valid_keys = {k: rev for k, _l, _f, rev in _O27I_PITCHER_METRICS}
+    pit_sort_key = (request.args.get("pit_sort") or "xouts_per_27").lower()
+    if pit_sort_key not in pitcher_valid_keys:
+        pit_sort_key = "xouts_per_27"
+    pit_reverse = pitcher_valid_keys[pit_sort_key]
+    ranked_pitchers = [r for r in pitcher_rows if r.get(pit_sort_key) is not None]
+    ranked_pitchers.sort(key=lambda r: r[pit_sort_key], reverse=not pit_reverse)
+
     columns = [
         {"key": k, "label": label, "fmt": fmt}
         for k, label, fmt, _rev in _O27I_BATTER_METRICS
+    ]
+    pitcher_columns = [
+        {"key": k, "label": label, "fmt": fmt}
+        for k, label, fmt, _rev in _O27I_PITCHER_METRICS
     ]
     # Pre-format display values so the template stays dumb.
     for r in ranked:
         r["_display"] = {k: _o27i_format(r.get(k), fmt)
                          for k, _l, fmt, _rev in _O27I_BATTER_METRICS}
+    for r in ranked_pitchers:
+        r["_display"] = {k: _o27i_format(r.get(k), fmt)
+                         for k, _l, fmt, _rev in _O27I_PITCHER_METRICS}
 
     return _serve(
         "o27i_leaders.html",
         rows=ranked,
+        pitcher_rows=ranked_pitchers,
         columns=columns,
+        pitcher_columns=pitcher_columns,
         sort_key=sort_key,
+        pit_sort_key=pit_sort_key,
         min_bip=min_bip,
         n_qualified=len(rows),
+        n_qualified_pitchers=len(pitcher_rows),
         leagues=leagues, selected_league=selected_league,
     )
 

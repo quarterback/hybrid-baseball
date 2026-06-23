@@ -166,6 +166,29 @@
         <div class="text-secondary small text-uppercase">xwOBA Against</div>
         <div class="fs-4 fw-bold">{{ '%.3f'|format(xwoba_against) }}</div>
       </div>
+      {% if xouts_per_27 is not none %}
+      <div>
+        <div class="text-secondary small text-uppercase">xO/27</div>
+        <div class="fs-4 fw-bold">{{ '%.2f'|format(xouts_per_27) }}</div>
+        {% if pure_xouts_per_27 is not none and defense_support_xouts is not none %}
+        <div class="text-secondary small">pure {{ '%.2f'|format(pure_xouts_per_27) }} · support +{{ defense_support_xouts }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if outs_minus_xouts is not none %}
+      <div>
+        <div class="text-secondary small text-uppercase">O − xO</div>
+        <div class="fs-4 fw-bold {{ 'text-success' if outs_minus_xouts > 1.0 else ('text-danger' if outs_minus_xouts < -1.0 else '') }}">
+          {{ '%+.1f'|format(outs_minus_xouts) }}
+        </div>
+      </div>
+      {% endif %}
+      {% if dead_out_pct is not none %}
+      <div>
+        <div class="text-secondary small text-uppercase">DO%</div>
+        <div class="fs-4 fw-bold">{{ '%.1f%%'|format(dead_out_pct) }}</div>
+      </div>
+      {% endif %}
       <div>
         <div class="text-secondary small text-uppercase">Luck (wOBA − xwOBA)</div>
         {% set pgap = (woba_against - xwoba_against) %}
@@ -175,8 +198,9 @@
         </div>
       </div>
       <div class="text-secondary small" style="max-width:240px">
-        Negative = suppressed contact better than his EV/LA profile predicts
-        (good for a pitcher); positive = got hit harder than the balls deserved.
+        Negative wOBA gap = suppressed contact better than his EV/LA profile predicts.
+        O − xO compares actual outs to xO from strikeouts, foul-outs, contact shape,
+        and power-play hits saved. DO% counts dead outs; a two-out DP is two dead outs.
       </div>
     </div>
   </div>

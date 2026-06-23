@@ -10,7 +10,7 @@ retune the simulation without touching engine logic.
 Public API
 ----------
   ProbabilisticProvider(rng)  — callable event_provider for run_game()
-  pitch_outcome(rng, pitcher, batter, balls, strikes, spell_count) -> str
+  pitch_outcome(rng, pitcher, batter, balls, strikes, spell_count, weather=None, pitch_count=None) -> str
   contact_quality(rng, batter, pitcher) -> "weak"|"medium"|"hard"
 """
 
@@ -305,6 +305,7 @@ def _pitch_probs(
     balls: int,
     strikes: int,
     spell_count: int,
+    pitch_count: Optional[int] = None,
     weather: Optional[object] = None,
     rng: Optional[random.Random] = None,
     pitch_type: Optional[str] = None,
@@ -441,6 +442,35 @@ def _pitch_probs(
         base[2] += fatigue * cfg.FATIGUE_SWINGING
         base[3] += fatigue * cfg.FATIGUE_FOUL
 
+    # Consecutive-pitch fatigue: the BF ramp above catches lineup-cycle wear,
+    # but O27's continuous 27-out halves also need actual pitch-count stress.
+    # Long counts now matter; a workhorse can still go deep, but 100+ pitches
+    # in one uninterrupted spell pushes balls/contact up and whiffs down.
+    if pitch_count is not None:
+        pitch_budget = (
+            cfg.PITCH_FATIGUE_BUDGET_BASE
+            + float(pitcher.stamina) * cfg.PITCH_FATIGUE_BUDGET_SCALE
+        )
+        if pitch_count > pitch_budget:
+            pitch_fatigue = min(
+                cfg.PITCH_FATIGUE_MAX,
+                (pitch_count - pitch_budget) / cfg.PITCH_FATIGUE_SCALE,
+            )
+            stam_mult = wx.stamina_decay_multiplier(weather)
+            pitch_fatigue *= stam_mult
+            grit = float(getattr(pitcher, "grit", 0.5))
+            grit_mult = max(0.0, 1.0 - (grit - 0.5) * 2.0 * cfg.GRIT_FATIGUE_RESIST)
+            pitch_fatigue *= grit_mult
+            rel_ease = max(0.0, 0.5 - release_angle) * cfg.RELEASE_FATIGUE_SCALE
+            pitch_fatigue *= (1.0 - rel_ease)
+            pitch_fatigue *= cfg.PITCH_FATIGUE_EFFECT_SCALE
+
+            base[0] += pitch_fatigue * cfg.FATIGUE_BALL
+            base[4] += pitch_fatigue * cfg.FATIGUE_CONTACT
+            base[1] += pitch_fatigue * cfg.FATIGUE_CALLED
+            base[2] += pitch_fatigue * cfg.FATIGUE_SWINGING
+            base[3] += pitch_fatigue * cfg.FATIGUE_FOUL
+
     # Pitch-type adjustments — quality-scaled deltas from the PITCH_CATALOG.
     # Applied after all talent/fatigue terms, before weather. At quality=1.0
     # the full catalog delta fires; at quality=0.0 it collapses to 0 (identity).
@@ -492,6 +522,7 @@ def pitch_outcome(
     strikes: int,
     spell_count: int,
     weather: Optional[object] = None,
+    pitch_count: Optional[int] = None,
     pitch_type: Optional[str] = None,
     pitch_quality: float = 0.5,
     joker_decay: float = 1.0,
@@ -499,7 +530,7 @@ def pitch_outcome(
 ) -> str:
     """Draw one pitch outcome. Returns a string matching one of _PITCH_NAMES."""
     probs = _pitch_probs(
-        pitcher, batter, balls, strikes, spell_count, weather,
+        pitcher, batter, balls, strikes, spell_count, pitch_count, weather,
         rng=rng, pitch_type=pitch_type, pitch_quality=pitch_quality,
         joker_decay=joker_decay, familiarity=familiarity,
     )
@@ -2822,6 +2853,7 @@ class ProbabilisticProvider:
         balls   = state.count.balls
         strikes = state.count.strikes
         spell   = state.pitcher_spell_count
+        pitch_count = state.pitcher_pitches_this_spell + 1
 
         # Per-PA leadership flare — fired ONCE at PA start (first pitch
         # of the PA, before pitch_outcome or contact_quality run). The
@@ -2867,7 +2899,7 @@ class ProbabilisticProvider:
 
         outcome = pitch_outcome(
             rng, pitcher, batter, balls, strikes, spell, weather,
-            pitch_type=sel_pitch, pitch_quality=sel_quality,
+            pitch_count=pitch_count, pitch_type=sel_pitch, pitch_quality=sel_quality,
             joker_decay=joker_decay, familiarity=familiarity,
         )
 
