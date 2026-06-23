@@ -253,7 +253,7 @@ RES_LINER_TRIPLE_P: float  = 0.38
 # Grounder band.
 RES_GB_EV_MID: float       = 90.0
 RES_GB_EV_SPAN: float      = 30.0
-RES_GB_HIT_BASE: float     = 0.62
+RES_GB_HIT_BASE: float     = 0.74
 RES_GB_HIT_EVSCALE: float  = 0.40
 RES_GB_INFIELD_EV: float   = 72.0   # weak grounders that sneak through → infield single
 RES_GB_FC_P: float         = 0.15   # grounder out → fielder's choice share
