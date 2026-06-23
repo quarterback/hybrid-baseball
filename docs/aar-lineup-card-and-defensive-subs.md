@@ -179,6 +179,99 @@ already exact (cumulative `ip_outs`). Owner deferred a broader offense/defense
 box redesign; this is the targeted slice that makes the field-only model
 legible.
 
+## 5f. Follow-up (2026-06-23): blowout management
+
+Box scores showed the *winning* team in laughers (51-4, 35-10, 24-6) riding its
+starter to a 120-130-pitch complete game and batting the same nine 6-8 times —
+nobody rests when up 40. Two context-dependent "rest the starters" paths,
+gated so they ONLY fire when the lead is decisive (silent in close games):
+
+- **Pitcher pull** (`should_change_pitcher`): if the pitcher's team leads by
+  `BLOWOUT_PULL_LEAD` (10) once `BLOWOUT_PULL_MIN_OUTS` (12) outs are in, pull
+  the STARTER to rest him (first spell only; relievers keep mopping up). In
+  O27's structure this naturally hits the first-batting team defending a big
+  lead in the second half. Needs a bullpen to execute — the engine's 1-arm
+  dummy roster can't, but real rosters (17 pitchers) can.
+- **Position rest** (`should_pinch_hit`): after the leverage path declines, if
+  the batting team leads by `BLOWOUT_REST_LEAD` (10) and the order has turned
+  `BLOWOUT_REST_MIN_CYCLE` (2) times, rotate the best available bench bat in for
+  the regular due up. Low-leverage by design (the "we're up 20, empty the
+  bench" path), self-limiting to bench size.
+
+**Last-licks deploy (same follow-up).** The flip side of resting in a laugher:
+in a *close* game the second-batting team (O27's bottom-of-the-9th — its at-bats
+are do-or-die) should reach for the bench to manufacture situational runs, not
+let a non-star bat through a key spot. `score_substitution` now adds
+`DECISIVE_HALF_LEVERAGE_BONUS` (0.12) to the pinch-hit / pinch-run leverage when
+`_decisive_chase` holds: the batting team bats second, the gap is within
+`DECISIVE_HALF_MAX_GAP` (3), and it's past `DECISIVE_HALF_MIN_OUTS` (12)
+(super-innings always qualify). The first-batting team (building a total) and
+blowouts (gap too large) are excluded, so it never churns early or in laughers —
+it only sharpens deployment in the spots that decide games.
+
+**Platoon pinch-hitting late + pinch-run specialists (same thread).** Two more
+"smart looks":
+- `score_substitution` adds `PLATOON_LATE_BONUS` (0.10) × lateness when a bench
+  bat *flips* an unfavorable handedness matchup to favorable (cand has the
+  platoon edge, the batter doesn't) — the classic late-game lefty/righty pull,
+  a non-factor early and a real move late.
+- `should_pinch_run` adds `PR_SPECIALIST_BONUS` (0.10) for a dedicated burner
+  (`roster_slot='pr_specialist'` or `role_run`) so the manager sends the right
+  legs, not just any faster bat — and (with the last-licks boost) actually
+  deploys him close-and-late.
+
+**Blowout bench works BOTH ways + live workload rest (same thread).**
+- A 28-1 box showed the *trailing* team batting its same nine passively ("yeah
+  we'll just lose"). The blowout-rest path was lead-only; switched it to the
+  absolute margin so both benches empty in a laugher — the leader rests
+  starters, the trailer gives the bench a look / tries to spark something.
+- **Live workload rest** (#4): `sim.py` stamps a per-game `rest_pressure` on
+  each starter (consecutive starts blended with a cold habit-cup);
+  `should_pinch_hit` then gives a worn/cold regular the back third off late in a
+  DECIDED game (`WORKLOAD_REST_SAFE_GAP` ≤ margin < blowout, past
+  `WORKLOAD_REST_MIN_OUTS`, `rest_pressure ≥ REST_PRESSURE_THRESHOLD`), never in
+  a do-or-die spot. Only the worn sit — not blanket churn.
+
+Tests: `test_blowout_management.py` (15) — pull/rest fire in laughers, quiet in
+close/early; last-licks boost scoped right; platoon edge grows late; pinch-run
+prefers the specialist; trailing team empties the bench down 17; worn regular
+rested in a 6-run game, fresh regular not, worn regular kept in a one-run game.
+168 engine tests pass. Still standing: double switches.
+
+**Comeback / rally aggression (parsed from an external spec).** A separate spec
+largely re-described the lineup-card + defensive-log work already done; its one
+genuinely-new, aligned idea was a deficit-scaled "desperation mode."
+`score_substitution` now adds `DESPERATION_RALLY_BONUS` (0.12) to pinch-hit /
+pinch-run leverage when the batting team trails by `DESPERATION_DEFICIT` (5)
+with at least `DESPERATION_OUTS_LEFT` (9) outs remaining — chase mode, deploy
+the bench to try to manufacture the comeback. Mutually exclusive with the
+last-licks boost (that needs a close gap). **Rejected** from the same spec: its
+"blowout roster lock" (freeze the bench, preserve backups when up 8+) directly
+contradicts the owner's instruction that a winning team rest its starters — not
+implemented. 172 engine tests pass (4 new: boost when chasing; gated by deficit
+and outs-remaining; off in super-innings).
+
+**Garbage-time refinements (the anti-lock version of §3B).** A follow-on spec
+proposed the *right* alternative to the rejected roster-lock: in a decided game
+you rotate but with low-leverage assets. Implemented:
+- Blowout bench rotation now picks the **lowest-tier** bench bat (`_scrub_pick`)
+  and never a PH specialist — rest a regular / give a scrub a look without
+  burning premium tactical assets or your best bats in a settled game.
+- The comeback rally is **capped below the blowout band** (`DESPERATION_DEFICIT`
+  ≤ deficit < `BLOWOUT_REST_LEAD`): down 5-9 = real rally with the best bats;
+  down 10+ = garbage-time scrubs.
+- Workload rest is now **lead-only** (you rest when ahead; a trailing team
+  rallies, it doesn't bench its worn star) and also uses `_scrub_pick`.
+- `pick_new_pitcher` adds a **mop-up** branch: when the game is decided either
+  way (`|margin| ≥ BLOWOUT_PULL_LEAD`), bring in the lowest-Stuff available arm
+  to eat outs — the leader rests his good relievers, the trailer doesn't burn
+  them in a lost game (the §4 "concession" idea).
+
+175 engine tests pass (3 more: blowout rotation uses a low-tier non-premium
+bat; blowout pitching change uses the mop-up arm; a trailing team doesn't bench
+its worn star). Deferred (outcome-model changes, owner confirm): pitch-to-
+contact when way ahead, and passive/station-to-station baserunning in blowouts.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match

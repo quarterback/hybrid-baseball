@@ -1016,6 +1016,70 @@ DEFENSIVE_SUB_MIN_OUTS: int    = 3      # never before this many outs
 DEFENSIVE_SUB_LATE_OUT: int    = 16     # the late-game window opens here
 DEFENSIVE_SUB_EARLY_RATE: float = 0.05  # P(allow) when leverage clears pre-window
 
+# ---------------------------------------------------------------------------
+# Blowout management — rest the starters once the game is decided
+# ---------------------------------------------------------------------------
+# Nobody rides a starter to a 130-pitch complete game in a laugher, and nobody
+# bats the same nine 8 times while up 40 — the bench and bullpen come in. These
+# gate "rest the regulars" behavior so it ONLY fires when the lead is decisive
+# (not in close games) and the starters have already banked real work.
+BLOWOUT_PULL_LEAD: int       = 10   # pitcher's team lead to start resting the SP
+BLOWOUT_PULL_MIN_OUTS: int   = 12   # ...and only after this many outs (so a reliever fits)
+BLOWOUT_REST_LEAD: int       = 10   # batting team's lead to start resting position regulars
+BLOWOUT_REST_MIN_CYCLE: int  = 2    # ...and only once the order has turned this many times
+
+# ---------------------------------------------------------------------------
+# Last-licks leverage — deploy bats in the decisive half
+# ---------------------------------------------------------------------------
+# The team batting SECOND is in O27's bottom-of-the-9th: its at-bats are
+# do-or-die. In a close, late spot the manager should reach for the bench to
+# manufacture situational runs (a non-star shouldn't just bat through a key
+# spot) — even if it doesn't pan out. This boosts the pinch-hit / pinch-run
+# leverage score there, leaving the first-batting team (building a total) and
+# blowouts (gap too large) untouched.
+DECISIVE_HALF_LEVERAGE_BONUS: float = 0.12   # added to leverage in the decisive chase
+DECISIVE_HALF_MIN_OUTS: int         = 12     # only this deep into the half
+DECISIVE_HALF_MAX_GAP: int          = 3      # only when the game is this close
+
+# Late-game platoon pinch-hitting: when a bench bat flips an unfavorable
+# handedness matchup to favorable, the manager values it more the later it
+# gets. Scaled by the game's lateness (out/27), so it's a non-factor early and
+# a real pull late. Added on top of the matchup factor.
+PLATOON_LATE_BONUS: float = 0.10
+
+# Pinch-run specialist preference: nudge a dedicated burner (roster_slot
+# 'pr_specialist' or role_run) to the top of the pinch-run candidate pool so
+# the manager sends the right legs, not just any faster bat.
+PR_SPECIALIST_BONUS: float = 0.10
+
+# ---------------------------------------------------------------------------
+# Live workload rest — give a worn / cold regular the back third off
+# ---------------------------------------------------------------------------
+# Extends the pre-game rest-day pass into live decisions: late in a DECIDED
+# game (a comfortable margin either way, short of an all-out blowout), a regular
+# carrying real workload or a cold streak gets the rest of the day off. Never in
+# a do-or-die spot — you keep your guy when the game is on the line. Reads a
+# per-game `rest_pressure` scalar (0 fresh .. 1 worn/slumping) stamped on the
+# starters at lineup-build time.
+REST_PRESSURE_THRESHOLD: float = 0.6   # only rest regulars this worn/cold
+WORKLOAD_REST_MIN_OUTS: int    = 15    # only this deep into the half
+WORKLOAD_REST_SAFE_GAP: int    = 5     # only when the game is decided by this much
+
+# ---------------------------------------------------------------------------
+# Comeback / rally aggression — deploy bats and legs when chasing a deficit
+# ---------------------------------------------------------------------------
+# Down several runs with a real chunk of the half still to play, a manager gets
+# aggressive: pinch-hit the better bat, pinch-run for the extra base, try to
+# manufacture the rally. Boosts pinch-hit / pinch-run leverage when the batting
+# team trails by DESPERATION_DEFICIT with at least DESPERATION_OUTS_LEFT outs
+# remaining. Mutually exclusive with the last-licks boost (that one needs a
+# close gap), so they never stack.
+DESPERATION_DEFICIT: int        = 5     # trailing by at least this much
+DESPERATION_OUTS_LEFT: int      = 9     # ...with at least this many outs left
+DESPERATION_RALLY_BONUS: float  = 0.12  # added to offense leverage when chasing
+
+
+
 
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)

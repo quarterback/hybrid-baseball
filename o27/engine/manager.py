@@ -116,6 +116,7 @@ def score_substitution(
     # the inline platoon-pool logic in the legacy should_pinch_hit (Item
     # 2 follow-up: handedness migrates into the trigger function).
     matchup_f = 0.5
+    platoon_late_bonus = 0.0
     if kind == "pinch_hit":
         pitcher = state.get_current_pitcher()
         if pitcher is not None:
@@ -124,12 +125,71 @@ def score_substitution(
             out_edge  = _has_platoon_edge(getattr(out_player, "bats", "") or "", p_throws)
             if cand_edge and not out_edge:
                 matchup_f = 0.85
+                # Going to get the platoon bat matters more the later it gets —
+                # a classic late-game lefty/righty move. Scaled by lateness so
+                # it's a non-factor early and a real pull in the late innings.
+                platoon_late_bonus = (
+                    float(getattr(cfg, "PLATOON_LATE_BONUS", 0.10)) * late_arc_f
+                )
             elif out_edge and not cand_edge:
                 matchup_f = 0.15
 
     # Combine — equal-weighted average over five factors.
     score = (score_gap_f + late_arc_f + runner_f + upgrade_f + matchup_f) / 5.0
+
+    # Late-game platoon pull (pinch_hit only; 0 unless a handedness flip).
+    score += platoon_late_bonus
+
+    # Last-licks boost: the second-batting team's at-bats are do-or-die, so in
+    # a close, late spot the manager deploys bats for situational runs more
+    # readily. Offense only (PH / PR); the first-batting team and blowouts are
+    # excluded by _decisive_chase.
+    if kind in ("pinch_hit", "pinch_run") and _decisive_chase(state):
+        score += float(getattr(cfg, "DECISIVE_HALF_LEVERAGE_BONUS", 0.12))
+
+    # Comeback boost: trailing by several with a real chunk of the half left,
+    # the manager gets aggressive deploying bats and legs to mount a rally.
+    if kind in ("pinch_hit", "pinch_run") and _desperation_rally(state):
+        score += float(getattr(cfg, "DESPERATION_RALLY_BONUS", 0.12))
+
     return max(0.0, min(1.0, score))
+
+
+def _desperation_rally(state) -> bool:
+    """True when the batting team trails by DESPERATION_DEFICIT..(blowout-1) with
+    at least `DESPERATION_OUTS_LEFT` outs remaining — chase mode: deploy the best
+    bats/legs to manufacture the comeback. Capped below the blowout band, where
+    the game is conceded and only low-tier scrubs rotate in (garbage time)."""
+    if getattr(state, "is_super_inning", False):
+        return False
+    deficit = (state.score.get(state.fielding_team.team_id, 0)
+               - state.score.get(state.batting_team.team_id, 0))
+    if not (int(getattr(cfg, "DESPERATION_DEFICIT", 5))
+            <= deficit < int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))):
+        return False
+    return (27 - state.outs) >= int(getattr(cfg, "DESPERATION_OUTS_LEFT", 9))
+
+
+def _scrub_pick(candidates: list) -> Optional[Player]:
+    """Lowest-tier bench bat for a garbage-time / rest rotation — never a PH
+    specialist (premium tactical assets stay parked in a decided game)."""
+    pool = [c for c in candidates
+            if str(getattr(c, "roster_slot", "")) != "ph_specialist"] or candidates
+    return min(pool, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
+
+
+def _decisive_chase(state) -> bool:
+    """True when the batting team is in its last-licks half (it bats second)
+    and the game is close and late — every run can decide it, so the manager
+    should reach for the bench."""
+    if getattr(state, "second_batting_team", None) is not state.batting_team:
+        return False
+    if getattr(state, "is_super_inning", False):
+        return True   # super-innings are sudden-death by definition
+    gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    if gap > int(getattr(cfg, "DECISIVE_HALF_MAX_GAP", 3)):
+        return False
+    return state.outs >= int(getattr(cfg, "DECISIVE_HALF_MIN_OUTS", 12))
 
 
 def substitution_threshold(team) -> float:
@@ -972,6 +1032,18 @@ def should_change_pitcher(state: GameState) -> bool:
         for rec in state.spell_log
     )
 
+    # Comfortable-lead rest: when the pitcher's team is well ahead, pull the
+    # STARTER to rest him rather than ride a meaningless complete game in a
+    # laugher. Gated so it only fires once the lead is decisive AND he's banked
+    # real work (enough outs that a reliever fits). Relievers in a blowout keep
+    # mopping up — this targets the first spell only.
+    if not in_relief:
+        fld_lead = (state.score.get(state.fielding_team.team_id, 0)
+                    - state.score.get(state.batting_team.team_id, 0))
+        if (fld_lead >= int(getattr(cfg, "BLOWOUT_PULL_LEAD", 10))
+                and state.outs >= int(getattr(cfg, "BLOWOUT_PULL_MIN_OUTS", 12))):
+            return True
+
     stamina = float(getattr(pitcher, "stamina", pitcher.pitcher_skill) or 0.5)
 
     if in_relief:
@@ -1092,6 +1164,16 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         ]
         if pp_candidates:
             return max(pp_candidates, key=lambda pl: float(getattr(pl, "arm", 0.5) or 0.5))
+
+    # Mop-up in a blowout: when the game is decided either way, bring in the
+    # lowest-leverage arm to eat the remaining outs — protecting a big lead, you
+    # rest the good relievers; absorbing a beating, you don't burn them in a
+    # lost game. Bypasses the role/rest tiers below by design (this is exactly
+    # the spot for your worst available arm).
+    if (abs(deficit) >= int(getattr(cfg, "BLOWOUT_PULL_LEAD", 10))
+            and pitcher_candidates):
+        return min(pitcher_candidates,
+                   key=lambda p: float(getattr(p, "pitcher_skill", 0.5) or 0.5))
 
     # Hard rest filter: pitchers who appeared in the last day or two are
     # de-prioritized from relief eligibility. We use a tier system mirroring
@@ -1322,9 +1404,33 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
             best_score = s
             best_cand = cand
 
-    if best_cand is None or best_score < threshold:
-        return None
-    return best_cand
+    if best_cand is not None and best_score >= threshold:
+        return best_cand
+
+    lead = (state.score.get(team.team_id, 0)
+            - state.score.get(state.fielding_team.team_id, 0))
+
+    # Garbage time (decided by a blowout margin, EITHER way): rotate in a
+    # LOW-tier bench bat — the leader rests a regular, the trailer gives a scrub
+    # a look — WITHOUT burning premium tactical assets (PH specialists) or your
+    # best bats in a settled game. Down 5-9 is handled instead by the comeback
+    # boost in score_substitution (best bats, a real rally), so that band falls
+    # through to the leverage path above rather than here.
+    if (abs(lead) >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
+            and team.lineup_cycle_number >= int(getattr(cfg, "BLOWOUT_REST_MIN_CYCLE", 2))):
+        return _scrub_pick(candidates)
+
+    # Live workload rest: AHEAD but short of a blowout, late, give a worn or
+    # cold regular the back third off — again with a low-tier fill-in (premium
+    # assets stay parked). Only when leading (a trailing team rallies, it
+    # doesn't rest) and never in a do-or-die spot. Only the worn/cold sit.
+    if (lead >= int(getattr(cfg, "WORKLOAD_REST_SAFE_GAP", 5))
+            and not _decisive_chase(state)
+            and state.outs >= int(getattr(cfg, "WORKLOAD_REST_MIN_OUTS", 15))
+            and float(getattr(batter, "rest_pressure", 0.0))
+                >= float(getattr(cfg, "REST_PRESSURE_THRESHOLD", 0.6))):
+        return _scrub_pick(candidates)
+    return None
 
 
 def defensive_sub(
@@ -1529,6 +1635,12 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
     best_cand: Optional[Player] = None
     for cand in bench_pool:
         s = score_substitution(state, cand, "pinch_run", out_runner)
+        # Prefer a dedicated pinch-run specialist (a true burner) so the
+        # manager sends the right legs, not just any faster bat — and so the
+        # specialist actually gets deployed in close-and-late spots.
+        if (str(getattr(cand, "roster_slot", "")) == "pr_specialist"
+                or bool(getattr(cand, "role_run", False))):
+            s += float(getattr(cfg, "PR_SPECIALIST_BONUS", 0.10))
         if s > best_score:
             best_score = s
             best_cand = cand

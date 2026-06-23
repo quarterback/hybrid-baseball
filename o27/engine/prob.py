@@ -2337,13 +2337,23 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     batting_team = state.batting_team
     run_game = float(getattr(batting_team, "mgr_run_game", 0.5))
 
+    # Passive baserunning when way ahead: a team blowing the game open shuts off
+    # the running game (steals AND hit-and-run) — no point risking outs or injury
+    # for runs that don't move the needle. The trailing side keeps running, so
+    # this is gated on the batting team's LEAD only.
+    _passive_ahead = (
+        state.score.get(batting_team.team_id, 0)
+        - state.score.get(state.fielding_team.team_id, 0)
+    ) >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
+
     # Hit-and-run: manager-called play where the runner goes and the batter
     # protects. We model it as a flagged SB attempt that bypasses the speed
     # gate AND gets a small success bonus (catcher's eyes on the batter).
     # Real managers concentrate hit-and-run in specific counts — a 0-2 hole
     # is the worst possible spot, while 1-0 / 2-1 / 3-1 are canonical. Skip
     # entirely with two strikes (batter can't protect a borderline pitch).
-    if (state.bases[0] is not None and state.bases[1] is None
+    if (not _passive_ahead
+            and state.bases[0] is not None and state.bases[1] is None
             and state.count.strikes < 2):
         count_tup = (state.count.balls, state.count.strikes)
         h_and_r_p = (
@@ -2381,6 +2391,11 @@ def between_pitch_event(rng: random.Random, state: GameState) -> Optional[dict]:
     speed_thresh = cfg.SB_ATTEMPT_SPEED_THRESHOLD * (1.30 - 0.65 * run_game)
     # Per-pitch attempt prob: lerps from base * 0.4 (passive) to * 1.8 (aggressive).
     attempt_prob = cfg.SB_ATTEMPT_PROB_PER_PITCH * (0.4 + 1.4 * run_game)
+
+    # Passive baserunning when way ahead (see _passive_ahead above): no steal
+    # attempts with a blowout lead.
+    if _passive_ahead:
+        attempt_prob = 0.0
     for base_idx in (0, 1):
         pid = state.bases[base_idx]
         if pid is None:

@@ -32,8 +32,8 @@ def _bisons_batting():
 
 
 def _bisons_pitching():
-    return [{"player_name": "Ace Holder", "ip_outs": 12},
-            {"player_name": "Rel Brundage", "ip_outs": 15}]
+    return [{"player_name": "Ace Holder", "outs_recorded": 12},
+            {"player_name": "Rel Brundage", "outs_recorded": 15}]
 
 
 def test_defensive_log_envelopes():
@@ -58,7 +58,7 @@ def test_defensive_log_lists_all_nine_even_with_no_subs():
          "entered_inning": 1}
         for p in ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
     ]
-    pitching = [{"player_name": "Solo Arm", "ip_outs": 27}]
+    pitching = [{"player_name": "Solo Arm", "outs_recorded": 27}]
     out = bs._defensive_log_for("Mud Hens", batting, pitching)
     assert out.count("(Outs 1-27)") == 9      # P + 8 fielders, each full game
     assert " → " not in out                    # no changes anywhere
@@ -73,7 +73,7 @@ def test_defensive_log_uses_exact_entered_outs():
         {"player_name": "Sub Sid", "game_position": "SS",
          "entry_type": "DEF", "entered_inning": 2, "entered_outs": 4},
     ]
-    pitching = [{"player_name": "Solo Arm", "ip_outs": 27}]
+    pitching = [{"player_name": "Solo Arm", "outs_recorded": 27}]
     out = bs._defensive_log_for("X", batting, pitching)
     assert "Sam (Outs 1-4) → Sid (Outs 5-27)" in out
 
@@ -86,10 +86,28 @@ def test_defensive_log_inning_fallback_without_entered_outs():
         {"player_name": "Sub Sid", "game_position": "SS",
          "entry_type": "DEF", "entered_inning": 2},
     ]
-    pitching = [{"player_name": "Solo Arm", "ip_outs": 27}]
+    pitching = [{"player_name": "Solo Arm", "outs_recorded": 27}]
     out = bs._defensive_log_for("X", batting, pitching)
     assert "Sam (Outs 1-3) → Sid (Outs 4-27)" in out
 
 
 def test_defensive_log_empty_without_pitching():
     assert bs._defensive_log_for("X", [], []) == ""
+
+
+def test_defensive_log_includes_joker_to_field():
+    # A joker pulled into the field is relabeled entry_type 'joker' but stamped
+    # 'J->SS' — it must still show in the defensive log at that position.
+    batting = [
+        {"player_name": "Reg Shortstop", "game_position": "SS",
+         "entry_type": "starter", "entered_inning": 1},
+        {"player_name": "Wild Joker", "game_position": "J->SS",
+         "entry_type": "joker", "entered_inning": 9, "entered_outs": 24},
+        # A plain batting joker (position J) must NOT appear.
+        {"player_name": "Bat Joker", "game_position": "J",
+         "entry_type": "joker", "entered_inning": 3},
+    ]
+    pitching = [{"player_name": "Solo Arm", "outs_recorded": 27}]
+    out = bs._defensive_log_for("X", batting, pitching)
+    assert "Shortstop (Outs 1-24) → Joker (Outs 25-27)" in out
+    assert "Bat Joker" not in out
