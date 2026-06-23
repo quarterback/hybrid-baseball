@@ -143,7 +143,7 @@ PITCH_BASE: dict[tuple, tuple] = {
 
 PITCHER_DOM_BALL: float     = -0.07   # fewer balls when pitcher dominant
 PITCHER_DOM_CALLED: float   = +0.015  # K-reduction pass: 0.03 → 0.015 to target 16-18% league K%
-PITCHER_DOM_SWINGING: float = +0.025  # K-reduction pass: 0.06 → 0.025; recent bump to 0.06 was the main K-inflation driver
+PITCHER_DOM_SWINGING: float = +0.005  # cricket-lean scoring pass: 0.025 → 0.005 (fewer whiffs, more balls in play)
 PITCHER_DOM_CONTACT: float  = -0.06   # fewer contact events (exceeds batter's +0.05 promotion)
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ PITCHER_DOM_CONTACT: float  = -0.06   # fewer contact events (exceeds batter's +
 # ---------------------------------------------------------------------------
 # Applied as:  b_dom = (batter.skill - 0.5) * 2   →  −1.0 to +1.0
 
-BATTER_DOM_SWINGING: float = -0.05   # K-reduction pass: -0.03 → -0.05; high-skill batters whiff materially less
+BATTER_DOM_SWINGING: float = -0.075  # cricket-lean scoring pass: -0.05 → -0.075; batters whiff materially less
 BATTER_DOM_CONTACT: float  = +0.03   # more contact events
 
 # ---------------------------------------------------------------------------
@@ -237,14 +237,14 @@ RES_POPUP_LA: float        = 50.0   # above this LA → automatic fly out
 RES_FLY_LA: float          = 26.0   # fly-ball band floor
 RES_LINER_LA: float        = 10.0   # liner band floor (below → grounder)
 # Fly band: distance vs fence decides HR; shortfalls drop for XBH or are caught.
-RES_FLY_HIT_FLOOR: float   = 210.0  # drives shorter than this are always caught
-RES_FLY_DROP_SCALE: float  = 0.92   # how readily sub-HR fly balls fall for XBH
+RES_FLY_HIT_FLOOR: float   = 190.0  # drives shorter than this are always caught
+RES_FLY_DROP_SCALE: float  = 1.02   # how readily sub-HR fly balls fall for XBH
 RES_FLY_TRIPLE_P: float    = 0.13   # deep-alley double → triple chance
 RES_HR_MARGIN: float       = 13.0   # ft of carry past the fence required for a HR
 # Liner band: highest BABIP.
 RES_LINER_EV_MID: float    = 90.0
 RES_LINER_EV_SPAN: float   = 25.0
-RES_LINER_HIT_BASE: float  = 0.76
+RES_LINER_HIT_BASE: float  = 0.90
 RES_LINER_HIT_EVSCALE: float = 0.18
 RES_LINER_XBH_EV: float    = 83.0
 RES_LINER_XBH_SCALE: float = 1.28
@@ -253,7 +253,7 @@ RES_LINER_TRIPLE_P: float  = 0.38
 # Grounder band.
 RES_GB_EV_MID: float       = 90.0
 RES_GB_EV_SPAN: float      = 30.0
-RES_GB_HIT_BASE: float     = 0.44
+RES_GB_HIT_BASE: float     = 0.62
 RES_GB_HIT_EVSCALE: float  = 0.40
 RES_GB_INFIELD_EV: float   = 72.0   # weak grounders that sneak through → infield single
 RES_GB_FC_P: float         = 0.15   # grounder out → fielder's choice share
@@ -528,10 +528,10 @@ RUNNER_THROWN_OUT_AT_HOME_MIN: float         = 0.05
 #   mean    = 1 + MEAN_SCALE*quality;  form = clamp(Normal(mean, SIGMA), MIN, MAX)
 # Set LOCKED_FORM_SIGMA <= 0 to disable the whole mechanism (every half at 1.0).
 LOCKED_FORM_SIGMA: float        = 0.66   # shared per-half hot/cold spread
-LOCKED_FORM_MIN: float          = 0.77   # coldest possible half — floored so a
-                                         # cold lineup still scuffles a few runs
-                                         # rather than getting shut out (halves
-                                         # the <=3-run near-shutout games)
+LOCKED_FORM_MIN: float          = 0.92   # coldest possible half — floored HARD so
+                                         # no lineup gets shut out (1-0 games are
+                                         # unsellable in this sport); the ceiling
+                                         # stays high so blowouts still happen
 LOCKED_FORM_MAX: float          = 2.15   # hottest possible half — left high so
                                          # blowouts / big-scoring games aren't
                                          # suppressed (more run scoring overall)
