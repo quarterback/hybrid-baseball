@@ -909,11 +909,19 @@ def _defensive_log_for(team_name: str, batting: list[dict],
         pit_segs.append(seg(nm, cum + 1, cum + ipo))
         cum += ipo
 
+    # Exact team-out count when a row entered. Prefer the precise entered_outs;
+    # fall back to the inning boundary for legacy rows that predate the column.
+    def _entry_out(r: dict) -> int:
+        eo = int(r.get("entered_outs", 0) or 0)
+        if eo > 0:
+            return eo
+        return max(0, (int(r.get("entered_inning", 0) or 0) - 1) * 3)
+
     # Fielders: starter + defensive entries per position (never PH / PR).
     starters: dict[str, dict] = {}
     subs_by_pos: dict[str, list[dict]] = {}
     for r in batting:
-        pos = _def_log_field_pos(r.get("game_position"))
+        pos = _def_log_field_pos(r.get("box_position") or r.get("game_position"))
         if pos not in _DEF_LOG_CANON8:
             continue
         et = r.get("entry_type", "starter")
@@ -927,8 +935,7 @@ def _defensive_log_for(team_name: str, batting: list[dict],
         holders: list[dict] = []
         if pos in starters:
             holders.append(starters[pos])
-        holders.extend(sorted(subs_by_pos.get(pos, []),
-                              key=lambda r: int(r.get("entered_inning", 0) or 0)))
+        holders.extend(sorted(subs_by_pos.get(pos, []), key=_entry_out))
         if not holders:
             return "—"
         segs: list[str] = []
@@ -936,8 +943,7 @@ def _defensive_log_for(team_name: str, batting: list[dict],
         for i, h in enumerate(holders):
             nm = _last_name(h.get("player_name") or "")
             if i + 1 < len(holders):
-                nxt_inn = int(holders[i + 1].get("entered_inning", 0) or 0)
-                b = max(start, min((nxt_inn - 1) * 3, half_total))
+                b = max(start, min(_entry_out(holders[i + 1]), half_total))
                 segs.append(seg(nm, start, b))
                 start = b + 1
             else:

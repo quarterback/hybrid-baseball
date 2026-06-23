@@ -1315,6 +1315,7 @@ class Renderer:
                 # entry (no-reentry — preserves original inning).
                 if not rs.entered_inning:
                     rs.entered_inning = state_after.outs // 3 + 1
+                    rs.entered_outs = state_after.outs
 
         elif etype in ("joker_inserted", "joker_insertion"):
             # Joker entered for one PA. They get game_position="J" elsewhere;
@@ -1380,6 +1381,7 @@ class Renderer:
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
 
         elif etype == "pinch_runner":
             # Pinch runner takes over for the runner on `base_idx`. They
@@ -1404,6 +1406,7 @@ class Renderer:
                 stats_obj.entry_type = "PR"
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
                 # Recover the replaced runner from the just-appended
                 # substitution_log entry — keyed on this in_player_id.
                 log = getattr(state_after, "substitution_log", None) or []
@@ -1436,6 +1439,7 @@ class Renderer:
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
 
         elif etype == "phase_transition_swap":
             # Wholesale offensive→defensive unit swap. Provider intent:
@@ -1458,6 +1462,7 @@ class Renderer:
                         stats_obj.replaced_player_id = str(player_out.player_id)
                     if not stats_obj.entered_inning:
                         stats_obj.entered_inning = inning
+                        stats_obj.entered_outs = state_after.outs
                 if player_out is not None:
                     outs.append(player_out.name)
             d["sub_in_list"]  = ", ".join(ins)
@@ -1498,6 +1503,7 @@ class Renderer:
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
 
         return d
 

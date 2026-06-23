@@ -64,5 +64,32 @@ def test_defensive_log_lists_all_nine_even_with_no_subs():
     assert " → " not in out                    # no changes anywhere
 
 
+def test_defensive_log_uses_exact_entered_outs():
+    # A sub at out 4 (mid-inning) must show 1-4 / 5-N — the precise out, not the
+    # inning boundary (3). entered_outs overrides the inning fallback.
+    batting = [
+        {"player_name": "Starter Sam", "game_position": "SS",
+         "entry_type": "starter", "entered_inning": 1, "entered_outs": 0},
+        {"player_name": "Sub Sid", "game_position": "SS",
+         "entry_type": "DEF", "entered_inning": 2, "entered_outs": 4},
+    ]
+    pitching = [{"player_name": "Solo Arm", "ip_outs": 27}]
+    out = bs._defensive_log_for("X", batting, pitching)
+    assert "Sam (Outs 1-4) → Sid (Outs 5-27)" in out
+
+
+def test_defensive_log_inning_fallback_without_entered_outs():
+    # Legacy rows (no entered_outs) fall back to the inning boundary.
+    batting = [
+        {"player_name": "Starter Sam", "game_position": "SS",
+         "entry_type": "starter", "entered_inning": 1},
+        {"player_name": "Sub Sid", "game_position": "SS",
+         "entry_type": "DEF", "entered_inning": 2},
+    ]
+    pitching = [{"player_name": "Solo Arm", "ip_outs": 27}]
+    out = bs._defensive_log_for("X", batting, pitching)
+    assert "Sam (Outs 1-3) → Sid (Outs 4-27)" in out
+
+
 def test_defensive_log_empty_without_pitching():
     assert bs._defensive_log_for("X", [], []) == ""

@@ -168,11 +168,16 @@ joker-to-field), ordered by `entered_inning` with boundaries at
 `(entered_inning − 1) × 3`. Offensive subs (PH / PR) are excluded — they change
 the batting card, not the field, so a pinch-hit-for starter still shows as the
 fielder. All nine positions always listed; unchanged ones read "(Outs 1-N)".
-No schema change — it reuses already-persisted `game_position` / `entry_type` /
-`entered_inning` / `ip_outs`. Inning-granularity boundaries (a sub mid-inning
-rounds to the inning edge); exact-out envelopes would need an `entered_outs`
-column, deferred. Owner deferred a broader offense/defense box redesign; this
-is the targeted slice that makes the field-only model legible.
+No schema change for the first cut — it reused already-persisted
+`game_position` / `entry_type` / `entered_inning` / `ip_outs`. **Exact
+out-envelopes followed (owner request):** a new `entered_outs` column records
+the precise team-out count at entry (engine `BatterStats.entered_outs` →
+sim persist → `game_batter_stats` column + migration), so a mid-inning sub now
+reads its true out (e.g. 1-4 / 5-27, not the inning edge 3). Legacy rows
+without `entered_outs` fall back to the inning boundary. Pitcher envelopes were
+already exact (cumulative `ip_outs`). Owner deferred a broader offense/defense
+box redesign; this is the targeted slice that makes the field-only model
+legible.
 
 ## 5. Follow-ups / not done
 
