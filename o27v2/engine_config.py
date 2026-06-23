@@ -137,6 +137,7 @@ _CURATED: list[tuple[str, list[tuple[str, str]]]] = [
         ("POWER_PLAY_ENABLED", "Power Play (deploy a 10th defender — the nickel fielder)"),
         ("CRICKET_BATTING_ORDER_ENABLED", "Cricket Batting Order (flip 1-9 → 9-1 each joker-free trip)"),
         ("IBB_ENABLE",         "Intentional walks"),
+        ("RRR_MANAGER_ENABLED", "RRR manager AI (chasing side reacts to required run rate)"),
     ]),
     ("Context (o27v2)", [
         ("HOME_ADVANTAGE_SKILL", "Home-field skill bonus"),

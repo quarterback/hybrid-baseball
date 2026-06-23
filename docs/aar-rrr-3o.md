@@ -102,8 +102,9 @@ threshold ladder. That AI work is explicitly **out of scope** here.
 
 ## 5. What I did NOT change / known limitations
 
-- **No manager-AI behavior.** Deferred by decision; the live `state.rrr_3o`
-  tracking needed for it lands with that work, folded into existing leverage.
+- **No manager-AI behavior (this phase).** Deferred by decision and shipped
+  separately — see `docs/aar-rrr-manager.md`, which folds RRR into the existing
+  leverage framework (best-bat deployment, swing-for-fences, concession).
 - **Regulation chase only (phase 0).** Super-innings and Declared-Seconds chase
   phases are not modeled in the curve yet.
 - **Two pre-existing test failures are unrelated to this change.**

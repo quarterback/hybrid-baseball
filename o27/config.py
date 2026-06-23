@@ -1089,6 +1089,26 @@ DESPERATION_DEFICIT: int        = 5     # trailing by at least this much
 DESPERATION_OUTS_LEFT: int      = 9     # ...with at least this many outs left
 DESPERATION_RALLY_BONUS: float  = 0.12  # added to offense leverage when chasing
 
+# ---------------------------------------------------------------------------
+# RRR manager AI — the chasing (second-batting) side reacts to its Required
+# Run Rate per 3 outs (RRR/3O = required_run_rate × 3; see o27/stats/team.py).
+# This generalizes the deficit-band desperation logic above to be *pace*-aware
+# (a 4-run deficit with 3 outs left is desperate; with 24 outs left it isn't).
+# League scoring pace ≈ 1.3 RRR/3O, so the bands below read as
+#   AGGRO       — meaningfully behind the pace → deploy best bats + sell out
+#                 for power (swing-for-the-fences);
+#   DESPERATION — well behind → contact lift saturates;
+#   CONCESSION  — effectively unreachable → freeze premium pinch-hitters,
+#                 rotate scrubs (preserve assets for the next game).
+# RRR_MANAGER_ENABLED is a plain bool, so o27v2.engine_config auto-exposes it
+# as a dashboard toggle. On by default (owner's call); flip off to A/B vs the
+# pace-blind manager. Bands are tunable knobs, NOT yet empirically calibrated.
+RRR_MANAGER_ENABLED: bool         = True
+RRR_AGGRO_THRESHOLD: float        = 3.0   # RRR/3O at/above which the chaser leans aggressive
+RRR_DESPERATION_THRESHOLD: float  = 6.0   # ...where the hard-contact lift saturates
+RRR_CONCESSION_THRESHOLD: float   = 12.0  # ...above which the chase is conceded
+RRR_CONTACT_LIFT_MAX: float       = 1.20  # cap on the situational hard-contact multiplier
+
 
 
 

@@ -2977,6 +2977,10 @@ class ProbabilisticProvider:
         # bomb mode → high). Degrades or lifts hard contact accordingly.
         _count_hard_mult = cfg.COUNT_POWER_PROFILE.get(
             (state.count.balls, state.count.strikes), 1.0)
+        # RRR swing-for-the-fences: a chaser behind its required run rate sells
+        # out for power. Identity (1.0) when the AI is off or the side isn't
+        # chasing, so this is a no-op outside a live chase and adds no rng draw.
+        _count_hard_mult *= mgr.rrr_contact_mult(state)
 
         quality = contact_quality(
             rng, batter, pitcher, weather,

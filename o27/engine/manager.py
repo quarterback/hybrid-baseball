@@ -159,9 +159,15 @@ def _desperation_rally(state) -> bool:
     """True when the batting team trails by DESPERATION_DEFICIT..(blowout-1) with
     at least `DESPERATION_OUTS_LEFT` outs remaining — chase mode: deploy the best
     bats/legs to manufacture the comeback. Capped below the blowout band, where
-    the game is conceded and only low-tier scrubs rotate in (garbage time)."""
+    the game is conceded and only low-tier scrubs rotate in (garbage time).
+
+    Also fires on the *pace*-aware RRR path (`rrr_aggressive`): a chaser behind
+    its Required Run Rate (but not yet conceding) reaches for the bench even when
+    the raw deficit is below the band — RRR already folds in outs remaining."""
     if getattr(state, "is_super_inning", False):
         return False
+    if rrr_aggressive(state):
+        return True
     deficit = (state.score.get(state.fielding_team.team_id, 0)
                - state.score.get(state.batting_team.team_id, 0))
     if not (int(getattr(cfg, "DESPERATION_DEFICIT", 5))
@@ -190,6 +196,77 @@ def _decisive_chase(state) -> bool:
     if gap > int(getattr(cfg, "DECISIVE_HALF_MAX_GAP", 3)):
         return False
     return state.outs >= int(getattr(cfg, "DECISIVE_HALF_MIN_OUTS", 12))
+
+
+# ---------------------------------------------------------------------------
+# RRR manager AI — the chasing (second-batting) side reacts to its Required
+# Run Rate per 3 outs. Folds into the existing leverage/garbage-time machinery
+# rather than running a parallel threshold ladder. See o27/config.py for the
+# flag (RRR_MANAGER_ENABLED) and the AGGRO/DESPERATION/CONCESSION bands.
+# ---------------------------------------------------------------------------
+
+def rrr_manager_on(state: GameState) -> bool:
+    """True if the RRR-driven chasing-manager AI is active for this game.
+
+    Per-game override (`state.rrr_manager_enabled`) wins when set; otherwise the
+    league/config default `cfg.RRR_MANAGER_ENABLED`. Mirrors `power_play_on` /
+    `cricket_order_on`."""
+    override = getattr(state, "rrr_manager_enabled", None)
+    if override is not None:
+        return bool(override)
+    return bool(getattr(cfg, "RRR_MANAGER_ENABLED", False))
+
+
+def _chase_rrr(state) -> Optional[float]:
+    """RRR/3O for the chasing side, gated on the AI flag and regulation only.
+    None when off, in super-innings, or not a live chase."""
+    if not rrr_manager_on(state):
+        return None
+    if getattr(state, "is_super_inning", False):
+        return None
+    return state.chase_rrr_3o()
+
+
+def rrr_aggressive(state) -> bool:
+    """Chaser is behind the required pace but not conceding — RRR/3O in
+    [AGGRO, CONCESSION). Drives the desperation-rally leverage bonus and the
+    hard-contact lift."""
+    rrr = _chase_rrr(state)
+    if rrr is None:
+        return False
+    return (float(getattr(cfg, "RRR_AGGRO_THRESHOLD", 3.0))
+            <= rrr < float(getattr(cfg, "RRR_CONCESSION_THRESHOLD", 12.0)))
+
+
+def rrr_conceding(state) -> bool:
+    """Chase is effectively unreachable (RRR/3O >= CONCESSION) — freeze premium
+    bench assets, rotate scrubs."""
+    rrr = _chase_rrr(state)
+    if rrr is None:
+        return False
+    return rrr >= float(getattr(cfg, "RRR_CONCESSION_THRESHOLD", 12.0))
+
+
+def rrr_contact_mult(state) -> float:
+    """Situational hard-contact multiplier for the chasing batter (swing-for-
+    the-fences). 1.0 (identity) when the AI is off, the side isn't chasing, or
+    RRR/3O is below AGGRO. Ramps linearly from 1.0 at AGGRO to
+    `RRR_CONTACT_LIFT_MAX` at DESPERATION, then holds at the cap (including the
+    concession band — a losing team still swings big; only the premium *bench*
+    is preserved). Composes multiplicatively with the count-power profile and
+    adds NO rng draws, so the seed stream — and flag-off output — is unchanged."""
+    rrr = _chase_rrr(state)
+    if rrr is None:
+        return 1.0
+    aggro = float(getattr(cfg, "RRR_AGGRO_THRESHOLD", 3.0))
+    if rrr < aggro:
+        return 1.0
+    desp = float(getattr(cfg, "RRR_DESPERATION_THRESHOLD", 6.0))
+    cap = float(getattr(cfg, "RRR_CONTACT_LIFT_MAX", 1.20))
+    if desp <= aggro or rrr >= desp:
+        return cap
+    frac = (rrr - aggro) / (desp - aggro)   # 0..1 across [AGGRO, DESPERATION)
+    return 1.0 + frac * (cap - 1.0)
 
 
 def substitution_threshold(team) -> float:
@@ -1394,6 +1471,13 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     ]
     if not candidates:
         return None
+
+    # RRR concession: the chase is mathematically dead (RRR/3O >= CONCESSION) —
+    # don't burn a premium pinch-hitter. Rotate a scrub instead (preserve assets
+    # for the next game), the offensive mirror of the blowout mop-up. Precedes
+    # the leverage path so a premium bat is actually withheld here.
+    if rrr_conceding(state):
+        return _scrub_pick(candidates)
 
     threshold = substitution_threshold(team)
     best_score = 0.0
