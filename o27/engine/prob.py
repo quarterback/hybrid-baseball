@@ -1437,7 +1437,11 @@ def _locked_in_form(rng: random.Random, state: GameState) -> float:
     the same rng stream as the rest of contact resolution, so it stays
     seed-deterministic.
     """
-    sigma = getattr(cfg, "LOCKED_FORM_SIGMA", 0.0)
+    # Per-league override (state.form_*) wins over the global cfg default for
+    # each knob; None falls back to cfg. Lets a league run its own hot/cold band.
+    sigma = getattr(state, "form_sigma", None)
+    if sigma is None:
+        sigma = getattr(cfg, "LOCKED_FORM_SIGMA", 0.0)
     if not sigma or sigma <= 0.0:
         return 1.0
     half = getattr(state, "half", None)
@@ -1462,7 +1466,13 @@ def _locked_in_form(rng: random.Random, state: GameState) -> float:
         )
         mean = getattr(cfg, "LOCKED_FORM_MEAN_BASE", 1.0) + quality * cfg.LOCKED_FORM_MEAN_SCALE
         draw = rng.gauss(mean, sigma)
-        state._locked_form = max(cfg.LOCKED_FORM_MIN, min(cfg.LOCKED_FORM_MAX, draw))
+        fmin = getattr(state, "form_min", None)
+        if fmin is None:
+            fmin = cfg.LOCKED_FORM_MIN
+        fmax = getattr(state, "form_max", None)
+        if fmax is None:
+            fmax = cfg.LOCKED_FORM_MAX
+        state._locked_form = max(fmin, min(fmax, draw))
         state._locked_form_half = half
     return getattr(state, "_locked_form", 1.0)
 

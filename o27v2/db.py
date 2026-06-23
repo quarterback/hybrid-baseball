@@ -195,7 +195,16 @@ CREATE TABLE IF NOT EXISTS teams (
     -- reads it into team.cricket_order_enabled per game. The order flips
     -- 1-9 -> 9-1 at the end of every joker-free trip through the lineup.
     -- 0 = off.
-    cricket_order_enabled INTEGER DEFAULT 0
+    cricket_order_enabled INTEGER DEFAULT 0,
+    -- Team-form regime (the per-half hot/cold band) — per-league override of
+    -- the global LOCKED_FORM_* engine config. NULL on any column = use the
+    -- global default for that knob. sim.py stamps these onto the engine state
+    -- per game; the engine clamps each half's form draw to [form_min, form_max]
+    -- with spread form_sigma (sigma <= 0 disables form entirely → talent-pure).
+    -- Lets different leagues run different variance regimes for comparison.
+    form_sigma REAL DEFAULT NULL,
+    form_min   REAL DEFAULT NULL,
+    form_max   REAL DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -1597,6 +1606,15 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+        # Team-form regime — per-league override of the hot/cold band
+        # (LOCKED_FORM_*). NULL columns leave the engine on its global defaults,
+        # so existing leagues are byte-for-byte unchanged.
+        for _form_col in ("form_sigma", "form_min", "form_max"):
+            try:
+                conn.execute(f"ALTER TABLE teams ADD COLUMN {_form_col} REAL DEFAULT NULL")
+                conn.commit()
+            except Exception:
+                pass
         # Power Play PITCHING columns — added to game_power_play_stats after the
         # initial defense/offense version of the table. No-op on fresh DBs (the
         # CREATE TABLE already has them) and on DBs without the table yet.

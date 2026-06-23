@@ -10056,6 +10056,9 @@ def universe_new_post():
     # Per-league Cricket Batting Order opt-in — a <select> (Off/On) for the
     # same positional-alignment reason as lg_power_play above.
     cricket_orders = request.form.getlist("lg_cricket_order")
+    # Per-league team-form regime — a <select> (Default / Talent-pure / Standard
+    # / High drama), same positional-alignment shape. Maps to the form_* columns.
+    form_regimes = request.form.getlist("lg_form_regime")
     leagues = []
     for i, nm in enumerate(names):
         if not (nm or "").strip():
@@ -10092,6 +10095,7 @@ def universe_new_post():
             "park":      (parks[i] if i < len(parks) else "") or "",
             "power_play_enabled": (i < len(power_plays) and power_plays[i] == "1"),
             "cricket_order_enabled": (i < len(cricket_orders) and cricket_orders[i] == "1"),
+            "form_regime": (form_regimes[i] if i < len(form_regimes) else "default"),
         })
 
     try:
@@ -10145,6 +10149,15 @@ def universe_new_post():
         if lg.get("cricket_order_enabled"):
             db.execute("UPDATE teams SET cricket_order_enabled = 1 WHERE league = ?",
                        (lg["name"],))
+        # Team-form regime — stamp the chosen band onto every team in the league
+        # (skip "default" so those teams keep NULLs → global engine config).
+        _fr = lg.get("form_regime") or "default"
+        if _fr != "default":
+            from o27v2.league import resolve_form_regime
+            _fv = resolve_form_regime(_fr)
+            db.execute("UPDATE teams SET form_sigma = ?, form_min = ?, form_max = ? "
+                       "WHERE league = ?",
+                       (_fv["form_sigma"], _fv["form_min"], _fv["form_max"], lg["name"]))
     flash(f"Built universe '{cfg['label']}' — {len(leagues)} leagues, "
           f"{cfg['team_count']} teams.", "info")
     return redirect(url_for("index"))
@@ -10171,8 +10184,19 @@ def league_edit_get():
         r["league"]: bool(r["co"]) for r in db.fetchall(
             "SELECT league, MAX(cricket_order_enabled) AS co FROM teams GROUP BY league")
     }
+    # Team-form regime per league (reverse-mapped from the form_* columns), plus
+    # the (key, label) options for the dropdown.
+    from o27v2.league import form_regime_key, FORM_REGIME_LABELS
+    form_by_league = {
+        r["league"]: form_regime_key(r["form_sigma"], r["form_min"], r["form_max"])
+        for r in db.fetchall(
+            "SELECT league, form_sigma, form_min, form_max FROM teams GROUP BY league")
+    }
+    form_regime_options = list(FORM_REGIME_LABELS.items())
     return _serve("league_edit.html", leagues=leagues, divisions=div_rows,
-                  pp_by_league=pp_by_league, co_by_league=co_by_league)
+                  pp_by_league=pp_by_league, co_by_league=co_by_league,
+                  form_by_league=form_by_league,
+                  form_regime_options=form_regime_options)
 
 
 @app.route("/league/edit", methods=["POST"])
@@ -10183,6 +10207,7 @@ def league_edit_post():
     league_new = request.form.getlist("league_new")
     league_pp  = request.form.getlist("league_pp")   # "1"/"0" per league, aligned
     league_co  = request.form.getlist("league_co")   # cricket order, same shape
+    league_fr  = request.form.getlist("league_form_regime")  # regime key, same shape
     div_old    = request.form.getlist("division_old")
     div_new    = request.form.getlist("division_new")
 
@@ -10215,6 +10240,13 @@ def league_edit_post():
             if cur is not None and int(cur["c"] or 0) != want:
                 db.execute("UPDATE teams SET cricket_order_enabled = ? WHERE league = ?",
                            (want, name))
+        # Team-form regime (always submitted as a regime key by the select).
+        if i < len(league_fr):
+            from o27v2.league import resolve_form_regime
+            _fv = resolve_form_regime(league_fr[i])
+            db.execute("UPDATE teams SET form_sigma = ?, form_min = ?, form_max = ? "
+                       "WHERE league = ?",
+                       (_fv["form_sigma"], _fv["form_min"], _fv["form_max"], name))
 
     renamed_div = 0
     for old, new in zip(div_old, div_new):

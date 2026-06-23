@@ -800,6 +800,15 @@ class GameState:
     # the joker override. Cleared at PA end (_end_at_bat) and at half start.
     aux_override: Optional[Player] = None
 
+    # --- Per-league team-form regime ---
+    # Override of the global LOCKED_FORM_* hot/cold band. None on a field → use
+    # the global cfg default for that knob. Stamped per game by o27v2/sim.py from
+    # the league's settings; read by _compute_locked_form. Lets a league run
+    # talent-pure (form_sigma <= 0), standard, or high-drama variance.
+    form_sigma: Optional[float] = None
+    form_min: Optional[float] = None
+    form_max: Optional[float] = None
+
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
     # Par score for the side batting first (cricket-style pacing toward a

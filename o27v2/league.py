@@ -605,6 +605,49 @@ def _assign_geographic_divisions(
 
 POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
 
+# Per-league team-form regimes (the per-half hot/cold band). Each key maps to
+# the (form_sigma, form_min, form_max) values written to every team in the
+# league; "default" → None (all columns NULL → the engine uses its global
+# LOCKED_FORM_* config). sigma <= 0 disables form entirely (talent-pure: talent
+# + matchups + cluster luck decide games). These let different leagues run
+# different variance regimes for side-by-side comparison.
+FORM_REGIMES: dict[str, tuple | None] = {
+    "default":    None,                 # use the global engine config
+    "talent":     (0.0,  None, None),   # form OFF — talent-pure, tight scores
+    "standard":   (0.66, 0.92, 2.15),   # the current global band, made explicit
+    "high_drama": (0.95, 0.82, 3.40),   # wide both ways: cold lows + hot into 3.x
+}
+
+FORM_REGIME_LABELS = {
+    "default":    "Default (global setting)",
+    "talent":     "Talent-pure (form off)",
+    "standard":   "Standard drama",
+    "high_drama": "High drama (wide band)",
+}
+
+
+def resolve_form_regime(key: str | None) -> dict:
+    """Map a regime key to the team-form columns. Unknown/'default' → all None
+    (engine uses its global config). Returns {form_sigma, form_min, form_max}."""
+    vals = FORM_REGIMES.get((key or "default"))
+    if not vals:
+        return {"form_sigma": None, "form_min": None, "form_max": None}
+    sigma, fmin, fmax = vals
+    return {"form_sigma": sigma, "form_min": fmin, "form_max": fmax}
+
+
+def form_regime_key(sigma, fmin, fmax) -> str:
+    """Reverse of resolve_form_regime: map stored form_* columns back to a regime
+    key for display. Unrecognized combinations fall back to 'default'."""
+    probe = (sigma, fmin, fmax)
+    for key, vals in FORM_REGIMES.items():
+        if vals is None:
+            if probe == (None, None, None):
+                return key
+        elif tuple(vals) == probe:
+            return key
+    return "default"
+
 # Phase 10: position players only — pitchers are generated separately as
 # a dedicated rotation + bullpen (see generate_players()).
 FIELDER_POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
@@ -2708,7 +2751,46 @@ def generate_players(
     for _ in range(RESERVE_PITCHERS):
         players.append(_pitcher(is_active=0))
 
+    # Roster-depth contract: every club must carry at least TWO of each infield
+    # slot (C, 1B, 2B, 3B, SS) and at least FIVE outfielders among its active
+    # roster, so there is always a body for each position across a season of
+    # attrition (injuries, trades). The mix above already satisfies this; this
+    # pass FORCES it so the contract is guaranteed, not incidental — and still
+    # holds if the composition above is ever retuned.
+    _enforce_roster_depth(players, _hitter)
+
     return players
+
+
+# Required active-roster depth by position (the "two of every infield + five
+# outfielders" contract). Catcher is included in the infield group — it is a
+# wear position that needs real backups to survive the 27-out arc.
+_REQUIRED_INFIELD_DEPTH = {"C": 2, "1B": 2, "2B": 2, "3B": 2, "SS": 2}
+_MIN_OUTFIELDERS = 5
+_OUTFIELD_SLOTS = ("CF", "RF", "LF")
+
+
+def _enforce_roster_depth(players: list[dict], hitter_factory) -> None:
+    """Top up `players` (in place) so the active roster meets the depth
+    contract: >=2 of each infield slot and >=5 outfielders. A no-op when the
+    roster already complies. `hitter_factory(pos, is_active)` mints a new bat."""
+    def _active_at(pos: str) -> int:
+        return sum(1 for p in players
+                   if p.get("is_active") and (p.get("position") or "").upper() == pos)
+
+    for pos, need in _REQUIRED_INFIELD_DEPTH.items():
+        while _active_at(pos) < need:
+            players.append(hitter_factory(pos, 1))
+
+    def _active_of() -> int:
+        return sum(1 for p in players
+                   if p.get("is_active")
+                   and (p.get("position") or "").upper() in _OUTFIELD_SLOTS)
+
+    i = 0
+    while _active_of() < _MIN_OUTFIELDERS:
+        players.append(hitter_factory(_OUTFIELD_SLOTS[i % len(_OUTFIELD_SLOTS)], 1))
+        i += 1
 
 
 # ---------------------------------------------------------------------------
