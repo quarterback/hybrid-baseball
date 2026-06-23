@@ -238,6 +238,19 @@ prefers the specialist; trailing team empties the bench down 17; worn regular
 rested in a 6-run game, fresh regular not, worn regular kept in a one-run game.
 168 engine tests pass. Still standing: double switches.
 
+**Comeback / rally aggression (parsed from an external spec).** A separate spec
+largely re-described the lineup-card + defensive-log work already done; its one
+genuinely-new, aligned idea was a deficit-scaled "desperation mode."
+`score_substitution` now adds `DESPERATION_RALLY_BONUS` (0.12) to pinch-hit /
+pinch-run leverage when the batting team trails by `DESPERATION_DEFICIT` (5)
+with at least `DESPERATION_OUTS_LEFT` (9) outs remaining — chase mode, deploy
+the bench to try to manufacture the comeback. Mutually exclusive with the
+last-licks boost (that needs a close gap). **Rejected** from the same spec: its
+"blowout roster lock" (freeze the bench, preserve backups when up 8+) directly
+contradicts the owner's instruction that a winning team rest its starters — not
+implemented. 172 engine tests pass (4 new: boost when chasing; gated by deficit
+and outs-remaining; off in super-innings).
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match

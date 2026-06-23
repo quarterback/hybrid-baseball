@@ -147,7 +147,25 @@ def score_substitution(
     if kind in ("pinch_hit", "pinch_run") and _decisive_chase(state):
         score += float(getattr(cfg, "DECISIVE_HALF_LEVERAGE_BONUS", 0.12))
 
+    # Comeback boost: trailing by several with a real chunk of the half left,
+    # the manager gets aggressive deploying bats and legs to mount a rally.
+    if kind in ("pinch_hit", "pinch_run") and _desperation_rally(state):
+        score += float(getattr(cfg, "DESPERATION_RALLY_BONUS", 0.12))
+
     return max(0.0, min(1.0, score))
+
+
+def _desperation_rally(state) -> bool:
+    """True when the batting team trails by `DESPERATION_DEFICIT`+ with at least
+    `DESPERATION_OUTS_LEFT` outs remaining — chase mode: deploy the bench to try
+    to manufacture the comeback."""
+    if getattr(state, "is_super_inning", False):
+        return False
+    deficit = (state.score.get(state.fielding_team.team_id, 0)
+               - state.score.get(state.batting_team.team_id, 0))
+    if deficit < int(getattr(cfg, "DESPERATION_DEFICIT", 5)):
+        return False
+    return (27 - state.outs) >= int(getattr(cfg, "DESPERATION_OUTS_LEFT", 9))
 
 
 def _decisive_chase(state) -> bool:

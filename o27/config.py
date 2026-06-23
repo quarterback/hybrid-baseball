@@ -1065,6 +1065,19 @@ REST_PRESSURE_THRESHOLD: float = 0.6   # only rest regulars this worn/cold
 WORKLOAD_REST_MIN_OUTS: int    = 15    # only this deep into the half
 WORKLOAD_REST_SAFE_GAP: int    = 5     # only when the game is decided by this much
 
+# ---------------------------------------------------------------------------
+# Comeback / rally aggression — deploy bats and legs when chasing a deficit
+# ---------------------------------------------------------------------------
+# Down several runs with a real chunk of the half still to play, a manager gets
+# aggressive: pinch-hit the better bat, pinch-run for the extra base, try to
+# manufacture the rally. Boosts pinch-hit / pinch-run leverage when the batting
+# team trails by DESPERATION_DEFICIT with at least DESPERATION_OUTS_LEFT outs
+# remaining. Mutually exclusive with the last-licks boost (that one needs a
+# close gap), so they never stack.
+DESPERATION_DEFICIT: int        = 5     # trailing by at least this much
+DESPERATION_OUTS_LEFT: int      = 9     # ...with at least this many outs left
+DESPERATION_RALLY_BONUS: float  = 0.12  # added to offense leverage when chasing
+
 
 
 

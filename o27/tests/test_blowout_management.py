@@ -198,6 +198,41 @@ def test_platoon_advantage_grows_late():
 
 # --- pinch-run specialist preference ---------------------------------------
 
+# --- comeback / rally aggression -------------------------------------------
+
+def test_comeback_boost_when_chasing():
+    st = _state()
+    st.score = {"visitors": 3, "home": 9}      # batting team (visitors) down 6
+    st.outs = 12                                # 15 outs remaining
+    batter = st.visitors.lineup[0]
+    cand = next(p for p in st.visitors.roster if p.player_id == "VB1")
+    chasing = mgr.score_substitution(st, cand, "pinch_hit", batter)
+    st.half = "super_top"                       # super-innings disable the boost
+    plain = mgr.score_substitution(st, cand, "pinch_hit", batter)
+    assert abs((chasing - plain) - 0.12) < 1e-9
+
+
+def test_comeback_requires_enough_deficit():
+    st = _state()
+    st.score = {"visitors": 6, "home": 9}       # down only 3
+    st.outs = 12
+    assert mgr._desperation_rally(st) is False
+
+
+def test_comeback_requires_outs_remaining():
+    st = _state()
+    st.score = {"visitors": 3, "home": 9}       # down 6...
+    st.outs = 20                                 # ...but only 7 outs left
+    assert mgr._desperation_rally(st) is False
+
+
+def test_comeback_active_down_big_with_time():
+    st = _state()
+    st.score = {"visitors": 3, "home": 9}
+    st.outs = 12
+    assert mgr._desperation_rally(st) is True
+
+
 def test_pinch_run_prefers_the_specialist():
     st = _state()
     st.score = {"visitors": 4, "home": 3}
