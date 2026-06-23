@@ -9,6 +9,34 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+def required_run_rate_3o(
+    target_runs: Optional[int],
+    runs: int,
+    outs: int,
+    envelope: int = 27,
+) -> Optional[float]:
+    """Cricket-style Required Run Rate normalized to 3 outs (RRR/3O).
+
+    The runs-per-out the chasing side must still average to reach ``target_runs``,
+    scaled by 3 so the figure reads like a cricket "over" (3 outs ≈ one over).
+    O27's natural scoring unit is R/out (league average ~0.43, i.e. ~1.3 per 3
+    outs), so RRR/3O ≈ required_run_rate × 3.
+
+        RRR/3O = (max(0, target_runs - runs) / outs_remaining) * 3
+
+    Returns None when there is no target yet (``target_runs is None``) or the
+    out envelope is exhausted (``outs_remaining <= 0``) — both cases where the
+    rate is undefined. A chase that has already reached the target yields 0.0.
+    """
+    if target_runs is None:
+        return None
+    outs_remaining = envelope - outs
+    if outs_remaining <= 0:
+        return None
+    runs_needed = max(0, target_runs - runs)
+    return (runs_needed / outs_remaining) * 3.0
+
+
 @dataclass
 class TeamStats:
     team_name: str
@@ -45,6 +73,16 @@ class TeamStats:
         if self.target_runs is None:
             return None
         return self.target_runs / 27
+
+    @property
+    def required_run_rate_3o(self) -> Optional[float]:
+        """Required Run Rate normalized to 3 outs (cricket-over analog).
+
+        Delegates to the module-level :func:`required_run_rate_3o`; the live
+        chase value from the current point (remaining runs / remaining outs × 3).
+        None until ``target_runs`` is set.
+        """
+        return required_run_rate_3o(self.target_runs, self.runs, self.outs)
 
     def net_run_rate(self, opponent: "TeamStats") -> float:
         """

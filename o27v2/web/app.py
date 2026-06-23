@@ -4125,6 +4125,34 @@ def game_detail(game_id: int):
             if _r.get("player_id") in _pp_starts:
                 _r["pp_start_outs"] = _pp_starts[_r["player_id"]]
 
+    # Cricket-style RRR/3O "Pressure Curve" for the team batting SECOND (the
+    # chaser — could be home or away). Reconstructed at render time from the
+    # chaser's regulation PA log; the fielding side has finished batting so its
+    # score is fixed and the chaser's running total falls out of score_diff.
+    # None on ties / unknown bat order / legacy games without a stamped PA log.
+    from .box_score import compute_chase_rrr
+    from o27.stats.team import required_run_rate_3o
+    rrr_summary = None
+    target_runs = None
+    chaser_half_label = None
+    chaser_is_home = None
+    hbf = game.get("home_bats_first")
+    if hbf is not None and game.get("home_score") is not None \
+            and game.get("away_score") is not None:
+        home_bats_first = bool(hbf)
+        chaser_is_home = not home_bats_first
+        chaser_half_label = "top" if home_bats_first else "bottom"
+        chaser_team_id = game["away_team_id"] if home_bats_first else game["home_team_id"]
+        first_team_final = game["home_score"] if home_bats_first else game["away_score"]
+        target_runs = first_team_final + 1
+        chase_rows = db.fetchall(
+            """SELECT outs_after, score_diff_after FROM game_pa_log
+               WHERE game_id = ? AND phase = 0 AND team_id = ?
+               ORDER BY ab_seq, swing_idx""",
+            (game_id, chaser_team_id),
+        )
+        rrr_summary = compute_chase_rrr(chase_rows, first_team_final)
+
     box_score_text = _render_box_score(
         game=game_for_box,
         phases=phases,
@@ -4139,6 +4167,7 @@ def game_detail(game_id: int):
         season_wl=_season_wl,
         finisher_pid=_f_pid,
         finisher_to=_f_to,
+        rrr_summary=rrr_summary,
     )
 
     # Pesäpallo-style scoring events log — one row per run that crossed
@@ -4155,6 +4184,21 @@ def game_detail(game_id: int):
            ORDER BY se.seq""",
         (game_id,),
     )
+
+    # Inline RRR/3O on each run the chaser scored — the required runs-per-3-outs
+    # to win, computed at the moment of the run (outs_before, chaser's new score
+    # vs the target). Left None for the first-batting side's runs (no target yet)
+    # and when bat order / scores are unknown. The key is always present so the
+    # template can render a dash uniformly.
+    for ev in scoring_events:
+        ev["rrr_3o"] = None
+    if target_runs is not None:
+        for ev in scoring_events:
+            if ev.get("half") != chaser_half_label:
+                continue
+            chaser_runs = ev["home_score"] if chaser_is_home else ev["visitors_score"]
+            ev["rrr_3o"] = required_run_rate_3o(
+                target_runs, chaser_runs, ev.get("outs_before") or 0)
 
     # Luck Ledger — estimated-vs-actual bases ("deserve-to-win") from the
     # EV/LA contact physics on game_pa_log. None on legacy games without
@@ -4192,6 +4236,7 @@ def game_detail(game_id: int):
         park_dims=park_dims,
         fence_points=fence_points,
         scoring_events=scoring_events,
+        rrr_summary=rrr_summary,
         luck_ledger=luck_ledger,
         prev_game_id=(prev_game["id"] if prev_game else None),
         next_game_id=(next_game["id"] if next_game else None),

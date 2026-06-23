@@ -243,6 +243,7 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Target Runs | TARGET_R | Home team's target after the away half ends | set on inning end | `o27/stats/team.py:19` |
 | Required Run Rate | REQ_RR | R/OUT needed from current state to win | `(target − scored) / outs_remaining` | `o27/stats/team.py:29-40` |
 | Required Run Rate (Full) | REQ_RR_FULL | Required efficiency over the full inning | `target / 27` | `o27/stats/team.py:42-47` |
+| Required Run Rate /3 Outs | RRR/3O | Cricket-over analog: runs per 3 outs the second-batting side still needs to win (~1.3 league pace) | `REQ_RR × 3` = `(target − scored) / outs_remaining × 3` | `o27/stats/team.py:required_run_rate_3o` |
 | Net Run Rate | NRR | Cricket-style multi-game tiebreaker | `(R_for / OUT_faced) − (R_against / OUT_bowled)` | `o27/stats/team.py:49-57` |
 | Wins | W | Season wins | counted | `o27v2/db.py:33` |
 | Losses | L | Season losses | counted | `o27v2/db.py:34` |

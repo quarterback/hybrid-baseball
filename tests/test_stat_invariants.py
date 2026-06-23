@@ -841,3 +841,69 @@ def test_invariant_11_war_components_match_displayed_metrics(played_game_ids):
         f"WAR != war_off + dwar + bwar_base for {len(sum_bad)} rows; "
         f"first 5 (pid, war, off, dwar, bwar_base): {sum_bad[:5]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Invariant 12: RRR/3O chase curve sanity
+# ---------------------------------------------------------------------------
+
+def test_invariant_12_rrr_3o_chase(played_game_ids):
+    """The reconstructed RRR/3O "pressure curve" for the second-batting side is
+    well-formed: every defined value is non-negative and finite, and the
+    starting value (out 0) equals (first_team_final + 1) / 9 — the same figure
+    the box-score footer and Scoring Events column show.
+
+    Skips games without a known bat order / final scores, and legacy games
+    whose game_pa_log lacks stamped outs/score_diff (compute returns None).
+    """
+    import math
+    from o27v2.web.box_score import compute_chase_rrr
+
+    extra, params = _game_filter_clause("g")
+    games = db.fetchall(
+        f"""SELECT g.id, g.home_bats_first, g.home_score, g.away_score,
+                   g.home_team_id, g.away_team_id
+              FROM games g
+             WHERE g.played = 1{extra}""",
+        params,
+    )
+
+    bad: list[str] = []
+    checked = 0
+    for g in games:
+        hbf = g.get("home_bats_first")
+        if hbf is None or g.get("home_score") is None or g.get("away_score") is None:
+            continue
+        home_bats_first = bool(hbf)
+        chaser_team_id = g["away_team_id"] if home_bats_first else g["home_team_id"]
+        first_team_final = g["home_score"] if home_bats_first else g["away_score"]
+        rows = db.fetchall(
+            """SELECT outs_after, score_diff_after FROM game_pa_log
+               WHERE game_id = ? AND phase = 0 AND team_id = ?
+               ORDER BY ab_seq, swing_idx""",
+            (g["id"], chaser_team_id),
+        )
+        summary = compute_chase_rrr(rows, first_team_final)
+        if summary is None:
+            continue
+        checked += 1
+
+        expected_start = (first_team_final + 1) / 9
+        start = summary["starting"]
+        if start is None or not math.isclose(start, expected_start, rel_tol=1e-9):
+            bad.append(f"game={g['id']} starting={start} expected={expected_start}")
+
+        vals = [summary["peak"], start]
+        vals += [v for (_, v) in summary["checkpoints"]]
+        vals += [v for (_, v) in summary["series"]]
+        for v in vals:
+            if v is not None and (v < 0 or not math.isfinite(v)):
+                bad.append(f"game={g['id']} bad RRR/3O value={v}")
+                break
+
+    if checked == 0:
+        pytest.skip("no games with a reconstructable RRR/3O chase in target DB")
+    assert not bad, (
+        f"RRR/3O chase invariant failed on {len(bad)} games; first 5: "
+        + "; ".join(bad[:5])
+    )
