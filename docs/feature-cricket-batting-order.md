@@ -155,6 +155,24 @@ minimizing same-handed adjacencies. Implemented in `o27v2/sim.py` (`_valley_orde
 - DB: fresh schema and a legacy `teams` table both end with `cricket_order_enabled`
   and `mgr_flip_aggression`; INSERT column/placeholder/value counts align (31/31/31).
 
+## 5b. The auxiliary hitter ("aux") — resolving the on-base leadoff
+
+The flip puts the just-batted #9 back at the top of the next cycle. If he ended
+the cycle by *reaching base*, he can't bat while he's a runner. So when the due
+batter is already on base during his own turn, the manager drafts a **one-off
+auxiliary** to hit in his place: the best available **bench** bat (any roster
+hitter not in the active lineup — NOT a designated joker; "line cutters"). The
+on-base batter keeps his runner status and the lineup advances past him, so each
+stranded batter resolves independently no matter how many are on base.
+
+Plumbing: `state.aux_override` (parallel to the joker override but the lineup DOES
+advance afterward), `manager.select_auxiliary`, `prob._maybe_auxiliary`
+(emits `aux_insertion`, or `aux_skip` to forfeit the turn when the bench is
+empty — the engine never bats a man on base). Bench-only selection is also
+load-bearing for correctness (the provider's same-batter new-PA detection).
+The hard invariant — no player ever on two bases — is regression-tested. See
+`docs/aar-cricket-flip-auxiliary-hitter.md`.
+
 ## 6. Not changed / possible follow-ups
 - **No new stats.** The flip only reorders PAs the stat machinery already records;
   a "flips per game" telemetry line could be added if it proves interesting.
@@ -164,3 +182,5 @@ minimizing same-handed adjacencies. Implemented in `o27v2/sim.py` (`_valley_orde
 - `docs/aar-cricket-batting-order-manager-decision.md` — earned, use-or-lose,
   manager-decided, regulation-only; the `mgr_flip_aggression` persona.
 - `docs/aar-cricket-batting-order-flip-aware-lineups.md` — the "valley" lineup.
+- `docs/aar-cricket-flip-auxiliary-hitter.md` — the auxiliary that hits for a
+  due batter stranded on base after a flip (the no-double-bat fix).

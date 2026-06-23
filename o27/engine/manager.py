@@ -437,6 +437,41 @@ def insert_joker(state: GameState, joker: Player, lineup_position: int = -1) -> 
     return [f"  JOKER: {team.name} sends in {joker.name} for the next PA."]
 
 
+def _aux_bat_quality(p: Player) -> float:
+    """Rough bat score for ranking auxiliary candidates (same attrs the engine
+    lifts for batters: contact, power, eye, skill)."""
+    return (float(getattr(p, "contact", 0.5) or 0.5)
+            + float(getattr(p, "power", 0.5) or 0.5)
+            + float(getattr(p, "eye", 0.5) or 0.5)
+            + float(getattr(p, "skill", 0.5) or 0.5))
+
+
+def select_auxiliary(state: GameState) -> Optional[Player]:
+    """Pick a one-off auxiliary ("aux") to hit for a due batter stranded on base.
+
+    Triggered only by the Cricket Batting Order flip (the sole way the due batter
+    can already be a runner). Unlike a joker the aux pool is NOT designated — the
+    manager may draft any available BENCH bat (a roster hitter not currently in
+    the active batting order). Bench-only is deliberate: pulling a player who is
+    already in the lineup would just make HIM bat twice this cycle — the exact
+    thing the aux exists to prevent. Best available bench bat wins. Returns None
+    when the bench is empty (no extra hitters left); the caller then forfeits the
+    stranded batter's turn rather than bat an on-base player (see _maybe_auxiliary
+    / aux_skip).
+    """
+    team = state.batting_team
+    on_base = {b for b in state.bases if b is not None}
+    lineup_ids = {p.player_id for p in team.lineup}
+
+    bench = [p for p in team.roster
+             if p.player_id not in lineup_ids
+             and p.player_id not in on_base
+             and team.is_available(p.player_id)]
+    if not bench:
+        return None
+    return max(bench, key=_aux_bat_quality)
+
+
 def _legacy_insert_joker(state: GameState, joker: Player, lineup_position: int) -> list[str]:
     """
     Insert a joker at the given lineup position for the current batting team.

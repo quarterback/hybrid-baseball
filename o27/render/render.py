@@ -69,7 +69,8 @@ _NON_PA_EVENTS = frozenset(
      "stolen_base_attempt", "pickoff_attempt", "balk",
      "wild_pitch", "passed_ball",
      "defensive_sub", "tactical_def_swap", "pinch_runner",
-     "joker_to_field", "phase_transition_swap", "cricket_flip"}
+     "joker_to_field", "phase_transition_swap", "cricket_flip",
+     "aux_insertion", "aux_skip"}
 )
 
 # Maps internal hit_type strings → human-readable prose for the transcript.
@@ -216,6 +217,13 @@ class Renderer:
         # The reversal itself happens in apply_event, so the next PA's context
         # is captured against the flipped order.
         if etype == "cricket_flip":
+            msg = event.get("msg") or ""
+            return [msg] if msg else []
+
+        # Auxiliary line-cutter: a one-off pinch-hit for a stranded due batter.
+        # Carries its own precomputed line; the override is set in apply_event,
+        # so the aux's PA itself renders normally on the following events.
+        if etype in ("aux_insertion", "aux_skip"):
             msg = event.get("msg") or ""
             return [msg] if msg else []
 

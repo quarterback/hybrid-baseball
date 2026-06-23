@@ -308,6 +308,9 @@ def run_half(
     # team has flipped, so the stale joker (now an opponent player) bats and
     # his out is misattributed to the wrong team. Clear it at every half start.
     state.batter_override = None
+    # Auxiliary line-cutter override is likewise per-PA within this half — never
+    # let it leak across the half boundary (where the batting team flips).
+    state.aux_override = None
     # Cricket Batting Order: an earned-but-unspent flip is use-or-lose with the
     # top of the next cycle. If a half ends before the manager spends it, it is
     # lost — clear it so it never leaks into the team's next batting half.
