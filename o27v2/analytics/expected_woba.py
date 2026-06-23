@@ -395,3 +395,210 @@ def build_xwoba_table(min_pa: int = 162, team_ids=None) -> dict:
         "league_woba":   (total_actual_pts   / total_pa) if total_pa else 0.0,
         "league_xwoba":  (total_expected_pts / total_pa) if total_pa else 0.0,
     }
+
+
+_DEAD_OUT_HIT_TYPES = {"ground_out", "fly_out", "line_out", "double_play",
+                       "triple_play", "itp_out"}
+
+
+def _has_runner_advancement(bases_before, bases_after, runs_scored) -> bool:
+    """Best-effort runner-advancement detector for PA-log base masks.
+
+    A dead out allows no run and no existing runner to reach a higher base. The
+    PA log stores occupancy masks rather than runner identities, so detect only
+    clear advancement patterns: 1B -> 2B/3B, 2B -> 3B, or any run scoring.
+    Runner erasures without advancement (for example a DP) can still be dead.
+    """
+    if runs_scored:
+        return True
+    if bases_before is None or bases_after is None:
+        return False
+    before = int(bases_before or 0)
+    after = int(bases_after or 0)
+    if (before & 1) and (after & (2 | 4)):
+        return True
+    if (before & 2) and (after & 4):
+        return True
+    return False
+
+
+def build_expected_outs_table(min_bf: int = 1, team_ids=None) -> dict:
+    """Per-pitcher Expected Outs (xO).
+
+    xO is the out-probability sibling of xwOBA: strikeouts and foul-outs are
+    credited as automatic expected outs, while balls in play are replayed at
+    the league-average out count for their (EV, LA) bucket. The actual-minus-
+    expected gap (`outs_minus_xouts`) is positive when the pitcher/defense
+    converted more outs than the contact profile predicted and negative when
+    out-shaped contact was not converted.
+    """
+    ev_sql, la_sql = _ev_la_bin_sql()
+    team_filter = _team_in(team_ids, "team_id")
+    pid_filter = ""
+    if team_ids:
+        pid_filter = (" AND pitcher_id IN (SELECT id FROM players WHERE team_id IN (%s))"
+                      % ",".join(str(int(t)) for t in team_ids))
+
+    league_bins = db.fetchall(
+        f"""
+        SELECT {ev_sql} AS ev_bin, {la_sql} AS la_bin,
+               SUM(CASE WHEN outs_before IS NOT NULL AND outs_after IS NOT NULL
+                        THEN CASE WHEN outs_after > outs_before
+                                  THEN outs_after - outs_before ELSE 0 END
+                        ELSE 0 END) AS outs,
+               COUNT(*) AS n
+        FROM game_pa_log
+        WHERE phase = 0 AND exit_velocity IS NOT NULL{team_filter}
+        GROUP BY ev_bin, la_bin
+        """
+    )
+    bin_xouts = {
+        (r["ev_bin"], r["la_bin"]): ((r["outs"] or 0) / r["n"] if (r["n"] or 0) else 0.0)
+        for r in league_bins
+    }
+
+    bip_rows = db.fetchall(
+        f"""
+        SELECT {ev_sql} AS ev_bin, {la_sql} AS la_bin, pitcher_id AS player_id,
+               COUNT(*) AS n
+        FROM game_pa_log
+        WHERE phase = 0 AND exit_velocity IS NOT NULL{pid_filter}
+        GROUP BY ev_bin, la_bin, pitcher_id
+        """
+    )
+    bip_xouts: dict[int, float] = defaultdict(float)
+    for r in bip_rows:
+        if r["player_id"] is None:
+            continue
+        bip_xouts[r["player_id"]] += bin_xouts.get((r["ev_bin"], r["la_bin"]), 0.0) * r["n"]
+
+    team_in = ""
+    if team_ids:
+        team_in = " AND team_id IN (%s)" % ",".join(str(int(t)) for t in team_ids)
+    pit = db.fetchall(
+        f"""SELECT ps.player_id, p.name AS player_name, t.abbrev AS team_abbrev,
+                  SUM(ps.batters_faced) AS bf, SUM(ps.outs_recorded) AS outs,
+                  SUM(ps.k) AS k, COALESCE(SUM(ps.fo_induced), 0) AS fo
+           FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
+           JOIN players p ON p.id = ps.player_id
+           LEFT JOIN teams t ON t.id = ps.team_id
+           WHERE ps.phase = 0{team_in}
+           GROUP BY ps.player_id"""
+    )
+    pp = db.fetchall(
+        f"""SELECT player_id, COALESCE(SUM(ppp_hits_saved), 0) AS hits_saved
+            FROM game_power_play_stats
+            WHERE 1=1{team_in}
+            GROUP BY player_id"""
+    )
+    pp_saved_outs = {r["player_id"]: (r["hits_saved"] or 0) for r in pp}
+
+    leaders = []
+    by_player = {}
+    for r in pit:
+        pid = r["player_id"]
+        bf = r["bf"] or 0
+        if bf <= 0:
+            continue
+        automatic_outs = (r["k"] or 0) + (r["fo"] or 0)
+        defense_support_outs = pp_saved_outs.get(pid, 0)
+        xouts = automatic_outs + bip_xouts.get(pid, 0.0) + defense_support_outs
+        actual_outs = r["outs"] or 0
+        row = {
+            "player_id": pid,
+            "player_name": r["player_name"],
+            "team_abbrev": r["team_abbrev"] or "",
+            "bf": bf,
+            "outs": actual_outs,
+            "xouts": round(xouts, 1),
+            "xouts_per_27": round(27 * xouts / bf, 2),
+            "outs_minus_xouts": round(actual_outs - xouts, 1),
+            "defense_support_xouts": defense_support_outs,
+        }
+        by_player[pid] = row
+        if bf >= min_bf:
+            leaders.append(row)
+    leaders.sort(key=lambda x: -x["xouts_per_27"])
+    return {"leaders": leaders, "by_player": by_player, "n_bins": len(bin_xouts)}
+
+
+def build_dead_outs_table(min_bf: int = 1, team_ids=None) -> dict:
+    """Per-pitcher Dead Out Percentage (DO%).
+
+    A dead out is an out that burns the batting side's out envelope without a
+    run, runner advancement, or batter reach. Strikeouts and foul-outs are dead
+    by definition. Contact outs qualify when the PA-log state shows no scoring
+    and no runner advancement. Multi-out erasers count by outs, so a two-out
+    double play contributes two dead outs and one dead-out PA.
+    """
+    pid_filter = ""
+    if team_ids:
+        pid_filter = (" AND pitcher_id IN (SELECT id FROM players WHERE team_id IN (%s))"
+                      % ",".join(str(int(t)) for t in team_ids))
+    events = db.fetchall(
+        f"""SELECT pitcher_id AS player_id, hit_type, runs_scored,
+                  outs_before, outs_after, bases_before, bases_after
+            FROM game_pa_log
+            WHERE phase = 0 AND pitcher_id IS NOT NULL{pid_filter}"""
+    )
+    bip_dead_outs: dict[int, int] = defaultdict(int)
+    bip_dead_pas: dict[int, int] = defaultdict(int)
+    for e in events:
+        ht = e["hit_type"]
+        if ht not in _DEAD_OUT_HIT_TYPES:
+            continue
+        if e["outs_before"] is None or e["outs_after"] is None:
+            continue
+        out_delta = max(0, int(e["outs_after"] or 0) - int(e["outs_before"] or 0))
+        if out_delta <= 0 or (e["runs_scored"] or 0) > 0:
+            continue
+        # Double/triple plays are dead-out erasers if they did not score a run;
+        # count the full out delta even though pre-existing runners disappeared.
+        if ht not in ("double_play", "triple_play") and _has_runner_advancement(
+            e["bases_before"], e["bases_after"], e["runs_scored"]
+        ):
+            continue
+        pid = e["player_id"]
+        bip_dead_outs[pid] += out_delta
+        bip_dead_pas[pid] += 1
+
+    team_in = ""
+    if team_ids:
+        team_in = " AND ps.team_id IN (%s)" % ",".join(str(int(t)) for t in team_ids)
+    pit = db.fetchall(
+        f"""SELECT ps.player_id, p.name AS player_name, t.abbrev AS team_abbrev,
+                  SUM(ps.batters_faced) AS bf, SUM(ps.outs_recorded) AS outs,
+                  SUM(ps.k) AS k, COALESCE(SUM(ps.fo_induced), 0) AS fo
+           FROM (SELECT * FROM game_pitcher_stats WHERE COALESCE(is_playoff,0) = 0) ps
+           JOIN players p ON p.id = ps.player_id
+           LEFT JOIN teams t ON t.id = ps.team_id
+           WHERE ps.phase = 0{team_in}
+           GROUP BY ps.player_id"""
+    )
+    leaders = []
+    by_player = {}
+    for r in pit:
+        pid = r["player_id"]
+        bf = r["bf"] or 0
+        outs = r["outs"] or 0
+        if bf <= 0:
+            continue
+        automatic_dead = (r["k"] or 0) + (r["fo"] or 0)
+        dead_outs = automatic_dead + bip_dead_outs.get(pid, 0)
+        dead_pas = automatic_dead + bip_dead_pas.get(pid, 0)
+        row = {
+            "player_id": pid,
+            "player_name": r["player_name"],
+            "team_abbrev": r["team_abbrev"] or "",
+            "bf": bf,
+            "outs": outs,
+            "dead_outs": dead_outs,
+            "dead_out_pas": dead_pas,
+            "dead_out_pct": round(100 * dead_outs / outs, 1) if outs else None,
+            "dead_out_pa_pct": round(100 * dead_pas / bf, 1) if bf else None,
+        }
+        by_player[pid] = row
+        if bf >= min_bf:
+            leaders.append(row)
+    leaders.sort(key=lambda x: -(x["dead_out_pct"] or 0))
+    return {"leaders": leaders, "by_player": by_player}

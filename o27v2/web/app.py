@@ -7228,6 +7228,8 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
 # (lower is better → higher percentile → red marker). K% is the exception.
 _O27I_PITCHER_METRICS = [
     ("xwoba_against",  "xwOBA Against",  "0.3f", True),
+    ("xouts_per_27",   "xO/27",          "0.2f", False),
+    ("dead_out_pct",   "DO%",            "pct",  False),
     ("avg_ev_against", "Avg EV Against", "ev",  True),
     ("hardhit",        "Hard-Hit %",     "pct", True),
     ("barrel",         "Barrel %",       "pct", True),
@@ -7265,8 +7267,10 @@ def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             WHERE phase = 0{team_in}
             GROUP BY player_id""")
     rate_by = {r["player_id"]: r for r in rate}
-    from o27v2.analytics import build_xwoba_against_table
+    from o27v2.analytics import build_xwoba_against_table, build_expected_outs_table, build_dead_outs_table
     xwa = build_xwoba_against_table(min_bf=1, team_ids=team_ids)
+    xo = build_expected_outs_table(min_bf=1, team_ids=team_ids)["by_player"]
+    do = build_dead_outs_table(min_bf=1, team_ids=team_ids)["by_player"]
 
     rows = []
     for e in ev:
@@ -7280,6 +7284,12 @@ def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             "bip":            e["bip"],
             "xwoba_against":  (xwa.get(pid) or {}).get("xwoba_against"),
             "woba_against":   (xwa.get(pid) or {}).get("woba_against"),
+            "xouts":          (xo.get(pid) or {}).get("xouts"),
+            "xouts_per_27":   (xo.get(pid) or {}).get("xouts_per_27"),
+            "outs_minus_xouts": (xo.get(pid) or {}).get("outs_minus_xouts"),
+            "defense_support_xouts": (xo.get(pid) or {}).get("defense_support_xouts"),
+            "dead_out_pct":   (do.get(pid) or {}).get("dead_out_pct"),
+            "dead_outs":      (do.get(pid) or {}).get("dead_outs"),
             "avg_ev_against": round(e["avg_ev_against"], 1) if e["avg_ev_against"] is not None else None,
             "hardhit":        round(100 * e["hardhit"], 1),
             "barrel":         round(100 * e["barrel"], 1),
@@ -7391,6 +7401,12 @@ def player_o27i(player_id: int):
         xwoba=(me_bat or {}).get("xwoba"),
         woba_against=(me_pit or {}).get("woba_against"),
         xwoba_against=(me_pit or {}).get("xwoba_against"),
+        xouts=(me_pit or {}).get("xouts"),
+        xouts_per_27=(me_pit or {}).get("xouts_per_27"),
+        outs_minus_xouts=(me_pit or {}).get("outs_minus_xouts"),
+        defense_support_xouts=(me_pit or {}).get("defense_support_xouts"),
+        dead_out_pct=(me_pit or {}).get("dead_out_pct"),
+        dead_outs=(me_pit or {}).get("dead_outs"),
         n_qualified=len(bat_rows),
         n_qualified_pitchers=len(pit_rows),
         leagues=leagues, selected_league=selected_league,
