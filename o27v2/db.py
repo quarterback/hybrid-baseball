@@ -2180,6 +2180,27 @@ def fetchone(sql: str, params: tuple = ()) -> dict | None:
     return dict(row) if row else None
 
 
+def child_tables_of(parent: str) -> list[str]:
+    """Tables that hold a FOREIGN KEY referencing ``parent``.
+
+    Used to delete child rows before the parent so FK enforcement (which the
+    app turns on) doesn't reject the parent delete. Discovered dynamically from
+    the schema so a newly-added per-game child table is handled automatically
+    — a hardcoded list is exactly what let `seed_schedule` ship an incomplete
+    wipe and crash on a populated save.
+    """
+    with get_conn() as conn:
+        tables = [r["name"] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")]
+        out = []
+        for t in tables:
+            for fk in conn.execute(f"PRAGMA foreign_key_list({t})"):
+                if fk["table"] == parent:
+                    out.append(t)
+                    break
+    return out
+
+
 def execute(sql: str, params: tuple = ()) -> int:
     """Execute a DML statement; returns lastrowid."""
     def _run() -> int:

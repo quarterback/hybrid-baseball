@@ -179,6 +179,35 @@ def delete_save(save_id: str) -> None:
     _remove_db_files(save_id)
 
 
+_SAVE_FILE_RE = re.compile(r"^save_([0-9a-f]+)\.db$")
+
+
+def prune_orphans() -> list[str]:
+    """Delete ``save_*.db`` files (and their -wal/-shm/-journal sidecars) in the
+    saves dir whose id is NOT in the registry.
+
+    Orphans are leftovers from interrupted runs or older sessions. They're
+    invisible to the app (the registry never points at them) but a stray reader
+    — a glob that grabs the wrong file, or a test resolving "a save" loosely —
+    can pick one up and serve stale data, producing phantom failures. Returns
+    the filenames removed.
+
+    No-ops when the registry has no saves, so a single-DB / test deployment
+    (``O27V2_DB_PATH`` set, registry empty) never has its files swept here.
+    """
+    reg = load_registry()
+    known = {s["id"] for s in reg.get("saves", [])}
+    if not known:
+        return []
+    removed: list[str] = []
+    for fn in os.listdir(saves_dir()):
+        m = _SAVE_FILE_RE.match(fn)
+        if m and m.group(1) not in known:
+            _remove_db_files(m.group(1))
+            removed.append(fn)
+    return removed
+
+
 def is_valid_save_db(path: str) -> bool:
     """True if path is a real O27 save (opens as SQLite and has a teams table)."""
     try:
