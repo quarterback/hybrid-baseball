@@ -37,8 +37,8 @@ def test_consecutive_pitch_fatigue_hurts_pitch_outcome_surface():
     batter = _batter()
     pitcher = _pitcher(stamina=0.5)
 
-    fresh = _pitch_probs(pitcher, batter, 0, 0, spell_count=0, pitch_count=10)
-    tired = _pitch_probs(pitcher, batter, 0, 0, spell_count=0, pitch_count=120)
+    fresh = _pitch_probs(pitcher, batter, 0, 0, spell_count=0, pitch_count=45)
+    tired = _pitch_probs(pitcher, batter, 0, 0, spell_count=0, pitch_count=70)
 
     # Tired pitchers lose command and miss fewer bats, even before BF-count
     # fatigue starts. Balls/contact rise while strike/foul outcomes fall.
@@ -52,8 +52,8 @@ def test_consecutive_pitch_fatigue_hurts_pitch_outcome_surface():
 def test_high_stamina_delays_consecutive_pitch_fatigue():
     batter = _batter()
 
-    low_stamina = _pitch_probs(_pitcher(stamina=0.2), batter, 0, 0, spell_count=0, pitch_count=90)
-    high_stamina = _pitch_probs(_pitcher(stamina=0.9), batter, 0, 0, spell_count=0, pitch_count=90)
+    low_stamina = _pitch_probs(_pitcher(stamina=0.2), batter, 0, 0, spell_count=0, pitch_count=70)
+    high_stamina = _pitch_probs(_pitcher(stamina=0.9), batter, 0, 0, spell_count=0, pitch_count=70)
 
     assert low_stamina[0] > high_stamina[0]
     assert low_stamina[4] > high_stamina[4]
