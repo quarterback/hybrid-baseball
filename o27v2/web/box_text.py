@@ -329,9 +329,9 @@ def _batting_annotations(
 #
 # Cols 1-27   name (with optional " (W)" / " (L)" inline)
 # 28-31  BF    %4d
-# 32-35  P     %4d
-# 36-40  OS%   %5s   (e.g. ' 22%')
-# 41-44  OUT   %4d
+# 32-35  OUT   %4d
+# 36-39  P     %4d
+# 40-44  P/BF  %5s   (pitches per batter; e.g. '  3.5')
 # 45-47  H     %3d
 # 48-50  R     %3d
 # 51-53  ER    %3d
@@ -341,7 +341,7 @@ def _batting_annotations(
 # 63-66  GSc   %4d
 
 _PIT_HEADER = (
-    "BF".rjust(4) + "P".rjust(4) + "OS%".rjust(5) + "OUT".rjust(4)
+    "BF".rjust(4) + "OUT".rjust(4) + "P".rjust(4) + "P/BF".rjust(5)
     + "H".rjust(3) + "R".rjust(3) + "ER".rjust(3) + "BB".rjust(3)
     + "K".rjust(3) + "HR".rjust(3) + "GSc".rjust(4) + "IR".rjust(5)
 )
@@ -410,13 +410,15 @@ def _pitching_block(team_name: str, rows: list[dict],
         k   = r.get("k", 0) or 0
         hr  = r.get("hr_allowed", 0) or 0
         gsc = int(round(r.get("gsc_avg") or 0))
-        os  = _pct(out_rec, denom_outs)
+        # Pitches per batter — workload tied to the count it took. Replaces OS%,
+        # which in a single game just restates OUT (outs/denom).
+        ppb = f"{pi / bf:.1f}" if bf else "-"
         _inh = r.get("ir_inherited", 0) or 0
         ir = f"{_inh}-{r.get('ir_scored', 0) or 0}" if _inh else "-"
 
         line = (
             _name_no_pos(nm)
-            + f"{bf:4d}{pi:4d}{os:>5}{out_rec:4d}"
+            + f"{bf:4d}{out_rec:4d}{pi:4d}{ppb:>5}"
             + f"{h:3d}{ru:3d}{er:3d}{bb:3d}{k:3d}{hr:3d}{gsc:4d}{ir:>5}"
         )
         out.append(line)

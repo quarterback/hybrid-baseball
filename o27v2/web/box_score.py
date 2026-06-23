@@ -8,7 +8,7 @@ sections separated by blank lines.
 
 Adaptations for O27:
   - Line score uses phase columns (REG, SI1, SI2, ...) instead of innings.
-  - Pitching tables show OUT and OS% instead of IP.
+  - Pitching tables show OUT, P (pitches) and P/BF instead of IP / OS%.
   - Batting tables include a 2C column (Second-Chance ABs).
   - Pitcher decision (W/L/S) is inline with the name; no separate column.
   - Position column shows the actual fielding position the player played
@@ -663,7 +663,7 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
     decisions = decisions or {}
     season_wl = season_wl or {}
     out = [f"{team_name.upper()} PITCHING"]
-    cols = ["BF", "OUT", "OS%", "H", "R", "ER", "BB", "K", "HR", "P", "IR"]
+    cols = ["BF", "OUT", "P", "P/BF", "H", "R", "ER", "BB", "K", "HR", "IR"]
     header = " " * NAME_POS_WIDTH + "".join(f"{c:>{PIT_STAT_W}}" for c in cols)
     out.append(header)
 
@@ -693,20 +693,25 @@ def render_pitching_table(team_name: str, rows: Iterable[dict],
         prefix = head + " " + ("." * (pad - 1)) + " "
 
         outs = r.get("outs_recorded", 0) or 0
-        os_pct = f"{int(round(outs / 27 * 100))}%" if outs else "0%"
+        bf   = r.get("batters_faced") or 0
+        pit  = r.get("pitches") or 0
+        # Pitches per batter — ties the workload (P) to the count (BF). A high
+        # P/BF means a labouring arm; low means efficient. Far more useful in a
+        # cascade than OS%, which in a single game is just OUT/27 restated.
+        ppb  = f"{pit / bf:.1f}" if bf else "-"
 
         line = (
             prefix
-            + f"{(r.get('batters_faced') or 0):>{PIT_STAT_W}}"
+            + f"{bf:>{PIT_STAT_W}}"
             + f"{outs:>{PIT_STAT_W}}"
-            + f"{os_pct:>{PIT_STAT_W}}"
+            + f"{pit:>{PIT_STAT_W}}"
+            + f"{ppb:>{PIT_STAT_W}}"
             + f"{(r.get('hits_allowed') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('runs_allowed') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('er') or r.get('runs_allowed') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('bb') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('k') or 0):>{PIT_STAT_W}}"
             + f"{(r.get('hr_allowed') or 0):>{PIT_STAT_W}}"
-            + f"{(r.get('pitches') or 0):>{PIT_STAT_W}}"
             + f"{_ir_display(r):>{PIT_STAT_W}}"
         )
         out.append(line)
