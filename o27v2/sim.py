@@ -818,6 +818,19 @@ def _db_team_to_engine(
                 starting_fielders[idx] = best_starved
                 break
 
+    # Stamp a per-game rest-pressure scalar on each starting fielder so the
+    # engine manager can give a worn or cold regular the back third off in a
+    # decided game (live workload rest). 0 = fresh; ~1 = heavily worked and/or
+    # slumping. Blends consecutive starts (workload) with a cold habit-cup.
+    if position_workload is not None:
+        for sf in starting_fielders:
+            db_id = engine_to_db_id.get(sf.player_id)
+            wl = position_workload.get(db_id, {}) if db_id is not None else {}
+            consec = int(wl.get("consecutive_starts", 0) or 0)
+            cup = float(getattr(sf, "habit_cup", 0.5) or 0.5)
+            sf.rest_pressure = max(0.0, min(
+                1.0, 0.6 * min(1.0, consec / 10.0) + 0.4 * (1.0 - cup)))
+
     # Stamp per-game fielding positions BEFORE building the lineup.
     # The 3 jokers (drafted explicitly via roster_slot="joker") are
     # the team's tactical pinch-hit pool — they live in jokers_available

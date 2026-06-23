@@ -1369,15 +1369,28 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     if best_cand is not None and best_score >= threshold:
         return best_cand
 
-    # Comfortable-lead rest ("garbage time"): when the batting team is well
-    # ahead and the order has already turned a couple of times, rotate a fresh
-    # bat in for the regular due up so the bench gets run and the starters rest.
-    # Low-leverage by design — this is NOT a leverage upgrade (those returned
-    # above); it's the context-dependent "we're up 20, empty the bench" path.
-    team_lead = (state.score.get(team.team_id, 0)
+    # Blowout bench ("garbage time"): once the margin is decisive — EITHER way —
+    # and the order has turned a couple of times, rotate a fresh bat in for the
+    # regular due up. The leader rests his starters; the trailer gives the bench
+    # a look and tries to spark something (it may not work, but a club down 20
+    # shouldn't bat its same nine passively). Low-leverage by design — NOT a
+    # leverage upgrade (those returned above).
+    margin = abs(state.score.get(team.team_id, 0)
                  - state.score.get(state.fielding_team.team_id, 0))
-    if (team_lead >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
+    if (margin >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
             and team.lineup_cycle_number >= int(getattr(cfg, "BLOWOUT_REST_MIN_CYCLE", 2))):
+        return max(candidates, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
+
+    # Live workload rest: late in a DECIDED game (a comfortable margin either
+    # way, short of the blowout band above), give a worn or slumping regular
+    # the rest of the day off. Never in a do-or-die spot (decisive chase) — you
+    # keep your guy when the game is on the line. Only the worn/cold sit
+    # (rest_pressure gate), so this isn't blanket churn.
+    if (not _decisive_chase(state)
+            and state.outs >= int(getattr(cfg, "WORKLOAD_REST_MIN_OUTS", 15))
+            and margin >= int(getattr(cfg, "WORKLOAD_REST_SAFE_GAP", 5))
+            and float(getattr(batter, "rest_pressure", 0.0))
+                >= float(getattr(cfg, "REST_PRESSURE_THRESHOLD", 0.6))):
         return max(candidates, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
     return None
 

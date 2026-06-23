@@ -1052,6 +1052,19 @@ PLATOON_LATE_BONUS: float = 0.10
 # the manager sends the right legs, not just any faster bat.
 PR_SPECIALIST_BONUS: float = 0.10
 
+# ---------------------------------------------------------------------------
+# Live workload rest — give a worn / cold regular the back third off
+# ---------------------------------------------------------------------------
+# Extends the pre-game rest-day pass into live decisions: late in a DECIDED
+# game (a comfortable margin either way, short of an all-out blowout), a regular
+# carrying real workload or a cold streak gets the rest of the day off. Never in
+# a do-or-die spot — you keep your guy when the game is on the line. Reads a
+# per-game `rest_pressure` scalar (0 fresh .. 1 worn/slumping) stamped on the
+# starters at lineup-build time.
+REST_PRESSURE_THRESHOLD: float = 0.6   # only rest regulars this worn/cold
+WORKLOAD_REST_MIN_OUTS: int    = 15    # only this deep into the half
+WORKLOAD_REST_SAFE_GAP: int    = 5     # only when the game is decided by this much
+
 
 
 

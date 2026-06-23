@@ -220,12 +220,23 @@ it only sharpens deployment in the spots that decide games.
   legs, not just any faster bat — and (with the last-licks boost) actually
   deploys him close-and-late.
 
-Tests: `test_blowout_management.py` (11) — pull fires up 12 / quiet in a tie /
-not too early; rest fires up 17 / quiet in a close low-leverage spot / waits for
-the order to turn; last-licks boost only for the second-batting team, not in a
-blowout gap, not for defensive subs; platoon edge worth more late; pinch-run
-picks the specialist over a slightly faster non-specialist. 164 engine tests
-pass. Still standing: workload rest (live), double switches.
+**Blowout bench works BOTH ways + live workload rest (same thread).**
+- A 28-1 box showed the *trailing* team batting its same nine passively ("yeah
+  we'll just lose"). The blowout-rest path was lead-only; switched it to the
+  absolute margin so both benches empty in a laugher — the leader rests
+  starters, the trailer gives the bench a look / tries to spark something.
+- **Live workload rest** (#4): `sim.py` stamps a per-game `rest_pressure` on
+  each starter (consecutive starts blended with a cold habit-cup);
+  `should_pinch_hit` then gives a worn/cold regular the back third off late in a
+  DECIDED game (`WORKLOAD_REST_SAFE_GAP` ≤ margin < blowout, past
+  `WORKLOAD_REST_MIN_OUTS`, `rest_pressure ≥ REST_PRESSURE_THRESHOLD`), never in
+  a do-or-die spot. Only the worn sit — not blanket churn.
+
+Tests: `test_blowout_management.py` (15) — pull/rest fire in laughers, quiet in
+close/early; last-licks boost scoped right; platoon edge grows late; pinch-run
+prefers the specialist; trailing team empties the bench down 17; worn regular
+rested in a 6-run game, fresh regular not, worn regular kept in a one-run game.
+168 engine tests pass. Still standing: double switches.
 
 ## 5. Follow-ups / not done
 

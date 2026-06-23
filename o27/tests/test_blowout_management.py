@@ -94,6 +94,44 @@ def test_blowout_rest_waits_for_the_order_to_turn():
     assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
 
 
+def test_losing_team_empties_bench_in_a_blowout():
+    # Down 17, a club shouldn't bat its same nine passively — give the bench a
+    # look (it may not work, but "yeah we'll just lose" isn't how a manager acts).
+    st = _state()
+    st.score = {"visitors": 3, "home": 20}     # batting team (visitors) DOWN 17
+    res = mgr.should_pinch_hit(st, rng=random.Random(0))
+    assert res is not None
+    assert res not in st.visitors.lineup
+
+
+# --- live workload rest ----------------------------------------------------
+
+def test_worn_regular_rested_in_a_decided_game():
+    st = _state()
+    st.score = {"visitors": 9, "home": 3}      # decided by 6 (not a full blowout)
+    st.outs = 18
+    st.visitors.lineup[0].rest_pressure = 0.8  # worn / cold regular due up
+    res = mgr.should_pinch_hit(st, rng=random.Random(0))
+    assert res is not None
+    assert res not in st.visitors.lineup
+
+
+def test_fresh_regular_not_rested():
+    st = _state()
+    st.score = {"visitors": 9, "home": 3}
+    st.outs = 18
+    st.visitors.lineup[0].rest_pressure = 0.0  # fresh — no reason to sit him
+    assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
+
+
+def test_worn_regular_not_rested_when_the_game_is_close():
+    st = _state()
+    st.score = {"visitors": 4, "home": 3}      # one-run game — keep your guy
+    st.outs = 18
+    st.visitors.lineup[0].rest_pressure = 0.9
+    assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
+
+
 # --- last-licks (decisive-half) offense boost ------------------------------
 
 def _marginal():
