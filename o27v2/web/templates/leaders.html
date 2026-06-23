@@ -261,6 +261,18 @@
 {# ============================================================
    PITCHING
    ============================================================ #}
+<h4 class="mt-4">Pitching · Pressure &amp; Expected Outs</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  Cricket-inspired ports: xO/27 estimates expected outs from strikeouts, foul-outs, contact shape, and power-play hits saved; DO% is the share of recorded outs that were dead outs. A two-out DP counts as two dead outs.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('xO/27', 'xouts_per_27', '%.2f', true, pitching, tooltip='Expected Outs per 27 BF — K/FO plus EV/LA out probability, including power-play hits saved behind the pitcher.') }}
+  {{ card('O−xO', 'outs_minus_xouts', '%+.1f', true, pitching, tooltip='Actual outs minus expected outs. Positive = converted more outs than the xO model expected.') }}
+  {{ card('DO%', 'dead_out_pct', '%.1f%%', true, pitching, tooltip='Dead Out Percentage — dead outs / outs recorded. Strikeouts and foul-outs are automatic; two-out DPs count as two dead outs.') }}
+  {{ card('DO-PA%', 'dead_out_pa_pct', '%.1f%%', true, pitching, tooltip='Dead-out plate appearances per batter faced. Multi-out plays count once here.') }}
+  {{ card('Dead Outs', 'dead_outs', '%d', true, pitching, tooltip='Total dead outs credited to the pitcher.') }}
+</div>
+
 <h4 class="mt-4">Pitching · Result-Tier (the trio)</h4>
 <div class="row g-3 mb-3">
   {{ card('xRA',        'xra',     '%.2f',  false, pitching, tooltip='Expected Runs Allowed — non-negative linear-weights formula (HR=1.4, single≈0.45, BB/HBP=0.32), anchored to league RA/27 (all runs)') }}

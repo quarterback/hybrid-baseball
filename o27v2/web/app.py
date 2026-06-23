@@ -5204,9 +5204,30 @@ def stats_browse():
         )
         wl = _pitcher_wl_map()
         _aggregate_pitcher_rows(pitchers, wl, baselines=baselines)
+        stat_team_ids = None
+        if team_filter_id is not None:
+            stat_team_ids = [team_filter_id]
+        elif sel_lg or sel_div != "all":
+            stat_team_ids = [
+                int(t["id"]) for t in teams_list
+                if (not sel_lg or t["league"] == sel_lg)
+                and (sel_div == "all" or t["division"] == sel_div)
+            ]
+        from o27v2.analytics import build_expected_outs_table, build_dead_outs_table
+        xo_by_player = build_expected_outs_table(min_bf=1, team_ids=stat_team_ids)["by_player"]
+        do_by_player = build_dead_outs_table(min_bf=1, team_ids=stat_team_ids)["by_player"]
         for p in pitchers:
             outs = p["outs"] or 0
             p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
+            xo = xo_by_player.get(p.get("player_id"), {})
+            do = do_by_player.get(p.get("player_id"), {})
+            p["xouts"] = xo.get("xouts")
+            p["xouts_per_27"] = xo.get("xouts_per_27")
+            p["outs_minus_xouts"] = xo.get("outs_minus_xouts")
+            p["defense_support_xouts"] = xo.get("defense_support_xouts")
+            p["dead_out_pct"] = do.get("dead_out_pct")
+            p["dead_out_pa_pct"] = do.get("dead_out_pa_pct")
+            p["dead_outs"] = do.get("dead_outs")
 
     return _serve(
         "stats_browse.html",
@@ -5587,10 +5608,22 @@ def leaders():
     # Shared helper now produces wERA / xFIP / Decay / GSc / OS+ / AOR / etc.
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
+    from o27v2.analytics import build_expected_outs_table, build_dead_outs_table
+    xo_by_player = build_expected_outs_table(min_bf=1, team_ids=_league_team_ids(selected_league))["by_player"]
+    do_by_player = build_dead_outs_table(min_bf=1, team_ids=_league_team_ids(selected_league))["by_player"]
     for p in pitching:
         outs = p["outs"] or 0
         # OS% = share of a complete game (27 outs) recorded per appearance.
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
+        xo = xo_by_player.get(p.get("player_id"), {})
+        do = do_by_player.get(p.get("player_id"), {})
+        p["xouts"] = xo.get("xouts")
+        p["xouts_per_27"] = xo.get("xouts_per_27")
+        p["outs_minus_xouts"] = xo.get("outs_minus_xouts")
+        p["defense_support_xouts"] = xo.get("defense_support_xouts")
+        p["dead_out_pct"] = do.get("dead_out_pct")
+        p["dead_out_pa_pct"] = do.get("dead_out_pa_pct")
+        p["dead_outs"] = do.get("dead_outs")
 
     # Fielding leaders are sourced from a dedicated query because PO/E are
     # credited to the player who made the play (potentially a pitcher with
@@ -7631,6 +7664,8 @@ def o27i_home():
         {"title": "Avg Exit Velo",  "rows": _top(bat_rows, "avg_ev", False)},
         {"title": "Barrel %",       "rows": _top(bat_rows, "barrel", False)},
         {"title": "Lowest xwOBA Against", "rows": _top(pit_rows, "xwoba_against", True)},
+        {"title": "xO/27 (P)", "rows": _top(pit_rows, "xouts_per_27", False)},
+        {"title": "DO% (P)", "rows": _top(pit_rows, "dead_out_pct", False)},
         {"title": "Strikeout % (P)", "rows": _top(pit_rows, "k_pct", False)},
     ]
 
@@ -7664,8 +7699,9 @@ def o27i_leaders():
     min_bip = max(15, games_played // 30)
 
     rows = _o27i_batter_rows(team_ids, min_bip)
+    pitcher_rows = _o27i_pitcher_rows(team_ids, min_bip)
 
-    # Columns = the same metric set as the slider page.
+    # Columns = the same metric sets as the slider page.
     valid_keys = {k: rev for k, _l, _f, rev in _O27I_BATTER_METRICS}
     sort_key = (request.args.get("sort") or "xwoba").lower()
     if sort_key not in valid_keys:
@@ -7674,22 +7710,41 @@ def o27i_leaders():
     ranked = [r for r in rows if r.get(sort_key) is not None]
     ranked.sort(key=lambda r: r[sort_key], reverse=not reverse)
 
+    pitcher_valid_keys = {k: rev for k, _l, _f, rev in _O27I_PITCHER_METRICS}
+    pit_sort_key = (request.args.get("pit_sort") or "xouts_per_27").lower()
+    if pit_sort_key not in pitcher_valid_keys:
+        pit_sort_key = "xouts_per_27"
+    pit_reverse = pitcher_valid_keys[pit_sort_key]
+    ranked_pitchers = [r for r in pitcher_rows if r.get(pit_sort_key) is not None]
+    ranked_pitchers.sort(key=lambda r: r[pit_sort_key], reverse=not pit_reverse)
+
     columns = [
         {"key": k, "label": label, "fmt": fmt}
         for k, label, fmt, _rev in _O27I_BATTER_METRICS
+    ]
+    pitcher_columns = [
+        {"key": k, "label": label, "fmt": fmt}
+        for k, label, fmt, _rev in _O27I_PITCHER_METRICS
     ]
     # Pre-format display values so the template stays dumb.
     for r in ranked:
         r["_display"] = {k: _o27i_format(r.get(k), fmt)
                          for k, _l, fmt, _rev in _O27I_BATTER_METRICS}
+    for r in ranked_pitchers:
+        r["_display"] = {k: _o27i_format(r.get(k), fmt)
+                         for k, _l, fmt, _rev in _O27I_PITCHER_METRICS}
 
     return _serve(
         "o27i_leaders.html",
         rows=ranked,
+        pitcher_rows=ranked_pitchers,
         columns=columns,
+        pitcher_columns=pitcher_columns,
         sort_key=sort_key,
+        pit_sort_key=pit_sort_key,
         min_bip=min_bip,
         n_qualified=len(rows),
+        n_qualified_pitchers=len(pitcher_rows),
         leagues=leagues, selected_league=selected_league,
     )
 
