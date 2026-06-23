@@ -181,6 +181,17 @@ FATIGUE_CALLED: float   = -0.06   # fatigue-dominance: -0.04 → -0.06
 FATIGUE_SWINGING: float = -0.09   # fatigue-dominance: -0.06 → -0.09 (gassed pitchers lose whiffs)
 FATIGUE_FOUL: float     = -0.06   # fatigue-dominance: -0.04 → -0.06
 
+# Consecutive-pitch fatigue: O27 allows long uninterrupted spells, but a 100+
+# pitch continuous workload should bite even if BF-count fatigue is only slowly
+# ramping. This second ramp keys off actual pitches thrown in the current spell.
+# A typical 0.50 stamina arm gets ~80 pitches before the pitch-count cliff;
+# elite stamina stretches the budget, low stamina collapses much earlier.
+PITCH_FATIGUE_BUDGET_BASE: float = 35.0
+PITCH_FATIGUE_BUDGET_SCALE: float = 90.0
+PITCH_FATIGUE_SCALE: float = 25.0
+PITCH_FATIGUE_MAX: float = 0.75
+PITCH_FATIGUE_EFFECT_SCALE: float = 0.75
+
 # ---------------------------------------------------------------------------
 # In-game injuries (forced mid-game substitutions)
 # ---------------------------------------------------------------------------
