@@ -139,6 +139,61 @@ def _assign_game_positions(starters: list, sp: list, dhs: list) -> None:
         p.game_position = "J"
 
 
+def _topup_to_eight(starting: list, *pools: list) -> list:
+    """Force `starting` up to eight distinct fielders for the field.
+
+    A game cannot be played with a hole in the field — every one of the eight
+    positions (plus the pitcher = the full nine) MUST be manned. If the regular
+    fielder pool came up short (a position drained by injuries with no like-for-
+    like reserve, or a league that carries no joker/DH pool), pull ANY available
+    body from the given pools, in order of preference (bench bats, then the
+    joker/DH pool, then a spare arm). It does not matter WHO covers the bag — a
+    warm body beats an empty position. Mutates `starting` and removes promoted
+    bodies from their source pool so nobody is double-used; returns `starting`.
+    """
+    used = {id(p) for p in starting}
+    for pool in pools:
+        i = 0
+        while len(starting) < 8 and i < len(pool):
+            p = pool[i]
+            if id(p) in used:
+                i += 1
+                continue
+            starting.append(p)
+            used.add(id(p))
+            pool.pop(i)
+    return starting
+
+
+def _verify_field_complete(starting_fielders: list, todays_sp: list) -> list:
+    """Last-line guarantee that every one of the nine positions is manned —
+    the eight field slots AND the pitcher. `_topup_to_eight` +
+    `_assign_game_positions` already ensure this structurally; this re-checks
+    and force-corrects any residual anomaly (a duplicated or odd game_position
+    that left a bag open) by redeploying a spare starter into the empty slot.
+    A game can NEVER take the field with a hole. Returns the slots it repaired
+    (empty in normal operation).
+    """
+    if todays_sp:
+        todays_sp[0].game_position = "P"      # the ninth position, always manned
+    held: dict[str, object] = {}
+    floaters: list = []
+    for p in starting_fielders:
+        gp = (getattr(p, "game_position", "") or "").upper()
+        if gp in _CANONICAL_FIELDING_8 and gp not in held:
+            held[gp] = p
+        else:                                  # duplicate or non-canon → spare
+            floaters.append(p)
+    repaired: list = []
+    for slot in [s for s in _CANONICAL_FIELDING_8 if s not in held]:
+        if not floaters:
+            break                              # truly out of bodies (roster < 8)
+        body = floaters.pop(0)
+        body.game_position = slot
+        repaired.append(slot)
+    return repaired
+
+
 # Position-aware single-player rating (general + group fit + speed + arm).
 # Thin alias to the shared engine helper.
 _position_defense_rating = _defense.position_defense_rating
@@ -638,6 +693,16 @@ def _db_team_to_engine(
         pick = _pick_steering_arm(pitchers)
         if pick is not None:
             todays_sp = [pick]
+    # Pitcher-coverage floor (the ninth position): SOMEONE must take the ball.
+    # If the staff is empty — a roster so depleted there is no eligible arm —
+    # force any available body onto the mound (prefer a joker/DH so the eight
+    # field slots keep their bats; a fielder only as a last resort). It does
+    # not matter who pitches; the mound cannot be left unmanned.
+    if not todays_sp:
+        for _pool in (jokers, dhs, fielders):
+            if _pool:
+                todays_sp = [_pool.pop(0)]
+                break
 
     # Sort by composite hitting talent so the 8 starters are genuinely the
     # best available bats, not whoever was inserted into the DB first.
@@ -651,20 +716,17 @@ def _db_team_to_engine(
 
     # Position-coverage floor: a half-inning must put the full nine in the
     # batting order (eight fielders + the pitcher) so the lineup card covers
-    # every defensive position. If the active fielder pool somehow came up
-    # short — a position drained by injuries with no reserve to promote — top
-    # it up from the joker/DH pool so no position is ever left unmanned at
-    # first pitch. _assign_game_positions then spreads the eight across the
-    # canonical slots. Normally a no-op (rosters carry 19 fielders).
+    # every defensive position. If the active fielder pool came up short — a
+    # position drained by injuries with no reserve, or a league with no
+    # joker/DH pool to borrow from — force it up to eight from the WIDEST
+    # available body pool: leftover bench bats, then the joker/DH pool, then a
+    # spare arm. _assign_game_positions then spreads the eight across the
+    # canonical slots, so no position is ever left unmanned at first pitch. It
+    # does not matter who covers the bag — an empty field position is not
+    # allowed. Normally a no-op (rosters carry plenty of fielders).
     if len(starting_fielders) < 8:
-        topup = list(dhs) + list(jokers)
-        while len(starting_fielders) < 8 and topup:
-            extra = topup.pop(0)
-            starting_fielders.append(extra)
-            if extra in jokers:
-                jokers.remove(extra)
-            elif extra in dhs:
-                dhs.remove(extra)
+        spare_arms = [p for p in pitchers if p not in todays_sp]
+        _topup_to_eight(starting_fielders, bench_fielders, jokers, dhs, spare_arms)
 
     # Phase 5e/5f: habit-bench pass. Fires BEFORE the rest-day pass so
     # a cold-cup starter can be swapped for a hot-cup bench fielder of
@@ -839,6 +901,10 @@ def _db_team_to_engine(
     # tag in legacy DB rows, dhs falls back to the per-game DH pool).
     _assign_game_positions(starting_fielders, todays_sp,
                            jokers if jokers else dhs)
+    # Hard guarantee: all nine positions manned (eight fielders + pitcher).
+    # Normally a no-op; force-corrects any residual hole so no game is ever
+    # played with an empty position.
+    _verify_field_complete(starting_fielders, todays_sp)
 
     # Joker pool: prefer the explicitly-drafted jokers (roster_slot tag).
     # If a legacy DB row leaves jokers empty, fall back to picking the

@@ -2708,7 +2708,46 @@ def generate_players(
     for _ in range(RESERVE_PITCHERS):
         players.append(_pitcher(is_active=0))
 
+    # Roster-depth contract: every club must carry at least TWO of each infield
+    # slot (C, 1B, 2B, 3B, SS) and at least FIVE outfielders among its active
+    # roster, so there is always a body for each position across a season of
+    # attrition (injuries, trades). The mix above already satisfies this; this
+    # pass FORCES it so the contract is guaranteed, not incidental — and still
+    # holds if the composition above is ever retuned.
+    _enforce_roster_depth(players, _hitter)
+
     return players
+
+
+# Required active-roster depth by position (the "two of every infield + five
+# outfielders" contract). Catcher is included in the infield group — it is a
+# wear position that needs real backups to survive the 27-out arc.
+_REQUIRED_INFIELD_DEPTH = {"C": 2, "1B": 2, "2B": 2, "3B": 2, "SS": 2}
+_MIN_OUTFIELDERS = 5
+_OUTFIELD_SLOTS = ("CF", "RF", "LF")
+
+
+def _enforce_roster_depth(players: list[dict], hitter_factory) -> None:
+    """Top up `players` (in place) so the active roster meets the depth
+    contract: >=2 of each infield slot and >=5 outfielders. A no-op when the
+    roster already complies. `hitter_factory(pos, is_active)` mints a new bat."""
+    def _active_at(pos: str) -> int:
+        return sum(1 for p in players
+                   if p.get("is_active") and (p.get("position") or "").upper() == pos)
+
+    for pos, need in _REQUIRED_INFIELD_DEPTH.items():
+        while _active_at(pos) < need:
+            players.append(hitter_factory(pos, 1))
+
+    def _active_of() -> int:
+        return sum(1 for p in players
+                   if p.get("is_active")
+                   and (p.get("position") or "").upper() in _OUTFIELD_SLOTS)
+
+    i = 0
+    while _active_of() < _MIN_OUTFIELDERS:
+        players.append(hitter_factory(_OUTFIELD_SLOTS[i % len(_OUTFIELD_SLOTS)], 1))
+        i += 1
 
 
 # ---------------------------------------------------------------------------
