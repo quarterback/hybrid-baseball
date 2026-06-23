@@ -299,6 +299,44 @@ def _familiarity_dominance(times_faced: int, resistance: float) -> float:
     return cfg.FAMILIARITY_PER_LOOK * looks * factor
 
 
+def pitch_fatigue_level(
+    pitcher: Player,
+    pitch_count: Optional[int],
+    weather: Optional[object] = None,
+) -> float:
+    """Consecutive-pitch fatigue for the current spell, in [0.0, PITCH_FATIGUE_MAX].
+
+    Stamina sets the *budget* (how many pitches a pitcher gets before the
+    cliff); past it, fatigue ramps up. Grit and a submarine release slow the
+    accrual; hot/humid weather speeds it up. This is the **same** signal the
+    outcome model applies inside `_pitch_probs` — exposed here so the manager
+    can pull a tiring arm (`should_change_pitcher`) instead of riding him into
+    the ground. It is therefore emergent from the pitcher's ratings, not a
+    fixed pitch cap. Returns 0.0 when still under budget or pitch_count is
+    unknown.
+    """
+    if pitch_count is None:
+        return 0.0
+    pitch_budget = (
+        cfg.PITCH_FATIGUE_BUDGET_BASE
+        + float(pitcher.stamina) * cfg.PITCH_FATIGUE_BUDGET_SCALE
+    )
+    if pitch_count <= pitch_budget:
+        return 0.0
+    pitch_fatigue = min(
+        cfg.PITCH_FATIGUE_MAX,
+        (pitch_count - pitch_budget) / cfg.PITCH_FATIGUE_SCALE,
+    )
+    pitch_fatigue *= wx.stamina_decay_multiplier(weather)
+    grit = float(getattr(pitcher, "grit", 0.5))
+    grit_mult = max(0.0, 1.0 - (grit - 0.5) * 2.0 * cfg.GRIT_FATIGUE_RESIST)
+    pitch_fatigue *= grit_mult
+    release_angle = float(getattr(pitcher, "release_angle", 0.5))
+    rel_ease = max(0.0, 0.5 - release_angle) * cfg.RELEASE_FATIGUE_SCALE
+    pitch_fatigue *= (1.0 - rel_ease)
+    return pitch_fatigue
+
+
 def _pitch_probs(
     pitcher: Player,
     batter: Player,
@@ -447,22 +485,8 @@ def _pitch_probs(
     # Long counts now matter; a workhorse can still go deep, but 100+ pitches
     # in one uninterrupted spell pushes balls/contact up and whiffs down.
     if pitch_count is not None:
-        pitch_budget = (
-            cfg.PITCH_FATIGUE_BUDGET_BASE
-            + float(pitcher.stamina) * cfg.PITCH_FATIGUE_BUDGET_SCALE
-        )
-        if pitch_count > pitch_budget:
-            pitch_fatigue = min(
-                cfg.PITCH_FATIGUE_MAX,
-                (pitch_count - pitch_budget) / cfg.PITCH_FATIGUE_SCALE,
-            )
-            stam_mult = wx.stamina_decay_multiplier(weather)
-            pitch_fatigue *= stam_mult
-            grit = float(getattr(pitcher, "grit", 0.5))
-            grit_mult = max(0.0, 1.0 - (grit - 0.5) * 2.0 * cfg.GRIT_FATIGUE_RESIST)
-            pitch_fatigue *= grit_mult
-            rel_ease = max(0.0, 0.5 - release_angle) * cfg.RELEASE_FATIGUE_SCALE
-            pitch_fatigue *= (1.0 - rel_ease)
+        pitch_fatigue = pitch_fatigue_level(pitcher, pitch_count, weather)
+        if pitch_fatigue > 0.0:
             pitch_fatigue *= cfg.PITCH_FATIGUE_EFFECT_SCALE
 
             base[0] += pitch_fatigue * cfg.FATIGUE_BALL

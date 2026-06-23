@@ -1046,6 +1046,24 @@ def should_change_pitcher(state: GameState) -> bool:
 
     stamina = float(getattr(pitcher, "stamina", pitcher.pitcher_skill) or 0.5)
 
+    # Fatigue-reactive hook (applies to starters AND relievers): once the arm
+    # is genuinely gassed — consecutive-pitch fatigue past a skill-scaled
+    # tolerance — the skipper goes to the pen regardless of batters faced. This
+    # is the emergent "how long can he go" driver: stamina sets the budget,
+    # grit/release slow the decline, and a long-count spell burns the budget
+    # faster. A better arm (higher pitcher_skill) earns a slightly longer leash.
+    from o27.engine import prob as _prob   # local import: prob imports manager
+    pitch_count = int(getattr(state, "pitcher_pitches_this_spell", 0) or 0)
+    fatigue = _prob.pitch_fatigue_level(
+        pitcher, pitch_count, getattr(state, "weather", None)
+    )
+    tolerance = (
+        cfg.PULL_FATIGUE_TOLERANCE
+        + float(pitcher.pitcher_skill) * cfg.PULL_FATIGUE_SKILL_LEASH
+    )
+    if fatigue >= tolerance:
+        return True
+
     if in_relief:
         # Relief appearance — short-burst thresholds.
         base  = cfg.RELIEVER_CHANGE_BASE
@@ -1055,20 +1073,14 @@ def should_change_pitcher(state: GameState) -> bool:
 
     # First-spell ("starter") — derive emergent role from stamina.
     if stamina >= cfg.WORKHORSE_STAMINA_THRESHOLD:
-        # Workhorse: ride deep into the half.
+        # Workhorse: goes the deepest of any role, but no longer rides toward a
+        # complete game — the old RELIEVER_ENTRY_OUTS_MIN guard that forced him
+        # to stay in until late is gone. He comes out on his threshold (or the
+        # fatigue hook above), and the bullpen cascades the rest of the half.
         base  = cfg.WORKHORSE_CHANGE_BASE
         scale = cfg.WORKHORSE_CHANGE_SCALE
         threshold = max(base, base + round(pitcher.pitcher_skill * scale))
-        if state.pitcher_spell_count < threshold:
-            return False
-        # Even past threshold, only change if a reliever can come in
-        # (i.e. the half is "late enough"). Otherwise let the SP keep going.
-        if state.outs < cfg.RELIEVER_ENTRY_OUTS_MIN:
-            # Past threshold but still early — extend the SP rather than
-            # burn an early reliever. Pull only if blown out (≥ 8 runs
-            # this spell), which cuts off true disasters.
-            return state.pitcher_runs_this_spell >= 8
-        return True
+        return state.pitcher_spell_count >= threshold
 
     if stamina <= cfg.OPENER_STAMINA_THRESHOLD:
         # Opener: pull after a short stint, let the committee take over.
