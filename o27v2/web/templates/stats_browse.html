@@ -195,6 +195,9 @@
       <th class="num">PAVG</th><th class="num">OBP</th><th class="num">SLG</th><th class="num">OPS</th>
       <th class="num">OPS+</th><th class="num">wOBA</th><th class="num">wOBA+</th>
       <th class="num" title="Park-adjusted league-relative runs created (100 = league avg at this park)">wRC+</th>
+      <th class="num" title="Pressure-Adjusted Impact">PAI</th>
+      <th class="num" title="True Run Rate Plus, 100 = average">TRR+</th>
+      <th class="num" title="Dead Out Avoidance">DOA%</th>
       <th class="num">BAVG</th>
       <th class="num" title="BAVG - PAVG; quantifies 2C-driven hit value">Δ2C</th>
       <th class="num">ISO</th><th class="num">BABIP</th>
@@ -244,6 +247,9 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.woba) }}">{{ '%.3f'|format(b.woba) }}</td>
       <td class="num" data-sort-value="{{ '%.1f'|format(b.woba_plus) }}">{{ b.woba_plus|round|int }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(b.wrc_plus or 100) }}">{{ (b.wrc_plus or 100)|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(b.pai or 0) }}">{% if b.pai is not none %}{{ '%+.2f'|format(b.pai) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ b.trr_plus or 0 }}">{% if b.trr_plus is not none %}{{ b.trr_plus|round|int }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.1f'|format(b.dead_out_avoid_pct or 0) }}">{% if b.dead_out_avoid_pct is not none %}{{ '%.1f'|format(b.dead_out_avoid_pct) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bavg) }}">{{ '%.3f'|format(b.bavg) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_diff) }}">{{ '%+.3f'|format(b.stay_diff) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.iso) }}">{{ '%.3f'|format(b.iso) }}</td>
@@ -378,6 +384,9 @@
       <td class="num" data-sort-value="{{ '%.4f'|format(b.woba) }}">{{ '%.3f'|format(b.woba) }}</td>
       <td class="num" data-sort-value="{{ '%.1f'|format(b.woba_plus) }}">{{ b.woba_plus|round|int }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(b.wrc_plus or 100) }}">{{ (b.wrc_plus or 100)|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.3f'|format(b.pai or 0) }}">{% if b.pai is not none %}{{ '%+.2f'|format(b.pai) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ b.trr_plus or 0 }}">{% if b.trr_plus is not none %}{{ b.trr_plus|round|int }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.1f'|format(b.dead_out_avoid_pct or 0) }}">{% if b.dead_out_avoid_pct is not none %}{{ '%.1f'|format(b.dead_out_avoid_pct) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.bavg) }}">{{ '%.3f'|format(b.bavg) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.stay_diff) }}">{{ '%+.3f'|format(b.stay_diff) }}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(b.iso) }}">{{ '%.3f'|format(b.iso) }}</td>
@@ -486,6 +495,8 @@
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num" title="Z-score Game Score (100 / 15 scale). Cross-league-size comparable in mean AND spread.">GSc Idx</th>
       <th class="num">OS+</th>
+      <th class="num" title="Expected outs per 27 BF, including PP hits saved">xO/27</th>
+      <th class="num" title="Dead Out Percentage — dead outs / outs recorded">DO%</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
       <th class="num">oAVG</th><th class="num">BABIP</th>
       <th class="num" title="Outs per pitch">O/P</th>
@@ -530,6 +541,8 @@
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(p.gsc_index or 100) }}">{{ (p.gsc_index or 100)|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.os_plus or 100) }}">{{ (p.os_plus or 100)|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.xouts_per_27 or 0) }}">{% if p.xouts_per_27 is not none %}{{ '%.2f'|format(p.xouts_per_27) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.dead_out_pct or 0) }}">{% if p.dead_out_pct is not none %}{{ '%.1f'|format(p.dead_out_pct) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct) }}">{{ '%.1f'|format(p.k_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.bb_pct) }}">{{ '%.1f'|format(p.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.hr_pct) }}">{{ '%.1f'|format(p.hr_pct * 100) }}%</td>
@@ -614,6 +627,8 @@
       <th class="num">GSc</th><th class="num">GSc+</th>
       <th class="num" title="Z-score Game Score (100 / 15 scale). Cross-league-size comparable in mean AND spread.">GSc Idx</th>
       <th class="num">OS+</th>
+      <th class="num" title="Expected outs per 27 BF, including PP hits saved">xO/27</th>
+      <th class="num" title="Dead Out Percentage — dead outs / outs recorded">DO%</th>
       <th class="num">K%</th><th class="num">BB%</th><th class="num">HR%</th>
       <th class="num">oAVG</th><th class="num">BABIP</th>
       <th class="num">O/P</th><th class="num">P/BF</th><th class="num">FO%</th>
@@ -669,6 +684,8 @@
       <td class="num" data-sort-value="{{ '%.0f'|format(p.gsc_plus or 100) }}">{{ (p.gsc_plus or 100)|round|int }}</td>
       <td class="num fw-bold" data-sort-value="{{ '%.1f'|format(p.gsc_index or 100) }}">{{ (p.gsc_index or 100)|round|int }}</td>
       <td class="num" data-sort-value="{{ '%.0f'|format(p.os_plus or 100) }}">{{ (p.os_plus or 100)|round|int }}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.xouts_per_27 or 0) }}">{% if p.xouts_per_27 is not none %}{{ '%.2f'|format(p.xouts_per_27) }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{{ '%.2f'|format(p.dead_out_pct or 0) }}">{% if p.dead_out_pct is not none %}{{ '%.1f'|format(p.dead_out_pct) }}%{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.k_pct) }}">{{ '%.1f'|format(p.k_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.bb_pct) }}">{{ '%.1f'|format(p.bb_pct * 100) }}%</td>
       <td class="num" data-sort-value="{{ '%.4f'|format(p.hr_pct) }}">{{ '%.1f'|format(p.hr_pct * 100) }}%</td>
