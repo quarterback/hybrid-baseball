@@ -532,8 +532,9 @@ LOCKED_FORM_MIN: float          = 0.77   # coldest possible half — floored so 
                                          # cold lineup still scuffles a few runs
                                          # rather than getting shut out (halves
                                          # the <=3-run near-shutout games)
-LOCKED_FORM_MAX: float          = 1.66   # hottest possible half (trims the very
-                                         # top of the form draw)
+LOCKED_FORM_MAX: float          = 2.15   # hottest possible half — left high so
+                                         # blowouts / big-scoring games aren't
+                                         # suppressed (more run scoring overall)
 # Base center of the draw before the team-quality shift. The channels are
 # asymmetric — a hot half (form>1) relieving the RISP penalty AND slugging adds
 # more runs than an equally-cold half strands (floor effects) — so widening the
