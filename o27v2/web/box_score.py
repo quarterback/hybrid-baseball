@@ -891,7 +891,7 @@ def _defensive_log_for(team_name: str, batting: list[dict],
     (DEF / joker-to-field). Offensive subs (PH / PR) never appear — they don't
     change who is in the field.
     """
-    half_total = sum(int(p.get("ip_outs", 0) or 0) for p in pitching)
+    half_total = sum(int(p.get("outs_recorded", 0) or 0) for p in pitching)
     if half_total <= 0:
         return ""
 
@@ -902,7 +902,7 @@ def _defensive_log_for(team_name: str, batting: list[dict],
     pit_segs: list[str] = []
     cum = 0
     for p in pitching:
-        ipo = int(p.get("ip_outs", 0) or 0)
+        ipo = int(p.get("outs_recorded", 0) or 0)
         if ipo <= 0:
             continue
         nm = _last_name(p.get("player_name") or "")
@@ -927,7 +927,13 @@ def _defensive_log_for(team_name: str, batting: list[dict],
         et = r.get("entry_type", "starter")
         if et == "starter":
             starters[pos] = r
-        elif et in ("DEF", "joker_field"):
+        elif et not in ("PH", "PR"):
+            # Any defensive entry at a real position: DEF, joker_field, or a
+            # joker-to-field (relabeled "joker" but stamped 'J->POS', so its
+            # resolved pos is a real one). Offensive PH/PR are excluded — they
+            # change the batting card, not the field. Plain batting jokers carry
+            # position "J", which isn't in the canonical eight, so they drop out
+            # above on their own.
             if int(r.get("entered_inning", 0) or 0) > 0:
                 subs_by_pos.setdefault(pos, []).append(r)
 
