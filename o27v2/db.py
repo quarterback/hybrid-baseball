@@ -476,6 +476,9 @@ CREATE TABLE IF NOT EXISTS game_batter_stats (
     -- "Pinch-hit for Skanes in the 5th." Once set, never overwritten
     -- (no-reentry — a removed player can't come back).
     entered_inning INTEGER DEFAULT 0,
+    -- Exact team-out count when the row entered (0 = starter). Powers the
+    -- defensive log's precise out-envelopes; entered_inning stays for footnotes.
+    entered_outs INTEGER DEFAULT 0,
     -- Grounded into double / triple play counters.
     gidp INTEGER DEFAULT 0,
     gitp INTEGER DEFAULT 0,
@@ -1688,6 +1691,11 @@ def init_db() -> None:
             pass
         try:
             conn.execute("ALTER TABLE game_batter_stats ADD COLUMN entered_inning INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE game_batter_stats ADD COLUMN entered_outs INTEGER DEFAULT 0")
             conn.commit()
         except Exception:
             pass

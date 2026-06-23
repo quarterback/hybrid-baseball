@@ -212,6 +212,39 @@ def test_phase_transition_swap_is_field_only():
     assert bat.field_replacements.get(out.player_id) is glove
 
 
+def test_offensive_to_defensive_swap_is_field_only():
+    st = _fielding_state()
+    bat = st.batting_team
+    st.first_batting_team = bat
+    bat.lineup_cycle_number = 1
+    before = list(bat.lineup)
+    out = bat.lineup[1]                                # SS starter
+    glove = Player(player_id="VDG", name="Dg", position="SS",
+                   defense=0.95, defense_infield=0.95)
+    bat.roster.append(glove)
+    _stash_defense(bat)
+    mgr.offensive_to_defensive_swap(st, out, glove)
+    assert _same_order(bat.lineup, before)            # batting order intact
+    assert out in bat.lineup and glove not in bat.lineup
+    assert out.player_id not in bat.substituted_out
+    assert bat.field_replacements.get(out.player_id) is glove
+
+
+def test_should_swap_offensive_for_defense_returns_eligible_pair():
+    st = _fielding_state()
+    bat = st.batting_team
+    st.first_batting_team = bat
+    bat.lineup_cycle_number = 1
+    st.outs = 20
+    bat.lineup[1].defense = 0.01                       # weak SS
+    glove = Player(player_id="VDG", name="Dg", position="SS",
+                   defense=0.99, defense_infield=0.99)
+    bat.roster.append(glove)
+    res = mgr.should_swap_offensive_for_defense(st)
+    assert res is not None and "player_out" in res and "player_in" in res
+    assert dfn.is_eligible_at(res["player_in"], res["player_out"].position)
+
+
 # --- position eligibility --------------------------------------------------
 
 def test_defensive_sub_only_uses_position_eligible_gloves():
@@ -220,6 +253,33 @@ def test_defensive_sub_only_uses_position_eligible_gloves():
     assert d is not None
     pos = d["player_out"].game_position or d["player_out"].position
     assert dfn.is_eligible_at(d["player_in"], pos)
+
+
+def test_defensive_sub_blocked_in_opening_outs():
+    st = _fielding_state()
+    st.outs = 2                                       # inside the hard floor
+    assert mgr.should_defensive_sub(st, rng=random.Random(0)) is None
+
+
+def test_defensive_sub_is_rare_before_the_late_window():
+    # Before out 16, even a leverage-clearing spot fires only occasionally.
+    fires = sum(
+        1 for s in range(300)
+        if _early_def_sub_fires(out=10, seed=s)
+    )
+    assert fires < 45                                  # ~5% expected, rare
+
+
+def test_defensive_sub_is_available_in_the_late_window():
+    st = _fielding_state()
+    st.outs = 20                                       # past the late-game gate
+    assert mgr.should_defensive_sub(st, rng=random.Random(0)) is not None
+
+
+def _early_def_sub_fires(out, seed):
+    st = _fielding_state()
+    st.outs = out
+    return mgr.should_defensive_sub(st, rng=random.Random(seed)) is not None
 
 
 def test_defensive_sub_skips_when_no_eligible_glove():

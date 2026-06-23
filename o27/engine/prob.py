@@ -2777,7 +2777,11 @@ class ProbabilisticProvider:
         # BATTING team — they're banking defense for later.
         off_to_def = mgr.should_swap_offensive_for_defense(state, rng=self.rng)
         if off_to_def is not None:
-            return {"type": "tactical_def_swap", "replacement": off_to_def}
+            return {
+                "type": "tactical_def_swap",
+                "player_out": off_to_def["player_out"],
+                "player_in":  off_to_def["player_in"],
+            }
 
         # Sac-bunt check. Trades an out for a base; old-school / small-ball /
         # high-run-game managers will call it in the right spots, modern /

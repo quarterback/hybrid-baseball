@@ -1689,6 +1689,19 @@ def should_defensive_sub(state: GameState, rng=None) -> Optional[dict]:
     if state.batting_team.lineup_cycle_number < 1:
         return None
 
+    # Timing gates — a defensive replacement is a late-inning lock-in, not an
+    # early-game move. Hard floor in the opening outs of any game, then a
+    # rarity window: before the late-game out, even a leverage-clearing sub
+    # only fires on a small probability roll. (Super-innings are already
+    # late by definition and skip the rarity roll.)
+    if not state.is_super_inning:
+        if state.outs < int(getattr(cfg, "DEFENSIVE_SUB_MIN_OUTS", 3)):
+            return None
+        if state.outs < int(getattr(cfg, "DEFENSIVE_SUB_LATE_OUT", 16)):
+            r = rng or _local_rng()
+            if r.random() >= float(getattr(cfg, "DEFENSIVE_SUB_EARLY_RATE", 0.05)):
+                return None
+
     fielding = state.fielding_team
 
     # Identify the weakest-defense lineup spot (the candidate to-replace).
@@ -1818,23 +1831,17 @@ def should_swap_catcher(state: GameState, rng=None) -> Optional[dict]:
     return {"player_out": current, "player_in": fresh, "role": role}
 
 
-def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Player]:
-    """Mid-batting-half offensive→defensive swap — routed through the
-    unified leverage trigger.
+def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[dict]:
+    """First-batting team pre-stages a glove for its upcoming fielding half.
 
-    Pulls the current scheduled batter after they've banked a PA and
-    brings in a defensive specialist who'll cover the rest of the
-    team's fielding half. O27-specific tactic: only meaningful for
-    whichever team bats FIRST.
+    Field-only, per the lineup-card rule: this upgrades a weak defender's
+    GLOVE for the team's fielding half WITHOUT touching the batting order —
+    it mirrors should_defensive_sub (worst card defender + best eligible bench
+    glove) but operates on the first-batting team while it's still at bat.
+    No more pulling the current batter and burning his slot.
 
-    Critical structural gates kept:
-      - Regulation half only.
-      - Only the first-batting team fires this (they still field).
-      - Lineup must have cycled at least once.
-      - Batter can't be a pitcher.
-
-    Returns the replacement Player or None. Caller wraps in a
-    tactical_def_swap event.
+    Gates: regulation only; first-batting team only; lineup cycled once.
+    Returns {'player_out', 'player_in'} or None.
     """
     if state.is_super_inning:
         return None
@@ -1846,17 +1853,30 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     if team.lineup_cycle_number < 1:
         return None
 
-    batter = state.current_batter
-    if batter.is_pitcher:
+    # Weakest-defense card slot not already covered (skip C / DH / pitcher).
+    candidates_out = [
+        pl for pl in team.lineup
+        if not pl.is_pitcher
+        and (getattr(pl, "position", "") not in ("C", "DH"))
+        and pl.player_id not in team.field_replacements
+    ]
+    if not candidates_out:
         return None
+    worst = min(candidates_out,
+                key=lambda pl: float(getattr(pl, "defense", 0.5) or 0.5))
+    worst_pos = (getattr(worst, "game_position", "")
+                 or getattr(worst, "position", "") or "")
 
     lineup_ids = {pl.player_id for pl in team.lineup}
+    glove_ids = {p.player_id for p in team.field_replacements.values()}
     bench = [
         pl for pl in team.roster
         if not pl.is_pitcher
         and pl.player_id not in lineup_ids
+        and pl.player_id not in glove_ids
         and team.is_available(pl.player_id)
         and not _is_joker(pl)
+        and _defense.is_eligible_at(pl, worst_pos)
     ]
     if not bench:
         return None
@@ -1865,14 +1885,52 @@ def should_swap_offensive_for_defense(state: GameState, rng=None) -> Optional[Pl
     best_score = 0.0
     best_cand: Optional[Player] = None
     for cand in bench:
-        s = score_substitution(state, cand, "pinch_field", batter)
+        s = score_substitution(state, cand, "pinch_field", worst)
         if s > best_score:
             best_score = s
             best_cand = cand
 
     if best_cand is None or best_score < threshold:
         return None
-    return best_cand
+    return {"player_out": worst, "player_in": best_cand}
+
+
+def offensive_to_defensive_swap(state: GameState,
+                                player_out: Player,
+                                player_in: Player) -> list[str]:
+    """Field-only execution of should_swap_offensive_for_defense: the glove is
+    staged for the team's fielding half (team defense moves by the swap's
+    value) but the batting order is untouched — player_out keeps his slot."""
+    team = state.batting_team
+    if player_out not in team.lineup:
+        return [f"  [DEF SWAP ERROR] {player_out.name} not in lineup."]
+    out_pos = (getattr(player_out, "game_position", "")
+               or getattr(player_out, "position", "") or "")
+    _defense.apply_sub_to_team_defense(
+        team, player_out, player_in,
+        getattr(player_out, "position", "") or out_pos,
+    )
+    if out_pos:
+        player_in.game_position = out_pos
+    team.field_replacements[player_out.player_id] = player_in
+    if player_in in team.bench:
+        team.bench.remove(player_in)
+    idx = team.lineup.index(player_out)
+    log = [
+        f"  DEF SWAP: {player_in.name} will field for {player_out.name} at "
+        f"{out_pos or '?'} — {player_out.name} keeps his spot in the order."
+    ]
+    _log_substitution(
+        state,
+        kind="pinch_field",
+        team_id=team.team_id,
+        in_player_id=player_in.player_id,
+        out_player_id=player_out.player_id,
+        lineup_index=idx,
+        reason="tactical_def_swap",
+        one_way=False,
+    )
+    return log
 
 
 def should_phase_transition_swap(state: GameState, rng=None) -> Optional[list[dict]]:

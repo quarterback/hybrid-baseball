@@ -118,6 +118,67 @@ Two consistency items from §5 are now done:
   injury replacements remain the one exception (emergencies can field a player
   out of position).
 
+## 5c. Follow-up (2026-06-22): defensive-sub timing gates
+
+A defensive replacement is a late-inning lock-in, not an early-game move.
+`should_defensive_sub` now has two timing gates on top of the cycle gate:
+a **hard floor** (`DEFENSIVE_SUB_MIN_OUTS`, default 3 — never in the opening
+outs of any game) and a **rarity window** before the late-game out
+(`DEFENSIVE_SUB_LATE_OUT`, default 16): even when leverage clears, an early
+defensive sub only fires on a small probability roll
+(`DEFENSIVE_SUB_EARLY_RATE`, default 0.05). Super-innings are late by
+definition and skip the rarity roll. The catcher rotation (its own out gate,
+6) and joker-to-field (out ≥ 24) already gated their own timing.
+
+Note on persisted games: a box score is stored when the game is simmed, so
+already-played games keep their old lines — only games simmed after the engine
+restart reflect these rules.
+
+## 5d. Follow-up (2026-06-22): the last order-mutating swap
+
+A fresh box score (game #33) showed the first-batting team's order churned by
+"Replaced X at CF/C/1B" entries whose replacements *batted* — the
+single-player **offensive→defensive swap** (`tactical_def_swap`), the one
+defensive executor still routing through `pinch_hit`. Converted it to
+field-only: `should_swap_offensive_for_defense` now mirrors
+`should_defensive_sub` (worst card defender + best eligible bench glove) and
+the new `offensive_to_defensive_swap` executor stages that glove for the
+team's fielding half — team defense moves by the swap's value, but the batting
+order is untouched. The renderer's `tactical_def_swap` branch now mirrors the
+`defensive_sub` branch (DEF row for the incoming glove, no PA). With this,
+**every** defensively-motivated executor (defensive_sub, catcher rotation via
+defensive_sub, joker_to_field, phase_transition_swap, offensive→defensive
+swap) is field-only; only genuine offensive moves (pinch hit / pinch run) and
+injuries change a batting slot.
+
+Deferred (owner call): a dedicated O27 box-score layout that separates the
+offensive batting card from the defensive alignment. The engine is correct;
+the current renderer reuses the DEF-row convention. Box-score redesign is a
+nice-to-have, not core.
+
+## 5e. Follow-up (2026-06-22): the defensive log
+
+With the batting card and the fielding alignment now decoupled, the box score
+gained a per-team **DEFENSIVE LOG** — each position's coverage by out-envelope,
+the natural way to read field-only subs. Built in the **live** path
+(`o27v2/web/box_score.py`, not the engine renderer, which the web app doesn't
+use for the box). Pitcher envelopes come from cumulative `ip_outs`; the eight
+field positions from the starter plus any defensive entries (DEF /
+joker-to-field), ordered by `entered_inning` with boundaries at
+`(entered_inning − 1) × 3`. Offensive subs (PH / PR) are excluded — they change
+the batting card, not the field, so a pinch-hit-for starter still shows as the
+fielder. All nine positions always listed; unchanged ones read "(Outs 1-N)".
+No schema change for the first cut — it reused already-persisted
+`game_position` / `entry_type` / `entered_inning` / `ip_outs`. **Exact
+out-envelopes followed (owner request):** a new `entered_outs` column records
+the precise team-out count at entry (engine `BatterStats.entered_outs` →
+sim persist → `game_batter_stats` column + migration), so a mid-inning sub now
+reads its true out (e.g. 1-4 / 5-27, not the inning edge 3). Legacy rows
+without `entered_outs` fall back to the inning boundary. Pitcher envelopes were
+already exact (cumulative `ip_outs`). Owner deferred a broader offense/defense
+box redesign; this is the targeted slice that makes the field-only model
+legible.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match

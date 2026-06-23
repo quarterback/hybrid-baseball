@@ -1315,6 +1315,7 @@ class Renderer:
                 # entry (no-reentry — preserves original inning).
                 if not rs.entered_inning:
                     rs.entered_inning = state_after.outs // 3 + 1
+                    rs.entered_outs = state_after.outs
 
         elif etype in ("joker_inserted", "joker_insertion"):
             # Joker entered for one PA. They get game_position="J" elsewhere;
@@ -1380,6 +1381,7 @@ class Renderer:
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
 
         elif etype == "pinch_runner":
             # Pinch runner takes over for the runner on `base_idx`. They
@@ -1404,6 +1406,7 @@ class Renderer:
                 stats_obj.entry_type = "PR"
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
                 # Recover the replaced runner from the just-appended
                 # substitution_log entry — keyed on this in_player_id.
                 log = getattr(state_after, "substitution_log", None) or []
@@ -1416,33 +1419,27 @@ class Renderer:
                         break
 
         elif etype == "tactical_def_swap":
-            # Mid-batting-half offensive→defensive swap. Reuses pinch_hit
-            # semantics in the engine but is logged separately so the box
-            # score can distinguish a leverage-driven PH from a strategic
-            # def-swap. Provider intent: {replacement: Player}; the
-            # outgoing player is the current scheduled batter (same as
-            # pinch_hit). Mark entry_type="DEF" so the row reads as a
-            # defensive insertion rather than a PH.
-            replacement = event.get("replacement")
+            # Field-only offensive→defensive swap (first-batting team stages a
+            # glove for its fielding half). The batting order is untouched, so
+            # this is rendered exactly like a defensive_sub: the incoming
+            # player gets a DEF row (no PA unless his card slot later bats),
+            # indented under the fielder whose glove he took.
+            player_in  = event.get("player_in")
+            player_out = event.get("player_out")
             d["display_type"] = "DEFENSIVE SWAP"
-            # Outgoing player is the currently scheduled batter (same as PH).
-            d["sub_out_name"] = batter.name
-            if replacement is not None:
-                d["sub_in_name"] = replacement.name
-                stats_obj = self._get_stats(replacement)
-                # tactical_def_swap is a defensive intent; the player is
-                # in the lineup permanently from here on, just like PH,
-                # but tagged DEF for the box-score's purposes.
+            if player_in is not None:
+                d["sub_in_name"] = player_in.name
+                stats_obj = self._get_stats(player_in)
                 if stats_obj.entry_type in ("", "starter"):
                     stats_obj.entry_type = "DEF"
-                # Record who they came in for — the scheduled batter, same
-                # as pinch_hit. Without this the box score can't pair or
-                # name the sub and the footnote reads "Replaced — at ...".
-                # First-entry only (no-reentry preserves the original).
-                if batter is not None and not stats_obj.replaced_player_id:
-                    stats_obj.replaced_player_id = str(batter.player_id)
+                if player_out is not None:
+                    d["sub_out_name"] = player_out.name
+                    d["sub_position"] = (getattr(player_out, "game_position", "")
+                                         or getattr(player_out, "position", "") or "")
+                    stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
 
         elif etype == "phase_transition_swap":
             # Wholesale offensive→defensive unit swap. Provider intent:
@@ -1465,6 +1462,7 @@ class Renderer:
                         stats_obj.replaced_player_id = str(player_out.player_id)
                     if not stats_obj.entered_inning:
                         stats_obj.entered_inning = inning
+                        stats_obj.entered_outs = state_after.outs
                 if player_out is not None:
                     outs.append(player_out.name)
             d["sub_in_list"]  = ", ".join(ins)
@@ -1505,6 +1503,7 @@ class Renderer:
                     stats_obj.replaced_player_id = str(player_out.player_id)
                 if not stats_obj.entered_inning:
                     stats_obj.entered_inning = state_after.outs // 3 + 1
+                    stats_obj.entered_outs = state_after.outs
 
         return d
 

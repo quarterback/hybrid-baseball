@@ -110,6 +110,10 @@ class BatterStats:
     # Inning (1-indexed: outs // 3 + 1) at which this row entered the game.
     # 0 = starter. Footnote rendering reads this to emit "in the 5th."
     entered_inning: int = 0
+    # Exact team-out count when this row entered the game (0 = starter / not
+    # set). The defensive log uses this for precise out-envelopes; legacy
+    # rows without it fall back to the inning boundary.
+    entered_outs: int = 0
 
     # Grounded into double / triple play — for box-score annotations.
     # Incremented in the run path of contact resolution when the engine
