@@ -129,7 +129,29 @@ def score_substitution(
 
     # Combine — equal-weighted average over five factors.
     score = (score_gap_f + late_arc_f + runner_f + upgrade_f + matchup_f) / 5.0
+
+    # Last-licks boost: the second-batting team's at-bats are do-or-die, so in
+    # a close, late spot the manager deploys bats for situational runs more
+    # readily. Offense only (PH / PR); the first-batting team and blowouts are
+    # excluded by _decisive_chase.
+    if kind in ("pinch_hit", "pinch_run") and _decisive_chase(state):
+        score += float(getattr(cfg, "DECISIVE_HALF_LEVERAGE_BONUS", 0.12))
+
     return max(0.0, min(1.0, score))
+
+
+def _decisive_chase(state) -> bool:
+    """True when the batting team is in its last-licks half (it bats second)
+    and the game is close and late — every run can decide it, so the manager
+    should reach for the bench."""
+    if getattr(state, "second_batting_team", None) is not state.batting_team:
+        return False
+    if getattr(state, "is_super_inning", False):
+        return True   # super-innings are sudden-death by definition
+    gap = abs(state.score.get("visitors", 0) - state.score.get("home", 0))
+    if gap > int(getattr(cfg, "DECISIVE_HALF_MAX_GAP", 3)):
+        return False
+    return state.outs >= int(getattr(cfg, "DECISIVE_HALF_MIN_OUTS", 12))
 
 
 def substitution_threshold(team) -> float:

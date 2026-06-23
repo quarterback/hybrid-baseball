@@ -198,11 +198,24 @@ gated so they ONLY fire when the lead is decisive (silent in close games):
   the regular due up. Low-leverage by design (the "we're up 20, empty the
   bench" path), self-limiting to bench size.
 
-Tests: `test_blowout_management.py` (6) — pull fires up 12 / stays quiet in a
-tie / not too early; rest fires up 17 / quiet in a close low-leverage spot /
-waits for the order to turn. 159 engine tests pass. Broader "different looks /
-more context-dependent subs" is the standing direction; this is the first
-concrete slice.
+**Last-licks deploy (same follow-up).** The flip side of resting in a laugher:
+in a *close* game the second-batting team (O27's bottom-of-the-9th — its at-bats
+are do-or-die) should reach for the bench to manufacture situational runs, not
+let a non-star bat through a key spot. `score_substitution` now adds
+`DECISIVE_HALF_LEVERAGE_BONUS` (0.12) to the pinch-hit / pinch-run leverage when
+`_decisive_chase` holds: the batting team bats second, the gap is within
+`DECISIVE_HALF_MAX_GAP` (3), and it's past `DECISIVE_HALF_MIN_OUTS` (12)
+(super-innings always qualify). The first-batting team (building a total) and
+blowouts (gap too large) are excluded, so it never churns early or in laughers —
+it only sharpens deployment in the spots that decide games.
+
+Tests: `test_blowout_management.py` (9) — pull fires up 12 / quiet in a tie /
+not too early; rest fires up 17 / quiet in a close low-leverage spot / waits for
+the order to turn; last-licks boost raises offense leverage only for the
+second-batting team, not in a blowout gap, not for defensive subs. 162 engine
+tests pass. Broader "different looks" (platoon PH late, PR specialists
+close-and-late, double switches, day-game/back-to-back rest) remains the
+standing direction; these are the first concrete slices.
 
 ## 5. Follow-ups / not done
 

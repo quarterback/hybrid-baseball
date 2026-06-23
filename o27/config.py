@@ -1028,6 +1028,20 @@ BLOWOUT_PULL_MIN_OUTS: int   = 12   # ...and only after this many outs (so a rel
 BLOWOUT_REST_LEAD: int       = 10   # batting team's lead to start resting position regulars
 BLOWOUT_REST_MIN_CYCLE: int  = 2    # ...and only once the order has turned this many times
 
+# ---------------------------------------------------------------------------
+# Last-licks leverage — deploy bats in the decisive half
+# ---------------------------------------------------------------------------
+# The team batting SECOND is in O27's bottom-of-the-9th: its at-bats are
+# do-or-die. In a close, late spot the manager should reach for the bench to
+# manufacture situational runs (a non-star shouldn't just bat through a key
+# spot) — even if it doesn't pan out. This boosts the pinch-hit / pinch-run
+# leverage score there, leaving the first-batting team (building a total) and
+# blowouts (gap too large) untouched.
+DECISIVE_HALF_LEVERAGE_BONUS: float = 0.12   # added to leverage in the decisive chase
+DECISIVE_HALF_MIN_OUTS: int         = 12     # only this deep into the half
+DECISIVE_HALF_MAX_GAP: int          = 3      # only when the game is this close
+
+
 
 
 # ---------------------------------------------------------------------------

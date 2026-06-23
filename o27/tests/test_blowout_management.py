@@ -92,3 +92,43 @@ def test_blowout_rest_waits_for_the_order_to_turn():
     st.score = {"visitors": 20, "home": 3}
     st.visitors.lineup_cycle_number = 1        # only one trip through so far
     assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
+
+
+# --- last-licks (decisive-half) offense boost ------------------------------
+
+def _marginal():
+    st = _state()
+    st.score = {"visitors": 4, "home": 3}     # close
+    st.outs = 18                               # late
+    batter = st.visitors.lineup[0]
+    cand = next(p for p in st.visitors.roster if p.player_id == "VB1")
+    return st, batter, cand
+
+
+def test_last_licks_boosts_offense_leverage_for_the_second_batting_team():
+    st, batter, cand = _marginal()
+    st.second_batting_team = st.visitors       # batting team is in last licks
+    boosted = mgr.score_substitution(st, cand, "pinch_hit", batter)
+    st.second_batting_team = st.home           # batting team is NOT last licks
+    plain = mgr.score_substitution(st, cand, "pinch_hit", batter)
+    assert boosted > plain
+    assert abs((boosted - plain) - 0.12) < 1e-9
+
+
+def test_last_licks_does_not_boost_in_a_blowout_gap():
+    st, batter, cand = _marginal()
+    st.score = {"visitors": 20, "home": 3}     # gap beyond DECISIVE_HALF_MAX_GAP
+    st.second_batting_team = st.visitors
+    a = mgr.score_substitution(st, cand, "pinch_hit", batter)
+    st.second_batting_team = st.home
+    b = mgr.score_substitution(st, cand, "pinch_hit", batter)
+    assert a == b
+
+
+def test_last_licks_does_not_boost_defensive_subs():
+    st, batter, cand = _marginal()
+    st.second_batting_team = st.visitors
+    a = mgr.score_substitution(st, cand, "pinch_field", batter)
+    st.second_batting_team = st.home
+    b = mgr.score_substitution(st, cand, "pinch_field", batter)
+    assert a == b
