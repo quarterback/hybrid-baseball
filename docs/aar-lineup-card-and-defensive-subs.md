@@ -269,8 +269,28 @@ you rotate but with low-leverage assets. Implemented:
 
 175 engine tests pass (3 more: blowout rotation uses a low-tier non-premium
 bat; blowout pitching change uses the mop-up arm; a trailing team doesn't bench
-its worn star). Deferred (outcome-model changes, owner confirm): pitch-to-
-contact when way ahead, and passive/station-to-station baserunning in blowouts.
+its worn star).
+
+**Passive baserunning — red-light the steal game when way ahead.** A team
+blowing the game open shuts off the running game: with a lead ≥
+`BLOWOUT_REST_LEAD`, `between_pitch_event` zeroes the steal-attempt probability
+and skips hit-and-run (a single `_passive_ahead` flag gates both). Gated on the
+batting team's LEAD only, so a trailing team keeps running (it's chasing). This
+covers the spec's "red light / anti-injury" intent for the steal game — the
+biggest out/injury risk on the bases. 176 engine tests pass (1 new: no steal
+attempts up 15; the burner still runs in a tie).
+
+**Outcome-model items deliberately NOT done (owner decision).** Two spec items
+touch the core run environment and were declined after review:
+- *Pitch-to-contact* (shift `_pitch_probs` mass toward contact when ahead) —
+  skipped. Its only real payoff (no 130-pitch complete games) is already covered
+  by the blowout pull + mop-up arms, so it's lowest value / highest regression
+  risk (it's the heart of the pitch distribution).
+- *Extra-base "station-to-station" holding* — skipped for now. The steal game
+  (the main out/injury risk) is already off; the deeper advance math isn't worth
+  the risk yet.
+The rejected `§3B` "roster lock" (freeze the bench when up 8+) also stays out —
+it contradicts resting starters.
 
 ## 5. Follow-ups / not done
 
