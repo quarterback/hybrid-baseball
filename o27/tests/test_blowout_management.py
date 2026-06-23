@@ -12,6 +12,7 @@ import random
 
 from o27.engine.state import Team, GameState, Player
 from o27.engine import manager as mgr
+from o27.engine import prob
 
 _POS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
 
@@ -159,6 +160,27 @@ def test_blowout_rotation_uses_low_tier_not_premium():
     bench[2].skill = 0.7
     res = mgr.should_pinch_hit(st, rng=random.Random(0))
     assert res is bench[1]
+
+
+def _steal_attempts(bat_score, fld_score, trials=300):
+    n = 0
+    for s in range(trials):
+        st = _state()
+        st.score = {"visitors": bat_score, "home": fld_score}
+        st.visitors.mgr_run_game = 1.0             # aggressive running team
+        runner = st.visitors.lineup[1]
+        runner.speed = 0.99                         # a burner on first
+        st.bases = [runner.player_id, None, None]
+        ev = prob.between_pitch_event(random.Random(s), st)
+        if ev and ev.get("type") in ("stolen_base_attempt", "defensive_indifference"):
+            n += 1
+    return n
+
+
+def test_no_steal_attempts_when_way_ahead():
+    # Up 15, the running game is off (red light); tied, the burner runs.
+    assert _steal_attempts(18, 3) == 0
+    assert _steal_attempts(3, 3) > 0
 
 
 def test_blowout_pitching_change_uses_mopup_arm():
