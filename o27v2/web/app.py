@@ -5604,18 +5604,23 @@ def leaders():
     )
     baselines = _league_baselines(league=selected_league)
     _aggregate_batter_rows(batting, baselines=baselines)
-    from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
+    from o27v2.analytics import (build_pressure_impact, build_hitter_dead_outs_table,
+                                 build_chase_split_table)
     _leader_team_ids = _league_team_ids(selected_league)
     pai_by_player = build_pressure_impact(min_pa=1, team_ids=_leader_team_ids)["by_player"]
     hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+    chase_by_player = build_chase_split_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
     for row in batting:
         pid = row.get("player_id")
         pai = pai_by_player.get(pid, {})
         hdo = hdo_by_player.get(pid, {})
+        chase = chase_by_player.get(pid, {})
         row["pai"] = pai.get("pai")
         row["pai_per_pa"] = pai.get("pai_per_pa")
         row["trr_plus"] = pai.get("trr_plus")
         row["avg_pressure"] = pai.get("avg_pressure")
+        row["chase_ba"] = chase.get("chase_ba")
+        row["chase_pa"] = chase.get("chase_pa")
         row["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
         row["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
         row["dead_outs_bat"] = hdo.get("dead_outs_bat")
@@ -7224,6 +7229,7 @@ def _league_distribution(rows: list[dict], key: str) -> dict:
 _O27I_BATTER_METRICS = [
     ("pai",       "PAI",            "+0.2f", False),
     ("trr_plus",  "TRR+",           "0.0f", False),
+    ("chase_ba",  "Chase BA",       "0.3f", False),
     ("dead_out_avoid_pct", "DOA%",  "pct",  False),
     ("xwoba",     "xwOBA",          "0.3f", False),
     ("avg_ev",    "Avg Exit Velo",  "ev",   False),
@@ -7296,11 +7302,13 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
     rate_by = {r["player_id"]: r for r in rate}
     # Physics-native xwOBA: expected value per (EV, LA) bin. Meaningful now that
     # the trajectory drives the outcome (vs the weak/med/hard quality version).
-    from o27v2.analytics import build_xwoba_ev_table, build_pressure_impact, build_hitter_dead_outs_table
+    from o27v2.analytics import (build_xwoba_ev_table, build_pressure_impact,
+                                 build_hitter_dead_outs_table, build_chase_split_table)
     xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
     xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
     pai_by = build_pressure_impact(min_pa=1, team_ids=team_ids)["by_player"]
     hdo_by = build_hitter_dead_outs_table(min_pa=1, team_ids=team_ids)["by_player"]
+    chase_by = build_chase_split_table(min_pa=1, team_ids=team_ids)["by_player"]
 
     rows = []
     for e in ev:
@@ -7312,6 +7320,7 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
         xw = xwoba_by.get(pid, {})
         pai = pai_by.get(pid, {})
         hdo = hdo_by.get(pid, {})
+        chase = chase_by.get(pid, {})
         rows.append({
             "player_id": pid,
             "bip":       e["bip"],
@@ -7331,6 +7340,8 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
             "pai":       pai.get("pai"),
             "pai_per_pa": pai.get("pai_per_pa"),
             "trr_plus":  pai.get("trr_plus"),
+            "chase_ba":  chase.get("chase_ba"),
+            "chase_pa":  chase.get("chase_pa"),
             "dead_out_avoid_pct": hdo.get("dead_out_avoid_pct"),
             "dead_out_pa_pct_bat": hdo.get("dead_out_pa_pct_bat"),
         })

@@ -11,6 +11,7 @@ from collections import defaultdict
 
 from o27v2 import db
 from o27v2.analytics.run_expectancy import build_re_table
+from o27.stats.team import required_run_rate_3o
 
 
 def _team_in(team_ids, col="team_id"):
@@ -35,9 +36,11 @@ def _pressure_multiplier(score_diff: int | None, outs_before: int | None) -> flo
     """
     if score_diff is None or outs_before is None or score_diff >= 0:
         return 1.0
-    remaining_outs = max(1, 27 - int(outs_before))
+    # Runs needed to pull ahead, paced over the remaining 27-out envelope.
+    # Shares the one canonical RRR/3O definition (o27/stats/team.py) used by the
+    # chase analytics and the manager AI, so the pressure concept can't drift.
     runs_to_lead = abs(int(score_diff)) + 1
-    rrr_3o = runs_to_lead / (remaining_outs / 3.0)
+    rrr_3o = required_run_rate_3o(runs_to_lead, 0, int(outs_before)) or 0.0
     return 1.0 + min(3.0, rrr_3o / 6.0)
 
 
@@ -122,3 +125,70 @@ def build_pressure_impact(min_pa: int = 1, team_ids=None) -> dict:
             leaders.append(row)
     leaders.sort(key=lambda x: x["pai"], reverse=True)
     return {"leaders": leaders, "by_player": by_player, "league_pai_per_pa": league_pai_pa}
+
+
+_CHASE_HIT_TYPES = {"single", "double", "triple", "hr", "infield_single"}
+
+
+def build_chase_split_table(min_pa: int = 1, team_ids=None) -> dict:
+    """Per-batter production split — contact while the team is TRAILING (the chase).
+
+    The legible companion to PAI: where PAI weights run value by RRR/3O
+    continuously, this is the plain split fans sort by — how often a hitter gets
+    a hit when his side is behind and needs runs. `game_pa_log` only reliably
+    logs contact events (no walks/strikeouts), so `chase_ba` is a contact
+    average (hits / balls put in play while trailing), not full PAVG — named and
+    tooltipped accordingly. `chase_pa` is the (contact) sample size.
+
+    Trailing is the chase trigger (`score_diff_before < 0`); the continuous
+    RRR/3O severity is already captured by PAI's pressure weight, which shares
+    the one canonical `required_run_rate_3o`.
+    """
+    rows = db.fetchall(
+        f"""SELECT batter_id AS player_id, hit_type, score_diff_before
+            FROM game_pa_log
+            WHERE phase = 0 AND batter_id IS NOT NULL AND hit_type IS NOT NULL
+              AND score_diff_before IS NOT NULL{_team_in(team_ids, "team_id")}"""
+    )
+    agg: dict[int, dict] = defaultdict(lambda: {"cpa": 0, "chits": 0, "chr": 0})
+    for r in rows:
+        if int(r["score_diff_before"]) >= 0:
+            continue                       # only count trailing (chase) PAs
+        a = agg[r["player_id"]]
+        a["cpa"] += 1
+        ht = r["hit_type"]
+        if ht in _CHASE_HIT_TYPES:
+            a["chits"] += 1
+            if ht == "hr":
+                a["chr"] += 1
+
+    names = {}
+    if agg:
+        ids = ",".join(str(int(pid)) for pid in agg)
+        names = {r["id"]: r for r in db.fetchall(
+            f"""SELECT p.id, p.name AS player_name, t.abbrev AS team_abbrev
+                FROM players p LEFT JOIN teams t ON t.id = p.team_id
+                WHERE p.id IN ({ids})"""
+        )}
+
+    leaders = []
+    by_player = {}
+    for pid, v in agg.items():
+        cpa = v["cpa"]
+        if cpa <= 0:
+            continue
+        meta = names.get(pid, {})
+        row = {
+            "player_id": pid,
+            "player_name": meta.get("player_name", f"#{pid}"),
+            "team_abbrev": meta.get("team_abbrev", ""),
+            "chase_pa": cpa,
+            "chase_hits": v["chits"],
+            "chase_hr": v["chr"],
+            "chase_ba": round(v["chits"] / cpa, 3),
+        }
+        by_player[pid] = row
+        if cpa >= min_pa:
+            leaders.append(row)
+    leaders.sort(key=lambda x: -x["chase_ba"])
+    return {"leaders": leaders, "by_player": by_player}
