@@ -1742,7 +1742,7 @@ def init_db() -> None:
 
         # wERA / xFIP / Decay: arc-bucketed counters keyed off the
         # defending team's running 27-out count (1-9 / 10-18 / 19-27).
-        # Plus is_starter for GS / WS%.
+        # Plus is_starter for GS.
         _arc_cols = (
             "er_arc1", "er_arc2", "er_arc3",
             "k_arc1",  "k_arc2",  "k_arc3",

@@ -190,7 +190,6 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Avg Outs Reached | AOR | Mean outs per appearance | `outs / G` | `o27v2/web/app.py:1207` |
 | Outs Share Plus | OS+ | League-relative AOR | `(AOR / league_AOR) × 100` | `o27v2/web/app.py:1209-1211` |
 | Game Equivalents | GE | Total workload in complete-game-worths (synthetic IP = GE × 9) | `total_outs / 27` | `o27v2/web/app.py:_aggregate_pitcher_rows` |
-| Workhorse Start % | WS% | Share of starts with ≥18 outs and ≤6 ER | `count(qualifying starts) / starts` | `o27v2/web/app.py:1223` |
 | Per-Game Decay | DECAY_PG | Mean per-appearance Decay (unweighted) | `mean(per-appearance Decay)` | `o27v2/web/app.py:466` |
 | Arc-3 Reach Rate | ARC3_REACH% | Pct of appearances reaching arc 3 | `count(BF_ARC3 > 0) / G` | `o27v2/web/app.py:464` |
 
