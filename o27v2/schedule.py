@@ -945,12 +945,16 @@ def seed_schedule(
             # Same seed → schedule already reflects this run; nothing to do.
             return 0
         # Different seed (or unrecorded) → refresh the schedule. Played
-        # results would be invalidated by a different schedule, so wipe
-        # the supporting tables too.
+        # results would be invalidated by a different schedule, so wipe the
+        # supporting tables too. Every table that FK-references games() must be
+        # cleared BEFORE games itself, or FK enforcement rejects the parent
+        # delete (FOREIGN KEY constraint failed). Discover the children from the
+        # schema rather than hardcoding — the old hardcoded list was incomplete
+        # (missed game_pa_log / game_bunt_log / game_scoring_events / game_pbp /
+        # game_power_play_stats), which crashed re-seeding on a populated save.
+        for child in db.child_tables_of("games"):
+            db.execute(f"DELETE FROM {child}")
         db.execute("DELETE FROM games")
-        db.execute("DELETE FROM game_batter_stats")
-        db.execute("DELETE FROM game_pitcher_stats")
-        db.execute("DELETE FROM team_phase_outs")
         db.execute("DELETE FROM sim_meta WHERE key = 'sim_date'")
 
     # Fill any missing team coordinates from the city gazetteer first, so
