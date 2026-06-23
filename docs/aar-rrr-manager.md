@@ -1,4 +1,4 @@
-# After-Action Report — RRR manager AI (chasing side acts on the run rate)
+# After-Action Report — RRR manager AI (BOTH sides act on the run rate)
 
 **Date:** 2026-06-23
 **Branch:** `claude/adoring-meitner-7wsd8p`
@@ -6,6 +6,12 @@
 via config / the Engine Settings dashboard. Engine suite green with the feature
 on; validated on a fresh flag-on sim DB and a league-level on/off smoke. Needs a
 real-DB season smoke before release to confirm the balance shift is acceptable.
+
+> **Update (same day):** initially shipped chaser-only. The owner pointed out
+> that in cricket the side batting *first* also plays to a rate the whole way
+> (CRR / projected total / par), accelerating through the death overs — so it
+> shouldn't sit flat. Extended so the first-batting side paces against a **par**
+> total. The sections below describe the final, symmetric design.
 
 ---
 
@@ -31,19 +37,24 @@ concession** and **contact aggression**; **baserunning skipped** (its
 ## 2. What got built
 
 - **In-engine signal** — `o27/engine/state.py`: `GameState.chase_rrr_3o()`
-  returns RRR/3O **only** for the second-batting side with a known target, else
-  `None`. Reuses `required_run_rate_3o` from `o27/stats/team.py`
-  (`target = target_score + 1`). No stored field → no staleness; every lever
-  auto-no-ops outside a live chase. Also added the per-game override field
-  `rrr_manager_enabled`.
-- **Flag + bands** — `o27/config.py`: `RRR_MANAGER_ENABLED = True` plus tunable
-  bands `RRR_AGGRO_THRESHOLD = 3.0`, `RRR_DESPERATION_THRESHOLD = 6.0`,
-  `RRR_CONCESSION_THRESHOLD = 12.0`, `RRR_CONTACT_LIFT_MAX = 1.20`.
-  Auto-exposed by `o27v2/engine_config.py` (and added to the curated "Optional
-  rules" group).
+  returns the chaser's RRR/3O (vs `target_score + 1`), else `None`.
+  `o27/engine/manager.py:_pace_rrr(state)` generalizes it: chaser → real-target
+  RRR; first-batting side → RRR-to-**par** (`state.par_score` or
+  `cfg.RRR_PAR_SCORE`). Reuses `required_run_rate_3o` from `o27/stats/team.py`.
+  No stored rate field → no staleness; every lever auto-no-ops outside a live
+  innings. Added per-game override fields `rrr_manager_enabled` and `par_score`.
+- **Flag + bands + par** — `o27/config.py`: `RRR_MANAGER_ENABLED = True` plus
+  tunable bands `RRR_AGGRO_THRESHOLD = 3.0`, `RRR_DESPERATION_THRESHOLD = 6.0`,
+  `RRR_CONCESSION_THRESHOLD = 12.0`, `RRR_CONTACT_LIFT_MAX = 1.20`, and
+  `RRR_PAR_SCORE = 12` (≈ league-avg team total, measured from an 80-game sim).
+  Auto-exposed by `o27v2/engine_config.py` (toggle added to "Optional rules").
 - **Gate + band helpers** — `o27/engine/manager.py`: `rrr_manager_on(state)`
-  (per-game override → cfg, mirroring `power_play_on`), plus `rrr_aggressive`,
-  `rrr_conceding`, `rrr_contact_mult`.
+  (per-game override → cfg, mirroring `power_play_on`); `_pace_rrr`; `_is_chaser`;
+  `rrr_aggressive`, `rrr_conceding`, `rrr_contact_mult`.
+- **The chaser/first-team asymmetry** — `rrr_conceding` is **chaser-only**: a
+  chase can be mathematically dead (RRR ≥ CONCESSION → freeze premium bench),
+  but the first team never concedes its own innings — more runs always help, so
+  above AGGRO it just keeps accelerating with no upper cutoff.
 - **Lever 1 — substitution + concession (reuse):**
   - `_desperation_rally` gains a pace-aware OR branch — also True when
     `rrr_aggressive(state)`. This reuses the existing `DESPERATION_RALLY_BONUS`
@@ -79,31 +90,42 @@ concession** and **contact aggression**; **baserunning skipped** (its
   still swing big (contact lift holds at the cap through the concession band);
   only premium *pinch-hitters* are withheld. That matches "preserve assets for
   the next game" without making a lost cause swing meekly.
-- **Effect size is modest by design.** With a 1.20 contact cap and the subs
-  folded into (not stacked on top of) existing leverage, the league smoke moved
-  the second-batting team's win% ~0.540 → ~0.560 and total runs ~24.1 → ~24.6
-  over 150 randomized games — a real, directionally-correct nudge, not a
-  rebalancing sledgehammer.
+- **Effect size is modest, and the symmetry rebalances it.** Chaser-only, the
+  feature moved the second-batting team's win% noticeably (a ~2pp swing in the
+  smoke). Once the first team also paces to par, the net win-rate effect shrinks
+  to near-noise (chaser ~0.502 → ~0.505, first team ~0.498 → ~0.495 over 400
+  randomized games) while both sides' offense ticks up slightly (first team
+  13.63 → 13.65, chaser 10.21 → 10.57 runs). The chaser still gains marginally
+  more — a concrete target is a sharper signal than par — which is intended.
+- **Why the first-team effect is small at the default par.** `RRR_PAR_SCORE = 12`
+  ≈ the league mean, so a typical innings is already at/above par and doesn't
+  accelerate; only a below-pace innings slogs late. Raise par for a more
+  aggressive first-innings persona — it's a tuning knob, not a fixed law.
 
 ## 4. Validation
 
-- `pytest o27/tests/test_rrr_manager.py` — 9/9 (signal gating, flag override,
-  band helpers, desperation fold-in, concession freeze, determinism, on≠off).
-- `pytest o27/tests` — **193 passed** with the feature on by default (no pinned
+- `pytest o27/tests/test_rrr_manager.py` — 14/14 (signal gating both sides, flag
+  override, band helpers, par pacing, first-team-never-concedes asymmetry, par
+  override, desperation fold-in, concession freeze, determinism, on≠off).
+- `pytest o27/tests` — **198 passed** with the feature on by default (no pinned
   seeded-outcome regressions).
 - Fresh flag-on DB (`initdb` + `sim 80`): `pytest tests/test_stat_invariants.py`
   → 13 passed; `/game/<id>` renders with the RRR column + Pressure-Curve panel.
-- League on/off smoke (150 randomized games): chaser win% 0.540→0.560, runs
-  24.1→24.6 — direction as expected, no crashes.
+- League on/off smoke (400 randomized games): see §3 — both-sided pacing keeps
+  win% near even; offense ticks up slightly; no crashes; determinism holds.
 
 ## 5. What I did NOT change / known limitations
 
 - **Baserunning untouched** (owner's scope call): `mgr_run_game` / stay EV are
   not RRR-aware.
-- **Regulation chase only.** `chase_rrr_3o` uses the 27-out envelope and the
-  consumers exclude super-innings; Declared-Seconds chase phases aren't modeled.
+- **Regulation only.** The pace signals use the 27-out envelope and exclude
+  super-innings and Declared-Seconds frames; those chase phases aren't modeled.
+- **Par is a single tunable constant.** `RRR_PAR_SCORE` is league-wide; a per-
+  game park/era-adjusted par can be stamped on `state.par_score` later (the hook
+  exists) — not wired to any data source yet. "Projected Total" (CRR × 27) as a
+  *display* metric is a separate, easy follow-up, not built here.
 - **No per-league opt-out column.** Power Play / Cricket Order have dedicated
   team-row columns; RRR rides the global cfg flag (on) plus the per-game
   `state.rrr_manager_enabled` override (used by tests). A per-league checkbox
   would need a small schema add — deferred as unneeded for an on-by-default rule.
-- **Bands not yet calibrated** against real chase distributions (see §3).
+- **Bands + par not yet calibrated** against real distributions (see §3).

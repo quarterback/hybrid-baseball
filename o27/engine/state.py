@@ -791,6 +791,10 @@ class GameState:
 
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
+    # Par score for the side batting first (cricket-style pacing toward a
+    # competitive total before any opponent target exists). None → the engine
+    # falls back to cfg.RRR_PAR_SCORE; sim.py may stamp a park/era-adjusted par.
+    par_score: Optional[int] = None
 
     # --- Per-PA leadership flare ---
     # When the per-PA flare fires for the batter and/or pitcher, the

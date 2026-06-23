@@ -199,14 +199,18 @@ def _decisive_chase(state) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# RRR manager AI — the chasing (second-batting) side reacts to its Required
-# Run Rate per 3 outs. Folds into the existing leverage/garbage-time machinery
-# rather than running a parallel threshold ladder. See o27/config.py for the
-# flag (RRR_MANAGER_ENABLED) and the AGGRO/DESPERATION/CONCESSION bands.
+# RRR manager AI — BOTH sides react to a Required Run Rate per 3 outs, cricket-
+# style. The chaser (2nd batting) paces against the real target; the side
+# batting first paces against a "par" total (cfg.RRR_PAR_SCORE / state.par_score)
+# since no opponent score exists yet. Folds into the existing leverage/garbage-
+# time machinery rather than a parallel ladder. Key asymmetry: only a *chaser*
+# ever concedes (a chase can be mathematically dead) — the first team always
+# just accelerates, because more runs always help the total it's setting.
+# See o27/config.py for the flag (RRR_MANAGER_ENABLED) and the bands.
 # ---------------------------------------------------------------------------
 
 def rrr_manager_on(state: GameState) -> bool:
-    """True if the RRR-driven chasing-manager AI is active for this game.
+    """True if the RRR-driven manager AI is active for this game.
 
     Per-game override (`state.rrr_manager_enabled`) wins when set; otherwise the
     league/config default `cfg.RRR_MANAGER_ENABLED`. Mirrors `power_play_on` /
@@ -217,45 +221,75 @@ def rrr_manager_on(state: GameState) -> bool:
     return bool(getattr(cfg, "RRR_MANAGER_ENABLED", False))
 
 
-def _chase_rrr(state) -> Optional[float]:
-    """RRR/3O for the chasing side, gated on the AI flag and regulation only.
-    None when off, in super-innings, or not a live chase."""
+def _is_chaser(state) -> bool:
+    """True when the side at bat is the second-batting team (chasing a target)."""
+    return getattr(state, "second_batting_team", None) is state.batting_team
+
+
+def _pace_rrr(state) -> Optional[float]:
+    """RRR/3O for the side at bat — vs the real target if chasing, else vs par
+    (the first innings). Gated on the AI flag; regulation only (no super-innings
+    or Declared-Seconds frames). None when off or there's no meaningful pace."""
     if not rrr_manager_on(state):
         return None
     if getattr(state, "is_super_inning", False):
         return None
-    return state.chase_rrr_3o()
+    if getattr(state, "in_seconds_phase", False):
+        return None
+    # Chasing side: pace against the real target (target_score + 1).
+    rrr = state.chase_rrr_3o()
+    if rrr is not None:
+        return rrr
+    # First-batting side: pace against par (no opponent total yet).
+    if getattr(state, "first_batting_team", None) is state.batting_team:
+        par = getattr(state, "par_score", None)
+        if par is None:
+            par = getattr(cfg, "RRR_PAR_SCORE", 0)
+        par = int(par or 0)
+        if par <= 0:
+            return None
+        from o27.stats.team import required_run_rate_3o
+        runs = state.score.get(state.batting_team.team_id, 0)
+        return required_run_rate_3o(par, runs, state.outs)
+    return None
 
 
 def rrr_aggressive(state) -> bool:
-    """Chaser is behind the required pace but not conceding — RRR/3O in
-    [AGGRO, CONCESSION). Drives the desperation-rally leverage bonus and the
-    hard-contact lift."""
-    rrr = _chase_rrr(state)
+    """The side at bat is behind its required pace → reach for the best bats and
+    sell out for power. For a CHASER this is the [AGGRO, CONCESSION) band (above
+    CONCESSION the chase is dead, not a rally). For the FIRST team there is no
+    upper bound — more runs always help, so anything >= AGGRO keeps pushing."""
+    rrr = _pace_rrr(state)
     if rrr is None:
         return False
-    return (float(getattr(cfg, "RRR_AGGRO_THRESHOLD", 3.0))
-            <= rrr < float(getattr(cfg, "RRR_CONCESSION_THRESHOLD", 12.0)))
+    if rrr < float(getattr(cfg, "RRR_AGGRO_THRESHOLD", 3.0)):
+        return False
+    if _is_chaser(state) and rrr >= float(getattr(cfg, "RRR_CONCESSION_THRESHOLD", 12.0)):
+        return False
+    return True
 
 
 def rrr_conceding(state) -> bool:
-    """Chase is effectively unreachable (RRR/3O >= CONCESSION) — freeze premium
-    bench assets, rotate scrubs."""
-    rrr = _chase_rrr(state)
+    """A CHASE is effectively unreachable (RRR/3O >= CONCESSION) — freeze premium
+    bench assets, rotate scrubs. Chaser-only: the first team never concedes its
+    own innings (it keeps trying to pad the total)."""
+    if not _is_chaser(state):
+        return False
+    rrr = _pace_rrr(state)
     if rrr is None:
         return False
     return rrr >= float(getattr(cfg, "RRR_CONCESSION_THRESHOLD", 12.0))
 
 
 def rrr_contact_mult(state) -> float:
-    """Situational hard-contact multiplier for the chasing batter (swing-for-
-    the-fences). 1.0 (identity) when the AI is off, the side isn't chasing, or
-    RRR/3O is below AGGRO. Ramps linearly from 1.0 at AGGRO to
-    `RRR_CONTACT_LIFT_MAX` at DESPERATION, then holds at the cap (including the
-    concession band — a losing team still swings big; only the premium *bench*
-    is preserved). Composes multiplicatively with the count-power profile and
-    adds NO rng draws, so the seed stream — and flag-off output — is unchanged."""
-    rrr = _chase_rrr(state)
+    """Situational hard-contact multiplier for the batter at bat (swing-for-the-
+    fences when behind the pace — chasing a target or chasing par). 1.0 (identity)
+    when the AI is off or RRR/3O is below AGGRO. Ramps linearly from 1.0 at AGGRO
+    to `RRR_CONTACT_LIFT_MAX` at DESPERATION, then holds at the cap (a losing
+    chaser still swings big; only the premium *bench* is preserved). Composes
+    multiplicatively with the count-power profile and adds NO rng draws, so the
+    seed stream — and flag-off output — is unchanged."""
+    rrr = _pace_rrr(state)
     if rrr is None:
         return 1.0
     aggro = float(getattr(cfg, "RRR_AGGRO_THRESHOLD", 3.0))

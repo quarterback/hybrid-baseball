@@ -66,6 +66,24 @@ def _chase_state(target_score, runs, outs, **team_kw):
     return st
 
 
+def _first_innings_state(runs, outs, par=None, **team_kw):
+    """Visitors bat FIRST (no opponent target yet) — they pace toward par."""
+    v = _team("visitors", "Visitors", **team_kw)
+    h = _team("home", "Home")
+    st = GameState(visitors=v, home=h)
+    st.half = "top"                  # visitors bat → batting_team is visitors
+    st.first_batting_team = v        # visitors are the target-setters
+    st.second_batting_team = h
+    st.bases = [None, None, None]
+    st.visitors.lineup_cycle_number = 2
+    st.target_score = None           # first innings: no target
+    st.par_score = par               # None → engine falls back to cfg.RRR_PAR_SCORE
+    st.score = {"visitors": runs, "home": 0}
+    st.outs = outs
+    st.current_pitcher_id = "HSP"
+    return st
+
+
 # --- chase_rrr_3o + gating --------------------------------------------------
 
 def test_chase_rrr_3o_value_and_gating():
@@ -139,6 +157,60 @@ def test_rrr_contact_mult_ramps_and_caps():
     on_not_chasing.rrr_manager_enabled = True
     on_not_chasing.second_batting_team = on_not_chasing.home
     assert mgr.rrr_contact_mult(on_not_chasing) == 1.0
+
+
+# --- first-batting side: pace toward par ------------------------------------
+
+def test_first_team_paces_against_par():
+    # par default 12, 0 runs in 24 outs → need 12 in 3 outs → RRR-to-par/3O 12.
+    st = _first_innings_state(runs=0, outs=24)   # uses cfg.RRR_PAR_SCORE
+    st.rrr_manager_enabled = True
+    assert st.par_score is None
+    assert mgr._pace_rrr(st) == pytest.approx((cfg.RRR_PAR_SCORE) / 3 * 3)
+    # Behind par late → aggressive + contact lift, but NEVER conceding.
+    assert mgr.rrr_aggressive(st) is True
+    assert mgr.rrr_conceding(st) is False
+    assert mgr.rrr_contact_mult(st) == pytest.approx(cfg.RRR_CONTACT_LIFT_MAX)
+
+
+def test_first_team_on_pace_is_neutral():
+    # Early, roughly on pace for par → no aggression, identity contact.
+    st = _first_innings_state(runs=4, outs=6)    # (12-4)/21*3 ≈ 1.14 < AGGRO
+    st.rrr_manager_enabled = True
+    assert mgr.rrr_aggressive(st) is False
+    assert mgr.rrr_contact_mult(st) == 1.0
+
+
+def test_first_team_above_par_relaxes():
+    # Already past par → required rate 0 → neither aggressive nor conceding.
+    st = _first_innings_state(runs=20, outs=10)  # par 12 already cleared
+    st.rrr_manager_enabled = True
+    assert mgr._pace_rrr(st) == 0.0
+    assert mgr.rrr_aggressive(st) is False
+    assert mgr.rrr_conceding(st) is False
+
+
+def test_first_team_never_concedes_unlike_chaser():
+    # Same brutal RRR/3O (need 12 in 1 out → 36): a CHASER concedes, the
+    # first team keeps pushing (no upper bound on its aggression).
+    first = _first_innings_state(runs=0, outs=26)
+    first.rrr_manager_enabled = True
+    assert mgr.rrr_conceding(first) is False
+    assert mgr.rrr_aggressive(first) is True
+
+    chaser = _chase_state(target_score=11, runs=0, outs=26)  # need 12 in 1 out
+    chaser.rrr_manager_enabled = True
+    assert mgr.rrr_conceding(chaser) is True
+    assert mgr.rrr_aggressive(chaser) is False
+
+
+def test_first_team_par_override_and_flag_off():
+    st = _first_innings_state(runs=0, outs=24, par=30)  # steeper par
+    st.rrr_manager_enabled = True
+    assert mgr._pace_rrr(st) == pytest.approx(30 / 3 * 3)   # (30-0)/3*3 = 30
+    st.rrr_manager_enabled = False
+    assert mgr._pace_rrr(st) is None
+    assert mgr.rrr_contact_mult(st) == 1.0
 
 
 # --- desperation-rally fold-in ----------------------------------------------
