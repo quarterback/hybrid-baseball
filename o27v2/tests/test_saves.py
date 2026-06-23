@@ -128,3 +128,40 @@ def test_env_override_bypasses_registry(monkeypatch):
         monkeypatch.delenv("O27V2_DB_PATH", raising=False)
         importlib.reload(db)
         importlib.reload(saves)
+
+
+def test_prune_orphans_removes_unregistered_db_files(env):
+    db, saves = env
+    sid = saves.new_save("Alpha", "30teams", 42)
+    _seed_minimal(db)                                  # registered, active
+    # Two leftover files: one looks like a save but isn't in the registry,
+    # one is unrelated and must be left alone.
+    sdir = saves.saves_dir()
+    orphan = os.path.join(sdir, "save_deadbeef0001.db")
+    with open(orphan, "w") as fh:
+        fh.write("stale")
+    with open(os.path.join(sdir, "save_deadbeef0001.db-wal"), "w") as fh:
+        fh.write("wal")
+    unrelated = os.path.join(sdir, "notes.txt")
+    with open(unrelated, "w") as fh:
+        fh.write("keep me")
+
+    removed = saves.prune_orphans()
+
+    assert removed == ["save_deadbeef0001.db"]
+    assert not os.path.exists(orphan)
+    assert not os.path.exists(orphan + "-wal")         # sidecar swept too
+    assert os.path.exists(saves.db_path_for(sid))      # the real save is kept
+    assert os.path.exists(unrelated)                   # non-save file untouched
+
+
+def test_prune_orphans_noops_with_empty_registry(env):
+    db, saves = env
+    # No registered saves yet — never sweep (a single-DB deployment's files
+    # must not be nuked just because the registry is empty).
+    sdir = saves.saves_dir()
+    stray = os.path.join(sdir, "save_deadbeef0002.db")
+    with open(stray, "w") as fh:
+        fh.write("x")
+    assert saves.prune_orphans() == []
+    assert os.path.exists(stray)

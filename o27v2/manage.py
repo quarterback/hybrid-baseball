@@ -49,6 +49,7 @@ def _parse_config_flag(args: list[str]) -> tuple[str, list[str]]:
 
 def cmd_initdb(config_id: str = "30teams"):
     print(f"Initialising database (config: {config_id})…")
+    _prune_orphan_saves()
     db.init_db()
     print("  Tables created.")
     seed_league(config_id=config_id)
@@ -62,9 +63,24 @@ def cmd_initdb(config_id: str = "30teams"):
     print("Done.")
 
 
+def _prune_orphan_saves():
+    """Sweep save_*.db files not referenced by the registry, so a stale
+    leftover can't be picked up by accident and serve old data."""
+    try:
+        from o27v2 import saves
+        removed = saves.prune_orphans()
+    except Exception as e:  # pragma: no cover - never let cleanup block init
+        print(f"  (orphan-save sweep skipped: {e})")
+        return
+    if removed:
+        print(f"  Removed {len(removed)} orphaned save file(s): "
+              + ", ".join(sorted(removed)))
+
+
 def cmd_resetdb(config_id: str = "30teams"):
     cfg = get_league_configs()[config_id]
     print(f"Resetting database (config: {config_id}, {cfg['team_count']} teams)…")
+    _prune_orphan_saves()
     db.drop_all()
     db.init_db()
     print("  Tables recreated.")
