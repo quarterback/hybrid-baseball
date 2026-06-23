@@ -5142,6 +5142,26 @@ def stats_browse():
             tuple(params),
         )
         _aggregate_batter_rows(batters, baselines=baselines)
+        stat_team_ids = None
+        if team_filter_id is not None:
+            stat_team_ids = [team_filter_id]
+        elif sel_lg or sel_div != "all":
+            stat_team_ids = [
+                int(t["id"]) for t in teams_list
+                if (not sel_lg or t["league"] == sel_lg)
+                and (sel_div == "all" or t["division"] == sel_div)
+            ]
+        from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
+        pai_by_player = build_pressure_impact(min_pa=1, team_ids=stat_team_ids)["by_player"]
+        hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=stat_team_ids)["by_player"]
+        for b in batters:
+            pai = pai_by_player.get(b.get("player_id"), {})
+            hdo = hdo_by_player.get(b.get("player_id"), {})
+            b["pai"] = pai.get("pai")
+            b["pai_per_pa"] = pai.get("pai_per_pa")
+            b["trr_plus"] = pai.get("trr_plus")
+            b["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
+            b["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
 
     elif side == "pit":
         where_clauses = ["ps.outs_recorded > 0"]
@@ -5221,6 +5241,8 @@ def stats_browse():
             p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
             xo = xo_by_player.get(p.get("player_id"), {})
             do = do_by_player.get(p.get("player_id"), {})
+            p["pure_xouts"] = xo.get("pure_xouts")
+            p["pure_xouts_per_27"] = xo.get("pure_xouts_per_27")
             p["xouts"] = xo.get("xouts")
             p["xouts_per_27"] = xo.get("xouts_per_27")
             p["outs_minus_xouts"] = xo.get("outs_minus_xouts")
@@ -5537,6 +5559,21 @@ def leaders():
     )
     baselines = _league_baselines(league=selected_league)
     _aggregate_batter_rows(batting, baselines=baselines)
+    from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
+    _leader_team_ids = _league_team_ids(selected_league)
+    pai_by_player = build_pressure_impact(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+    hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+    for row in batting:
+        pid = row.get("player_id")
+        pai = pai_by_player.get(pid, {})
+        hdo = hdo_by_player.get(pid, {})
+        row["pai"] = pai.get("pai")
+        row["pai_per_pa"] = pai.get("pai_per_pa")
+        row["trr_plus"] = pai.get("trr_plus")
+        row["avg_pressure"] = pai.get("avg_pressure")
+        row["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
+        row["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
+        row["dead_outs_bat"] = hdo.get("dead_outs_bat")
     # Per-base advancement conversion %, computed post-aggregate so the
     # leaderboard template can render them without the Jinja2 having to
     # do division. Returns None when no opportunity (don't display 0%).
@@ -5617,6 +5654,8 @@ def leaders():
         p["os_pct"] = (outs / (27.0 * p["g"])) if p["g"] else 0.0
         xo = xo_by_player.get(p.get("player_id"), {})
         do = do_by_player.get(p.get("player_id"), {})
+        p["pure_xouts"] = xo.get("pure_xouts")
+        p["pure_xouts_per_27"] = xo.get("pure_xouts_per_27")
         p["xouts"] = xo.get("xouts")
         p["xouts_per_27"] = xo.get("xouts_per_27")
         p["outs_minus_xouts"] = xo.get("outs_minus_xouts")
@@ -7138,6 +7177,9 @@ def _league_distribution(rows: list[dict], key: str) -> dict:
 # DRIVES outcomes, so these contact-quality metrics — and the xwOBA−wOBA gap —
 # are real signal rather than an echo of the categorical roll.
 _O27I_BATTER_METRICS = [
+    ("pai",       "PAI",            "+0.2f", False),
+    ("trr_plus",  "TRR+",           "0.0f", False),
+    ("dead_out_avoid_pct", "DOA%",  "pct",  False),
     ("xwoba",     "xwOBA",          "0.3f", False),
     ("avg_ev",    "Avg Exit Velo",  "ev",   False),
     ("max_ev",    "Max Exit Velo",  "ev",   False),
@@ -7209,9 +7251,11 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
     rate_by = {r["player_id"]: r for r in rate}
     # Physics-native xwOBA: expected value per (EV, LA) bin. Meaningful now that
     # the trajectory drives the outcome (vs the weak/med/hard quality version).
-    from o27v2.analytics import build_xwoba_ev_table
+    from o27v2.analytics import build_xwoba_ev_table, build_pressure_impact, build_hitter_dead_outs_table
     xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
     xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
+    pai_by = build_pressure_impact(min_pa=1, team_ids=team_ids)["by_player"]
+    hdo_by = build_hitter_dead_outs_table(min_pa=1, team_ids=team_ids)["by_player"]
 
     rows = []
     for e in ev:
@@ -7221,6 +7265,8 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
         rt = rate_by.get(pid, {})
         pa = rt.get("pa") or 0
         xw = xwoba_by.get(pid, {})
+        pai = pai_by.get(pid, {})
+        hdo = hdo_by.get(pid, {})
         rows.append({
             "player_id": pid,
             "bip":       e["bip"],
@@ -7237,6 +7283,11 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
                           if (rt.get("risp_pa") or 0) else None),
             "woba":      xw.get("woba"),
             "xwoba":     xw.get("xwoba"),
+            "pai":       pai.get("pai"),
+            "pai_per_pa": pai.get("pai_per_pa"),
+            "trr_plus":  pai.get("trr_plus"),
+            "dead_out_avoid_pct": hdo.get("dead_out_avoid_pct"),
+            "dead_out_pa_pct_bat": hdo.get("dead_out_pa_pct_bat"),
         })
     # Attach current name / team for display (leaderboards, panels).
     if rows:
@@ -7317,6 +7368,8 @@ def _o27i_pitcher_rows(team_ids, min_bip: int) -> list[dict]:
             "bip":            e["bip"],
             "xwoba_against":  (xwa.get(pid) or {}).get("xwoba_against"),
             "woba_against":   (xwa.get(pid) or {}).get("woba_against"),
+            "pure_xouts":     (xo.get(pid) or {}).get("pure_xouts"),
+            "pure_xouts_per_27": (xo.get(pid) or {}).get("pure_xouts_per_27"),
             "xouts":          (xo.get(pid) or {}).get("xouts"),
             "xouts_per_27":   (xo.get(pid) or {}).get("xouts_per_27"),
             "outs_minus_xouts": (xo.get(pid) or {}).get("outs_minus_xouts"),
@@ -7434,6 +7487,8 @@ def player_o27i(player_id: int):
         xwoba=(me_bat or {}).get("xwoba"),
         woba_against=(me_pit or {}).get("woba_against"),
         xwoba_against=(me_pit or {}).get("xwoba_against"),
+        pure_xouts=(me_pit or {}).get("pure_xouts"),
+        pure_xouts_per_27=(me_pit or {}).get("pure_xouts_per_27"),
         xouts=(me_pit or {}).get("xouts"),
         xouts_per_27=(me_pit or {}).get("xouts_per_27"),
         outs_minus_xouts=(me_pit or {}).get("outs_minus_xouts"),

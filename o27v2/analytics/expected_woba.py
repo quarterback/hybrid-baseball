@@ -502,7 +502,8 @@ def build_expected_outs_table(min_bf: int = 1, team_ids=None) -> dict:
             continue
         automatic_outs = (r["k"] or 0) + (r["fo"] or 0)
         defense_support_outs = pp_saved_outs.get(pid, 0)
-        xouts = automatic_outs + bip_xouts.get(pid, 0.0) + defense_support_outs
+        pure_xouts = automatic_outs + bip_xouts.get(pid, 0.0)
+        xouts = pure_xouts + defense_support_outs
         actual_outs = r["outs"] or 0
         row = {
             "player_id": pid,
@@ -510,6 +511,8 @@ def build_expected_outs_table(min_bf: int = 1, team_ids=None) -> dict:
             "team_abbrev": r["team_abbrev"] or "",
             "bf": bf,
             "outs": actual_outs,
+            "pure_xouts": round(pure_xouts, 1),
+            "pure_xouts_per_27": round(27 * pure_xouts / bf, 2),
             "xouts": round(xouts, 1),
             "xouts_per_27": round(27 * xouts / bf, 2),
             "outs_minus_xouts": round(actual_outs - xouts, 1),
@@ -601,4 +604,73 @@ def build_dead_outs_table(min_bf: int = 1, team_ids=None) -> dict:
         if bf >= min_bf:
             leaders.append(row)
     leaders.sort(key=lambda x: -(x["dead_out_pct"] or 0))
+    return {"leaders": leaders, "by_player": by_player}
+
+
+def build_hitter_dead_outs_table(min_pa: int = 1, team_ids=None) -> dict:
+    """Per-hitter dead-out avoidance.
+
+    Mirrors pitcher DO% from the batting perspective. A two-out DP is two dead
+    outs in `dead_outs`, while `dead_out_pas` counts the PA once.
+    """
+    team_filter = _team_in(team_ids, "team_id")
+    events = db.fetchall(
+        f"""SELECT batter_id AS player_id, hit_type, runs_scored,
+                  outs_before, outs_after, bases_before, bases_after
+            FROM game_pa_log
+            WHERE phase = 0 AND batter_id IS NOT NULL{team_filter}"""
+    )
+    bip_dead_outs: dict[int, int] = defaultdict(int)
+    bip_dead_pas: dict[int, int] = defaultdict(int)
+    for e in events:
+        ht = e["hit_type"]
+        if ht not in _DEAD_OUT_HIT_TYPES:
+            continue
+        if e["outs_before"] is None or e["outs_after"] is None:
+            continue
+        out_delta = max(0, int(e["outs_after"] or 0) - int(e["outs_before"] or 0))
+        if out_delta <= 0 or (e["runs_scored"] or 0) > 0:
+            continue
+        if ht not in ("double_play", "triple_play") and _has_runner_advancement(
+            e["bases_before"], e["bases_after"], e["runs_scored"]
+        ):
+            continue
+        pid = e["player_id"]
+        bip_dead_outs[pid] += out_delta
+        bip_dead_pas[pid] += 1
+
+    bat = db.fetchall(
+        f"""SELECT b.player_id, p.name AS player_name, t.abbrev AS team_abbrev,
+                  SUM(b.pa) AS pa, SUM(b.k) AS k, COALESCE(SUM(b.fo), 0) AS fo
+           FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0) = 0) b
+           JOIN players p ON p.id = b.player_id
+           LEFT JOIN teams t ON t.id = b.team_id
+           WHERE b.phase = 0{_team_in(team_ids, "b.team_id")}
+           GROUP BY b.player_id"""
+    )
+    leaders = []
+    by_player = {}
+    for r in bat:
+        pid = r["player_id"]
+        pa = r["pa"] or 0
+        if pa <= 0:
+            continue
+        automatic_dead = (r["k"] or 0) + (r["fo"] or 0)
+        dead_outs = automatic_dead + bip_dead_outs.get(pid, 0)
+        dead_pas = automatic_dead + bip_dead_pas.get(pid, 0)
+        dead_pa_pct = round(100 * dead_pas / pa, 1) if pa else None
+        row = {
+            "player_id": pid,
+            "player_name": r["player_name"],
+            "team_abbrev": r["team_abbrev"] or "",
+            "pa": pa,
+            "dead_outs_bat": dead_outs,
+            "dead_out_pas_bat": dead_pas,
+            "dead_out_pa_pct_bat": dead_pa_pct,
+            "dead_out_avoid_pct": round(100 - dead_pa_pct, 1) if dead_pa_pct is not None else None,
+        }
+        by_player[pid] = row
+        if pa >= min_pa:
+            leaders.append(row)
+    leaders.sort(key=lambda x: -(x["dead_out_avoid_pct"] or 0))
     return {"leaders": leaders, "by_player": by_player}

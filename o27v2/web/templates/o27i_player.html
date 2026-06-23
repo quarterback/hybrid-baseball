@@ -170,6 +170,9 @@
       <div>
         <div class="text-secondary small text-uppercase">xO/27</div>
         <div class="fs-4 fw-bold">{{ '%.2f'|format(xouts_per_27) }}</div>
+        {% if pure_xouts_per_27 is not none and defense_support_xouts is not none %}
+        <div class="text-secondary small">pure {{ '%.2f'|format(pure_xouts_per_27) }} · support +{{ defense_support_xouts }}</div>
+        {% endif %}
       </div>
       {% endif %}
       {% if outs_minus_xouts is not none %}

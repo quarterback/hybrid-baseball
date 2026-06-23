@@ -17,10 +17,12 @@ have an equivalent.
 **Goal:** identify hitters whose plate appearances beat the expectation of the
 live chase, not just hitters with strong raw slash lines.
 
+**Build status:** PAI is now implemented as chase-pressure-weighted run value and surfaced as PAI, PAI/PA, and TRR+ on batting leaderboards and O27 Index hitter surfaces.
+
 **Recommended definition:**
 
 ```text
-PAI = actual_run_value - expected_run_value_for_state
+PAI = run_value * live_chase_pressure_multiplier
 ```
 
 Where `expected_run_value_for_state` is keyed by:
@@ -51,7 +53,7 @@ means the PA lagged behind the target even if the raw event looked positive.
 
 ## 2. Dead Out Percentage (DO%)
 
-**Build status:** the first DO% pass is implemented in `build_dead_outs_table` and surfaced on O27 Index pitcher pages. Strikeouts and foul-outs are automatic dead outs. Contact dead outs require no run, no runner advancement, and no batter reach. Per design, a two-out double play contributes **two** dead outs and one dead-out PA.
+**Build status:** the first DO% pass is implemented in `build_dead_outs_table` and surfaced on O27 Index pitcher pages. The hitter mirror is implemented as Dead Out Avoidance (DOA%). Strikeouts and foul-outs are automatic dead outs. Contact dead outs require no run, no runner advancement, and no batter reach. Per design, a two-out double play contributes **two** dead outs and one dead-out PA.
 
 
 **Goal:** credit pitchers for suffocating the opponent’s out envelope with outs
@@ -93,7 +95,7 @@ DO-PA%         = dead_out_pas / batters_faced
 
 ## 3. Expected Outs (xO)
 
-**Build status:** the first xO pass is implemented in `build_expected_outs_table` and surfaced on O27 Index pitcher pages as `xO/27` plus `O − xO`. It uses the same EV/LA binning strategy as physics-native xwOBA against, treats strikeouts and foul-outs as automatic expected outs, and now includes power-play defensive support by adding nickel-converted hits saved behind the pitcher.
+**Build status:** the first xO pass is implemented in `build_expected_outs_table` and surfaced on O27 Index pitcher pages as `xO/27` plus `O − xO`; the player card also splits pure xO from power-play support. It uses the same EV/LA binning strategy as physics-native xwOBA against, treats strikeouts and foul-outs as automatic expected outs, and now includes power-play defensive support by adding nickel-converted hits saved behind the pitcher.
 
 
 **Goal:** isolate how many outs a pitcher should have generated from contact

@@ -131,6 +131,17 @@
   {{ card('FO%', 'fo_pct', '%.3f', true, batting, tooltip='Foul-outs per PA — how often a hitter fouls himself out (O27)') }}
 </div>
 
+<h4>Batting · Pressure &amp; Dead-Out Avoidance</h4>
+<div class="text-secondary small mb-2" style="padding:0 0.25rem">
+  PAI is chase-pressure-weighted run impact. TRR+ indexes PAI per PA to league average (100 = average). DOA% is dead-out avoidance; higher means the hitter avoids empty, envelope-burning outs.
+</div>
+<div class="row g-3 mb-3">
+  {{ card('PAI', 'pai', '%+.2f', true, batting, tooltip='Pressure-Adjusted Impact — run value weighted by live chase pressure.') }}
+  {{ card('PAI/PA', 'pai_per_pa', '%+.3f', true, batting, tooltip='Pressure-Adjusted Impact per plate appearance.') }}
+  {{ card('TRR+', 'trr_plus', '%d', true, batting, tooltip='True Run Rate Plus — PAI/PA indexed to league average, 100 = average.') }}
+  {{ card('DOA%', 'dead_out_avoid_pct', '%.1f%%', true, batting, tooltip='Dead Out Avoidance — 100 minus dead-out PA rate. Higher = fewer empty outs.') }}
+</div>
+
 <h4>Batting · O27-Native &amp; Value</h4>
 <div class="row g-3 mb-3">
   {{ card('2C', 'stays', '%d', true,  batting, tooltip='Second-Chance ABs — chose 2C over run on contact (O27)') }}

@@ -16,7 +16,7 @@ from o27v2.analytics.run_expectancy import (
     build_re_by_outs_remaining,
     bases_label,
 )
-from o27v2.analytics.expected_woba import build_xwoba_table, build_xwoba_ev_table, build_xwoba_against_table, build_expected_outs_table, build_dead_outs_table
+from o27v2.analytics.expected_woba import build_xwoba_table, build_xwoba_ev_table, build_xwoba_against_table, build_expected_outs_table, build_dead_outs_table, build_hitter_dead_outs_table
 from o27v2.analytics.expanded import (
     build_expected_stats, build_pitch_arsenal, build_baserunning_value,
     build_tto_penalty, build_second_chance_value, build_fielding_value,
@@ -25,6 +25,7 @@ from o27v2.analytics.expanded import (
 from o27v2.analytics.pythag import refit_pythag_exponent
 from o27v2.analytics.base_runs import build_base_runs_table
 from o27v2.analytics.bunting import build_bunting_rates, build_bunt_run_value
+from o27v2.analytics.pressure import build_pressure_impact
 
 __all__ = [
     "build_bunting_rates",
@@ -37,6 +38,7 @@ __all__ = [
     "build_xwoba_against_table",
     "build_expected_outs_table",
     "build_dead_outs_table",
+    "build_hitter_dead_outs_table",
     "build_win_probability",
     "build_fielding_value",
     "build_second_chance_value",
@@ -46,4 +48,5 @@ __all__ = [
     "build_expected_stats",
     "refit_pythag_exponent",
     "build_base_runs_table",
+    "build_pressure_impact",
 ]
