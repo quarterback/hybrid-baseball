@@ -242,7 +242,12 @@ Per-arc counters: `ER_ARC{1,2,3}`, `K_ARC{1,2,3}`, `FO_ARC{1,2,3}`, `BF_ARC{1,2,
 | Target Runs | TARGET_R | Home team's target after the away half ends | set on inning end | `o27/stats/team.py:19` |
 | Required Run Rate | REQ_RR | R/OUT needed from current state to win | `(target − scored) / outs_remaining` | `o27/stats/team.py:29-40` |
 | Required Run Rate (Full) | REQ_RR_FULL | Required efficiency over the full inning | `target / 27` | `o27/stats/team.py:42-47` |
+| Required Run Rate /3 Outs | RRR/3O | Cricket-over analog: runs per 3 outs a side still needs (~1.3 league pace). Chaser paces vs the real target; the first-batting side paces vs **par** (`RRR_PAR_SCORE`, ≈ league-avg total). Drives the manager AI (`RRR_MANAGER_ENABLED`) for BOTH sides: best-bat deployment + swing-for-fences when behind pace; only a *chaser* concedes (preserve premium bench when the chase is dead). | chaser `(target − scored)/outs_left × 3`; first team `(par − scored)/outs_left × 3` | `o27/stats/team.py:required_run_rate_3o`; engine `o27/engine/state.py:chase_rrr_3o`, `o27/engine/manager.py:_pace_rrr`/`rrr_*` |
 | Net Run Rate | NRR | Cricket-style multi-game tiebreaker | `(R_for / OUT_faced) − (R_against / OUT_bowled)` | `o27/stats/team.py:49-57` |
+| Pressure-Adjusted Impact | PAI / TRR+ | Batter run value weighted by live chase pressure; TRR+ indexes PAI/PA to 100=avg. Pressure weight reuses the canonical RRR/3O. | `run_value × (1 + min(3, RRR/3O ÷ 6))` | `o27v2/analytics/pressure.py:build_pressure_impact` |
+| Chase BA | Chase BA | Hit rate on balls in play while trailing (the chase) — a contact average (no BB/K in the PA log), the legible companion to PAI. | `chase_hits / chase_pa` (trailing PAs) | `o27v2/analytics/pressure.py:build_chase_split_table` |
+| Expected Outs | xO / O−xO | Out-probability sibling of xwOBA: K/FO automatic + EV/LA out-rate per BIP (+power-play hits saved); O−xO = actual − expected. | `Σ P(out \| event)` | `o27v2/analytics/expected_woba.py:build_expected_outs_table` |
+| Dead Out % | DO% / DOA% | Share of outs that burn the envelope with no run/advance/reach (pitcher DO%, hitter avoidance DOA%); a two-out DP = two dead outs. | `dead_outs / outs_recorded` | `o27v2/analytics/expected_woba.py:build_dead_outs_table` |
 | Wins | W | Season wins | counted | `o27v2/db.py:33` |
 | Losses | L | Season losses | counted | `o27v2/db.py:34` |
 | Win % | W% | Winning percentage | `W / (W + L)` | `o27v2/web/app.py:303-307` |

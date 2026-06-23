@@ -25,7 +25,7 @@ from o27v2.analytics.expanded import (
 from o27v2.analytics.pythag import refit_pythag_exponent
 from o27v2.analytics.base_runs import build_base_runs_table
 from o27v2.analytics.bunting import build_bunting_rates, build_bunt_run_value
-from o27v2.analytics.pressure import build_pressure_impact
+from o27v2.analytics.pressure import build_pressure_impact, build_chase_split_table
 
 __all__ = [
     "build_bunting_rates",
@@ -49,4 +49,5 @@ __all__ = [
     "refit_pythag_exponent",
     "build_base_runs_table",
     "build_pressure_impact",
+    "build_chase_split_table",
 ]

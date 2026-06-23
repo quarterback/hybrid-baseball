@@ -259,6 +259,7 @@
       <th>Batter</th>
       <th>Runner (from)</th>
       <th class="num">Score</th>
+      <th class="num" title="Required Run Rate per 3 outs — runs per 3 outs the chasing (second-batting) side still needed to win">RRR/3O</th>
     </tr></thead>
     <tbody>
     {% for ev in scoring_events %}
@@ -269,8 +270,36 @@
         <td><a href="/player/{{ ev.runner_id }}">{{ ev.runner_name }}</a>
             <span class="text-muted small">({{ _BASE_LABEL.get(ev.runner_from_base, '?') }})</span></td>
         <td class="num">{{ ev.visitors_score }}–{{ ev.home_score }}</td>
+        <td class="num">{% if ev.rrr_3o is not none %}{{ "%.2f"|format(ev.rrr_3o) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
       </tr>
     {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+{# ───── Chase / Pressure Curve (cricket-style RRR/3O) ─────
+   The runs-per-3-outs the second-batting side needed to win, sampled at the
+   27/18/9-outs-remaining checkpoints, plus the starting "mountain" and the
+   peak pressure faced. Shown only for games with a reconstructable chase.
+   ────────────────────────────────────────────────────────────── #}
+{% if rrr_summary and (rrr_summary.starting is not none or rrr_summary.peak is not none) %}
+<div class="dense mb-3">
+  <div class="panel-title">Chase — Pressure Curve (RRR/3O)</div>
+  <p class="text-muted small mb-2">Runs per 3 outs the second-batting side needed to win
+     (cricket-over analog; league pace is ~1.3 per 3 outs).</p>
+  <div class="table-responsive">
+  <table class="table table-sm dense-table mb-0" style="max-width:28rem;">
+    <tbody>
+      <tr><td>Starting</td>
+          <td class="num">{% if rrr_summary.starting is not none %}{{ "%.2f"|format(rrr_summary.starting) }}{% else %}—{% endif %}</td></tr>
+      <tr><td>Peak faced</td>
+          <td class="num">{% if rrr_summary.peak is not none %}{{ "%.2f"|format(rrr_summary.peak) }}{% else %}—{% endif %}</td></tr>
+      {% for outs_remaining, rrr in rrr_summary.checkpoints %}
+      <tr><td>{{ outs_remaining }} outs left</td>
+          <td class="num">{% if rrr is not none %}{{ "%.2f"|format(rrr) }}{% else %}—{% endif %}</td></tr>
+      {% endfor %}
     </tbody>
   </table>
   </div>

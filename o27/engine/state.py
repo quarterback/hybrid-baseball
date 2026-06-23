@@ -746,6 +746,11 @@ class GameState:
     # When None, the engine falls back to cfg.POWER_PLAY_ENABLED (the league
     # toggle). Tests set it explicitly to force the rule on/off per game.
     power_play_enabled: Optional[bool] = None
+    # --- RRR manager AI (optional rule) ---
+    # When None, the engine falls back to cfg.RRR_MANAGER_ENABLED. Lets the
+    # chasing-side manager act on the required run rate (RRR/3O). Tests set it
+    # explicitly to force the behavior on/off per game.
+    rrr_manager_enabled: Optional[bool] = None
     # Active nickel window. `open_out` is state.outs at the moment of
     # deployment (the window covers the next POWER_PLAY_WINDOW_OUTS outs);
     # cleared at every half start in run_half so it never carries over.
@@ -786,6 +791,10 @@ class GameState:
 
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
+    # Par score for the side batting first (cricket-style pacing toward a
+    # competitive total before any opponent target exists). None → the engine
+    # falls back to cfg.RRR_PAR_SCORE; sim.py may stamp a park/era-adjusted par.
+    par_score: Optional[int] = None
 
     # --- Per-PA leadership flare ---
     # When the per-PA flare fires for the batter and/or pitcher, the
@@ -872,6 +881,23 @@ class GameState:
         if self.half in ("top", "super_top"):
             return self.home
         return self.visitors
+
+    def chase_rrr_3o(self) -> Optional[float]:
+        """Required Run Rate per 3 outs for the side currently batting — but
+        only when it's the chasing (second-batting) team with a known target.
+
+        Cricket's RRR is a *chase* metric, so this returns None for the first
+        innings, the target-setting side, and any half before halftime sets
+        ``target_score``. Every manager lever that reads this therefore
+        auto-no-ops outside a live chase. Uses the regulation 27-out envelope
+        (the manager levers that consume it already exclude super-innings)."""
+        if self.target_score is None:
+            return None
+        if self.second_batting_team is not self.batting_team:
+            return None
+        from o27.stats.team import required_run_rate_3o
+        runs = self.score.get(self.batting_team.team_id, 0)
+        return required_run_rate_3o(self.target_score + 1, runs, self.outs)
 
     @property
     def current_batter(self) -> Player:

@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from o27.stats.team import required_run_rate_3o
+
 
 # --------------------------------------------------------------------------
 # Column widths — change here to retune the whole layout consistently.
@@ -722,6 +724,95 @@ def _ir_display(r: dict) -> str:
     return f"{inh}-{r.get('ir_scored', 0) or 0}"
 
 
+def compute_chase_rrr(rows, first_team_final) -> Optional[dict]:
+    """Reconstruct the second-batting team's RRR/3O "pressure curve" from its
+    regulation play-by-play.
+
+    ``rows`` are the chaser's phase-0 ``game_pa_log`` rows ordered by ``ab_seq``,
+    each a dict carrying ``outs_after`` and ``score_diff_after`` (batting_score −
+    fielding_score). During a regulation chase the fielding team has already
+    finished batting, so its score is fixed at ``first_team_final`` and the
+    chaser's running total is ``score_diff_after + first_team_final``.
+
+    Returns ``{starting, peak, checkpoints, series}`` or ``None`` when the data
+    is absent or unstamped (legacy games), so callers can simply skip the panel.
+    The chasing side is whoever bats second — could be home or away — so this is
+    keyed off the PA log, never the half label.
+    """
+    if first_team_final is None or not rows:
+        return None
+    target_runs = first_team_final + 1
+
+    # (outs_after, chaser_runs_after) points; drop unstamped (NULL) legacy rows.
+    points: list[tuple[int, int]] = []
+    for r in rows:
+        oa = r.get("outs_after")
+        sd = r.get("score_diff_after")
+        if oa is None or sd is None:
+            continue
+        points.append((int(oa), int(sd) + first_team_final))
+    if not points:
+        return None
+
+    starting = required_run_rate_3o(target_runs, 0, 0)
+
+    series: list[tuple[int, float]] = []
+    peak = starting
+    for outs_after, runs_after in points:
+        rrr = required_run_rate_3o(target_runs, runs_after, outs_after)
+        if rrr is None:
+            continue
+        series.append((outs_after, rrr))
+        if peak is None or rrr > peak:
+            peak = rrr
+
+    def _runs_at(mark: int) -> int:
+        """Chaser runs banked once ``mark`` outs had been recorded."""
+        banked = [ra for (oa, ra) in points if oa <= mark]
+        return max(banked) if banked else 0
+
+    checkpoints: list[tuple[int, Optional[float]]] = []
+    for outs_remaining in (27, 18, 9):
+        mark = 27 - outs_remaining
+        checkpoints.append(
+            (outs_remaining,
+             required_run_rate_3o(target_runs, _runs_at(mark), mark))
+        )
+
+    return {
+        "starting": starting,
+        "peak": peak,
+        "checkpoints": checkpoints,
+        # PA-log order isn't monotonic in outs (stays / multi-swing ABs), so
+        # sort the curve ascending by outs for any downstream chart.
+        "series": sorted(series, key=lambda p: p[0]),
+    }
+
+
+def _rrr_note(rrr_summary: Optional[dict]) -> str:
+    """Footer block: the chase "Pressure Curve" — Starting and Peak RRR/3O plus
+    the required rate at the 27/18/9-outs-remaining checkpoints. RRR/3O is the
+    runs-per-3-outs the second-batting team needed to win (a cricket-over
+    analog; league average run pace is ~1.3 per 3 outs). Empty when there was
+    no chase data (a tie, or a legacy game without stamped PA log)."""
+    if not rrr_summary:
+        return ""
+    start = rrr_summary.get("starting")
+    peak = rrr_summary.get("peak")
+    if start is None and peak is None:
+        return ""
+    s = f"{start:.2f}" if start is not None else "—"
+    p = f"{peak:.2f}" if peak is not None else "—"
+    lines = [
+        "  Chase (RRR/3O — runs per 3 outs needed to win):",
+        f"    Starting {s}    Peak faced {p}",
+    ]
+    for outs_remaining, rrr in (rrr_summary.get("checkpoints") or []):
+        val = f"{rrr:.2f}" if rrr is not None else "—"
+        lines.append(f"    {outs_remaining:>2} outs left: {val}")
+    return "\n".join(lines)
+
+
 def _walkback_note(away_pitching, home_pitching) -> str:
     """Footnote naming Walk-Back runs allowed (the post-HR rule-placed runner
     driven home), AP style: 'Walk-Back runs: off Alvarez 2, off Rex 1.'"""
@@ -983,6 +1074,7 @@ def render_box_score(
     season_wl: Optional[dict] = None,
     finisher_pid: Optional[int] = None,
     finisher_to: int = 0,
+    rrr_summary: Optional[dict] = None,
 ) -> str:
     rule = "=" * RULE_WIDTH
 
@@ -994,6 +1086,9 @@ def render_box_score(
     wb = _walkback_note(away_pitching, home_pitching)
     if wb:
         notes = (notes + "\n" + wb) if notes else wb
+    rrr = _rrr_note(rrr_summary)
+    if rrr:
+        notes = (notes + "\n" + rrr) if notes else rrr
 
     sections = [
         rule,
