@@ -179,6 +179,31 @@ already exact (cumulative `ip_outs`). Owner deferred a broader offense/defense
 box redesign; this is the targeted slice that makes the field-only model
 legible.
 
+## 5f. Follow-up (2026-06-23): blowout management
+
+Box scores showed the *winning* team in laughers (51-4, 35-10, 24-6) riding its
+starter to a 120-130-pitch complete game and batting the same nine 6-8 times —
+nobody rests when up 40. Two context-dependent "rest the starters" paths,
+gated so they ONLY fire when the lead is decisive (silent in close games):
+
+- **Pitcher pull** (`should_change_pitcher`): if the pitcher's team leads by
+  `BLOWOUT_PULL_LEAD` (10) once `BLOWOUT_PULL_MIN_OUTS` (12) outs are in, pull
+  the STARTER to rest him (first spell only; relievers keep mopping up). In
+  O27's structure this naturally hits the first-batting team defending a big
+  lead in the second half. Needs a bullpen to execute — the engine's 1-arm
+  dummy roster can't, but real rosters (17 pitchers) can.
+- **Position rest** (`should_pinch_hit`): after the leverage path declines, if
+  the batting team leads by `BLOWOUT_REST_LEAD` (10) and the order has turned
+  `BLOWOUT_REST_MIN_CYCLE` (2) times, rotate the best available bench bat in for
+  the regular due up. Low-leverage by design (the "we're up 20, empty the
+  bench" path), self-limiting to bench size.
+
+Tests: `test_blowout_management.py` (6) — pull fires up 12 / stays quiet in a
+tie / not too early; rest fires up 17 / quiet in a close low-leverage spot /
+waits for the order to turn. 159 engine tests pass. Broader "different looks /
+more context-dependent subs" is the standing direction; this is the first
+concrete slice.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match

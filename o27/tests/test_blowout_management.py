@@ -1,0 +1,94 @@
+"""Blowout management: rest the starters once the game is decided.
+
+Nobody rides a starter to a 130-pitch complete game in a laugher, and nobody
+bats the same nine eight times while up 40. These check the two
+context-dependent "rest the regulars" paths:
+  - should_change_pitcher pulls the STARTER when his team is well ahead;
+  - should_pinch_hit rotates a bench bat in for the regular due up when the
+    batting team is well ahead (low-leverage "garbage time" rest).
+Both stay quiet in close games.
+"""
+import random
+
+from o27.engine.state import Team, GameState, Player
+from o27.engine import manager as mgr
+
+_POS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]
+
+
+def _p(pid, name, pitcher=False, pos="", **kw):
+    return Player(player_id=pid, name=name, is_pitcher=pitcher, position=pos, **kw)
+
+
+def _team(tid, name):
+    pre = tid[0].upper()
+    starters = [_p(f"{pre}{i}", f"{name[:3]}-{i}", pos=_POS[i - 1],
+                   contact=0.5, power=0.5, speed=0.5, defense=0.5, skill=0.5)
+                for i in range(1, 9)]
+    sp = _p(f"{pre}SP", f"{name[:3]}-SP", pitcher=True, pos="P",
+            stamina=0.5, pitcher_skill=0.5)
+    bench = [_p(f"{pre}B{b}", f"{name[:3]}-B{b}", pos=_POS[(b - 1) % 8],
+                contact=0.6, power=0.6, speed=0.6, defense=0.6, skill=0.6)
+             for b in range(1, 6)]
+    pen = [_p(f"{pre}P{p}", f"{name[:3]}-P{p}", pitcher=True, pos="P",
+              stamina=0.6, pitcher_skill=0.6) for p in range(1, 5)]
+    roster = starters + [sp] + bench + pen
+    return Team(team_id=tid, name=name, roster=roster, lineup=starters + [sp])
+
+
+def _state():
+    st = GameState(visitors=_team("visitors", "Visitors"),
+                   home=_team("home", "Home"))
+    st.half = "top"                          # visitors bat, home fields
+    st.bases = [None, None, None]
+    st.visitors.lineup_cycle_number = 2
+    st.current_pitcher_id = "HSP"            # home SP on the mound
+    st.pitcher_spell_count = 6               # past the hook's min sample, well
+    st.pitcher_runs_this_spell = 0           # under any fatigue / hook threshold
+    st.pitcher_h_this_spell = 0
+    st.outs = 14
+    return st
+
+
+# --- pitcher pull ----------------------------------------------------------
+
+def test_starter_pulled_when_team_is_well_ahead():
+    st = _state()
+    st.score = {"visitors": 3, "home": 15}   # home (pitching) up 12
+    assert mgr.should_change_pitcher(st) is True
+
+
+def test_starter_not_pulled_in_a_close_game():
+    st = _state()
+    st.score = {"visitors": 3, "home": 3}    # tie — no blowout, no fatigue yet
+    assert mgr.should_change_pitcher(st) is False
+
+
+def test_starter_not_pulled_too_early_even_when_ahead():
+    st = _state()
+    st.score = {"visitors": 0, "home": 12}
+    st.outs = 4                               # before BLOWOUT_PULL_MIN_OUTS
+    assert mgr.should_change_pitcher(st) is False
+
+
+# --- position-player rest --------------------------------------------------
+
+def test_pinch_hit_rests_a_regular_in_a_blowout():
+    st = _state()
+    st.score = {"visitors": 20, "home": 3}    # batting team (visitors) up 17
+    res = mgr.should_pinch_hit(st, rng=random.Random(0))
+    assert res is not None
+    assert res not in st.visitors.lineup       # a bench bat comes in
+
+
+def test_pinch_hit_no_rest_in_a_close_low_leverage_spot():
+    st = _state()
+    st.score = {"visitors": 4, "home": 3}     # close, bases empty, low leverage
+    assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
+
+
+def test_blowout_rest_waits_for_the_order_to_turn():
+    st = _state()
+    st.score = {"visitors": 20, "home": 3}
+    st.visitors.lineup_cycle_number = 1        # only one trip through so far
+    assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None

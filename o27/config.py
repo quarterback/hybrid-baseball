@@ -1016,6 +1016,19 @@ DEFENSIVE_SUB_MIN_OUTS: int    = 3      # never before this many outs
 DEFENSIVE_SUB_LATE_OUT: int    = 16     # the late-game window opens here
 DEFENSIVE_SUB_EARLY_RATE: float = 0.05  # P(allow) when leverage clears pre-window
 
+# ---------------------------------------------------------------------------
+# Blowout management — rest the starters once the game is decided
+# ---------------------------------------------------------------------------
+# Nobody rides a starter to a 130-pitch complete game in a laugher, and nobody
+# bats the same nine 8 times while up 40 — the bench and bullpen come in. These
+# gate "rest the regulars" behavior so it ONLY fires when the lead is decisive
+# (not in close games) and the starters have already banked real work.
+BLOWOUT_PULL_LEAD: int       = 10   # pitcher's team lead to start resting the SP
+BLOWOUT_PULL_MIN_OUTS: int   = 12   # ...and only after this many outs (so a reliever fits)
+BLOWOUT_REST_LEAD: int       = 10   # batting team's lead to start resting position regulars
+BLOWOUT_REST_MIN_CYCLE: int  = 2    # ...and only once the order has turned this many times
+
+
 
 # ---------------------------------------------------------------------------
 # Emergency position-player pitcher (PP-pitching)

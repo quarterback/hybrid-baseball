@@ -972,6 +972,18 @@ def should_change_pitcher(state: GameState) -> bool:
         for rec in state.spell_log
     )
 
+    # Comfortable-lead rest: when the pitcher's team is well ahead, pull the
+    # STARTER to rest him rather than ride a meaningless complete game in a
+    # laugher. Gated so it only fires once the lead is decisive AND he's banked
+    # real work (enough outs that a reliever fits). Relievers in a blowout keep
+    # mopping up — this targets the first spell only.
+    if not in_relief:
+        fld_lead = (state.score.get(state.fielding_team.team_id, 0)
+                    - state.score.get(state.batting_team.team_id, 0))
+        if (fld_lead >= int(getattr(cfg, "BLOWOUT_PULL_LEAD", 10))
+                and state.outs >= int(getattr(cfg, "BLOWOUT_PULL_MIN_OUTS", 12))):
+            return True
+
     stamina = float(getattr(pitcher, "stamina", pitcher.pitcher_skill) or 0.5)
 
     if in_relief:
@@ -1322,9 +1334,20 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
             best_score = s
             best_cand = cand
 
-    if best_cand is None or best_score < threshold:
-        return None
-    return best_cand
+    if best_cand is not None and best_score >= threshold:
+        return best_cand
+
+    # Comfortable-lead rest ("garbage time"): when the batting team is well
+    # ahead and the order has already turned a couple of times, rotate a fresh
+    # bat in for the regular due up so the bench gets run and the starters rest.
+    # Low-leverage by design — this is NOT a leverage upgrade (those returned
+    # above); it's the context-dependent "we're up 20, empty the bench" path.
+    team_lead = (state.score.get(team.team_id, 0)
+                 - state.score.get(state.fielding_team.team_id, 0))
+    if (team_lead >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
+            and team.lineup_cycle_number >= int(getattr(cfg, "BLOWOUT_REST_MIN_CYCLE", 2))):
+        return max(candidates, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
+    return None
 
 
 def defensive_sub(
