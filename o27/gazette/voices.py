@@ -56,7 +56,8 @@ through the lineup. They are "jokers", distinct from ordinary pinch-hitters.
 - Extras: tied games go to ordinary 3-out frames (not 27-out halves) until \
 someone wins. "3-out frame" is correct for extras; "inning" still is not.
 - Flavor a writer may use: every O27 pitcher throws sidearm or submarine; \
-stamina and the workhorse who covers all 27 outs are prized over pure stuff.
+stamina (which buys length before the bullpen takes over — no one covers all \
+27 outs alone; a half is a cascade of ~6 arms) is prized over pure stuff.
 
 HOW TO READ THE JSON:
 - `inflection_points` are ranked by win-probability swing — these are the \

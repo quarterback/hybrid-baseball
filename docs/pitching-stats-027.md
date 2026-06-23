@@ -161,19 +161,11 @@ The mean OUT value across all of a pitcher's appearances in a season.
 
 AOR tells you usage at a glance. It's a simpler signal than OS+ — just "where in the arc does this pitcher typically end his appearance" — but it captures the same workload story in a way that's instantly readable.
 
-### WS% — Workhorse Start Percentage
-
-Percentage of a pitcher's starts that qualify as a "workhorse start": 18+ outs recorded with 6 or fewer earned runs.
-
-**Why this threshold?** 18 outs is two-thirds of a half-inning — the equivalent of a pitcher carrying his team through the first two phases of the arc. 6 ER in a 12.00-run-environment league is the rough equivalent of a 3-ER start in MLB. The combination is the O27 quality-start bar.
-
-**How to read it:**
-- 70%+ : ace
-- 50-69% : reliable mid-rotation starter
-- 30-49% : back-end starter
-- under 30% : not a regular starter
-
-WS% is the O27 equivalent of MLB's Quality Start rate.
+> **Retired: WS% (Workhorse Start %).** O27 no longer rides a starter toward a
+> complete game — a 27-out half is a cascade of ~6 arms, and the deepest starts
+> now top out around 10-11 outs. An 18-out "workhorse start" is effectively
+> unreachable, so the stat was retired rather than left pegged at zero. Use
+> **OS+** and **AOR** for workload, and **GSc / pWAR** for start quality.
 
 ### pWAR — Pitcher Wins Above Replacement
 
@@ -252,7 +244,7 @@ The fastest read on a pitcher across one season:
 
 **Look at K% / BB% / HR%.** The underlying skill profile. Two pitchers with the same wERA can have very different rate profiles.
 
-**Look at WS% and pWAR.** WS% tells you how often he actually delivered a quality start. pWAR rolls everything into total value in wins.
+**Look at pWAR.** Rolls everything into total value in wins.
 
 A pitcher's full story isn't in any one stat. wERA tells you what happened, xFIP tells you what should have, Decay tells you how he holds up, OS+ tells you how much work he absorbs, pWAR tells you what all of that adds up to in wins, and the rate stats tell you what kind of pitcher he is underneath. Read them together.
 
@@ -264,7 +256,7 @@ If you're coming from MLB, the main translation work:
 - **FIP** is replaced by **xFIP**. Same concept, foul-outs added to Ks, constants recalibrated to track league wERA.
 - **WHIP** is dropped. Use **K%** and **BB%** as separate columns instead.
 - **K/9, BB/9, HR/9** are dropped. **K%, BB%, HR%** (per PA) are environment-neutral.
-- **Quality Start (6+ IP, ≤3 ER)** becomes **Workhorse Start (18+ outs, ≤6 ER)**.
+- **Quality Start** has no O27 analogue — starts are short (a half is a cascade of ~6 arms), so start quality is read from **GSc** and **pWAR**, not a quality-start rate.
 - **Innings Pitched** is replaced by **OUT** (game) and total outs recorded (season). The natural unit in O27 is outs, not innings.
 - **WAR** becomes **pWAR**, anchored to wERA instead of FIP or RA9.
 - **Decay** is new. MLB doesn't measure this because pitchers don't pitch long enough in single appearances for arc-degradation to be a stable skill.

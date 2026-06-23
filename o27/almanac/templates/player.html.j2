@@ -280,7 +280,7 @@
   <div class="tablewrap short">
     <table class="stat-table">
       <thead><tr>
-        <th>G</th><th>GS</th><th>WS%</th><th>IP</th><th>BF</th>
+        <th>G</th><th>GS</th><th>IP</th><th>BF</th>
         <th>H</th><th>R</th><th>ER</th><th>UER</th><th>HR</th><th>BB</th><th>K</th><th>FO</th>
         <th>ERA</th><th>wERA</th><th>WHIP</th><th>FIP</th><th>xFIP</th>
         <th>K/9</th><th>BB/9</th><th>HR/9</th>
@@ -297,7 +297,6 @@
         <tr>
           <td>{{ season.g }}</td>
           <td>{{ season.gs }}</td>
-          <td>{{ '%.0f'|format(season.ws_pct * 100) }}%</td>
           <td>{{ season.ip_disp }}</td>
           <td>{{ season.batters_faced }}</td>
           <td>{{ season.hits_allowed }}</td>

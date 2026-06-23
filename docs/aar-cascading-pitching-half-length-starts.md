@@ -88,7 +88,14 @@ covered by the existing `test_pitch_count_fatigue.py` (unchanged, still green).
 - **Cross-game rotation / rest** (`o27v2/rotation.py`). Staffs carry 19+ arms,
   so ~6 pitchers/game is sustainable across a 162-game season without exhausting
   bullpens; I did not touch availability or rest logic.
-- **Stat definitions.** ⚠️ One follow-up: `Workhorse Start %` (WS%, ≥18 outs)
-  is now effectively unreachable and will read ~0 league-wide. It should be
-  rescaled (e.g. a "long start" at ≥12 outs) or retired, but I left the public
-  leaderboard stat alone pending a call on the new threshold.
+## Follow-up done: WS% retired
+
+`Workhorse Start %` (WS%, share of starts with ≥18 outs and ≤6 ER) became
+unreachable under the new model — the deepest starts top out around 10-11 outs,
+so the stat would peg at ~0 league-wide. It was retired rather than rescaled
+(it never carried much signal): removed from the player-page pitching table and
+its aggregator (`o27v2/web/app.py`, `o27v2/web/templates/player.html`), the
+almanac (`o27/almanac/compute.py` + its `test_build` key list), and the canonical
+stat docs (`docs/stats-reference.md`, `docs/pitching-stats-027.md`). Games
+Started (GS), computed in the same place, is kept. Workload now reads from OS+ /
+AOR and start quality from GSc / pWAR.

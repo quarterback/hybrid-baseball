@@ -29,7 +29,6 @@
       <th data-type="text">T</th>
       <th>Age</th>
       <th>G</th><th>GS</th>
-      <th data-heat="hi">WS%</th>
       <th data-heat="hi">IP</th><th data-heat="hi">OUT</th>
       <th data-heat="hi">BF</th>
       <th data-heat="lo">H</th><th data-heat="lo">R</th><th data-heat="lo">ER</th>
@@ -71,7 +70,6 @@
         <td>{{ r.age or '—' }}</td>
         <td>{{ r.g }}</td>
         <td>{{ r.gs }}</td>
-        <td data-val="{{ r.ws_pct }}">{{ '%.0f'|format(r.ws_pct * 100) }}%</td>
         <td data-val="{{ r.ip }}">{{ r.ip_disp }}</td>
         <td>{{ r.outs_recorded }}</td>
         <td>{{ r.batters_faced }}</td>
@@ -159,6 +157,5 @@
   primary metric for an O27 run environment.
   League ERA / WHIP / FIP:
   <b>{{ '%.2f'|format(views.league_totals.era) }} / {{ '%.2f'|format(views.league_totals.whip) }} / {{ '%.2f'|format(views.league_totals.fip) }}</b>.
-  WS% = workhorse start rate (≥18 outs + ≤6 ER on a start).
 </p>
 {% endblock %}

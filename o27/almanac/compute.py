@@ -64,10 +64,6 @@ GSC_BB_COST        = 1.0
 GSC_ER_COST        = 4.0
 GSC_UER_COST       = 2.0
 
-# Workhorse start threshold: >=18 outs AND <=6 ER on a start.
-WORKHORSE_MIN_OUTS = 18
-WORKHORSE_MAX_ER   = 6
-
 # Replacement-level baselines (anchored to league).
 REPL_WOBA_PCT = 0.85   # 85% of league wOBA
 REPL_ERA_PCT  = 1.20   # 120% of league ERA
@@ -740,7 +736,6 @@ def _aggregate_pitchers(
     agg: dict[int, dict] = {}
     games_seen: dict[int, set[int]] = {}
     starts: dict[int, int] = {}
-    workhorse_starts: dict[int, int] = {}
     primary_counts: dict[int, dict[str, int]] = {}
 
     for r in rows:
@@ -753,9 +748,6 @@ def _aggregate_pitchers(
         games_seen.setdefault(pid, set()).add(r["game_id"])
         if r.get("is_starter"):
             starts[pid] = starts.get(pid, 0) + 1
-            if (r.get("outs_recorded") or 0) >= WORKHORSE_MIN_OUTS and \
-               (r.get("er") or 0) <= WORKHORSE_MAX_ER:
-                workhorse_starts[pid] = workhorse_starts.get(pid, 0) + 1
         pp = (r.get("primary_pitch") or "").strip()
         if pp:
             primary_counts.setdefault(pid, {})[pp] = \
@@ -765,8 +757,6 @@ def _aggregate_pitchers(
     for pid, slot in agg.items():
         slot["g"]  = len(games_seen.get(pid, set()))
         slot["gs"] = starts.get(pid, 0)
-        slot["ws"] = workhorse_starts.get(pid, 0)
-        slot["ws_pct"] = (slot["ws"] / slot["gs"]) if slot["gs"] else 0.0
         counts = primary_counts.get(pid, {})
         slot["primary_pitch"] = max(counts.items(), key=lambda x: x[1])[0] if counts else ""
         out.append(slot)

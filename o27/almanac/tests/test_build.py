@@ -76,7 +76,7 @@ def test_documented_stats_present_in_batting(site):
 
 def test_documented_stats_present_in_pitching(site):
     must_have = [
-        "g", "gs", "ws", "ws_pct",
+        "g", "gs",
         "batters_faced", "outs_recorded", "ip", "ip_disp",
         "hits_allowed", "runs_allowed", "er", "unearned_runs",
         "bb", "k", "hr_allowed", "hbp_allowed", "pitches", "fo_induced",

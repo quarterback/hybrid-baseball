@@ -2781,10 +2781,6 @@ def _aggregate_pitcher_rows(
       os_pct              — outs share per appearance (outs/g/27)
       os_plus             — league-relative outs share (100 = league avg)
       aor                 — avg outs per appearance
-      ws_pct              — Workhorse Start % (outs ≥ 18 AND ER ≤ 6 in starts)
-                            -- approximated; precise computation requires
-                            -- per-row data and is done by the player-page
-                            -- aggregator separately.
       gsc_plus            — league-relative GSc (100 = league avg, higher = better)
       k_pct, bb_pct, hr_pct (PA-rate; K% includes foul-outs)
       k_minus_bb_pct      — (K - BB) / BF, plain Ks (no foul-outs)
@@ -2961,10 +2957,6 @@ def _aggregate_pitcher_rows(
             )
         else:
             p["gsc_avg"] = 0.0
-        # ws_pct: Workhorse Start % among starts. The precise per-game
-        # check (outs >= 18 AND er <= 6) needs per-row data; an aggregator
-        # caller that has it will overwrite this. As a placeholder, leave 0.
-        p.setdefault("ws_pct", 0.0)
 
         # --- PA-rate stats (K% includes foul-outs as locked in spec) ---
         p["k_pct"]  = ((k + fo) / bf) if bf else 0.0
@@ -6623,24 +6615,13 @@ def player_detail(player_id: int):
         pt_totals["player_id"] = player_id
         _aggregate_pitcher_rows([pt_totals], wl=wl, baselines=baselines)
         pt_totals["os_pct"] = (outs / (27.0 * pt["g"])) if pt["g"] else 0.0
-        # Workhorse Start %: count of starts (is_starter=1, phase=0) where
-        # outs >= 18 AND er <= 6, over total starts. Per-row data is the
-        # only honest way to compute this — aggregate counts can't tell
-        # us per-game distribution.
-        ws_row = db.fetchone(
-            f"""SELECT
-                  COALESCE(SUM(CASE WHEN is_starter=1 THEN 1 ELSE 0 END),0) AS gs,
-                  COALESCE(SUM(CASE WHEN is_starter=1
-                                     AND outs_recorded >= 18
-                                     AND er <= 6
-                                THEN 1 ELSE 0 END),0) AS ws
+        # Games started (is_starter=1) — from per-row data, the honest count.
+        gs_row = db.fetchone(
+            f"""SELECT COALESCE(SUM(CASE WHEN is_starter=1 THEN 1 ELSE 0 END),0) AS gs
                 FROM {_REG_PSTATS_DEDUP_SQL} ps WHERE ps.player_id = ?""",
             (player_id,),
         ) or {}
-        ws_starts = ws_row.get("gs") or 0
-        ws_qual   = ws_row.get("ws") or 0
-        pt_totals["ws_pct"] = (ws_qual / ws_starts) if ws_starts else 0.0
-        pt_totals["gs"]     = ws_starts
+        pt_totals["gs"] = gs_row.get("gs") or 0
 
     # ---------------------------------------------------------------
     # Postseason — playoff-only totals + game logs, kept entirely
