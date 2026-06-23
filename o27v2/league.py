@@ -605,6 +605,49 @@ def _assign_geographic_divisions(
 
 POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C", "P"]
 
+# Per-league team-form regimes (the per-half hot/cold band). Each key maps to
+# the (form_sigma, form_min, form_max) values written to every team in the
+# league; "default" → None (all columns NULL → the engine uses its global
+# LOCKED_FORM_* config). sigma <= 0 disables form entirely (talent-pure: talent
+# + matchups + cluster luck decide games). These let different leagues run
+# different variance regimes for side-by-side comparison.
+FORM_REGIMES: dict[str, tuple | None] = {
+    "default":    None,                 # use the global engine config
+    "talent":     (0.0,  None, None),   # form OFF — talent-pure, tight scores
+    "standard":   (0.66, 0.92, 2.15),   # the current global band, made explicit
+    "high_drama": (0.95, 0.82, 3.40),   # wide both ways: cold lows + hot into 3.x
+}
+
+FORM_REGIME_LABELS = {
+    "default":    "Default (global setting)",
+    "talent":     "Talent-pure (form off)",
+    "standard":   "Standard drama",
+    "high_drama": "High drama (wide band)",
+}
+
+
+def resolve_form_regime(key: str | None) -> dict:
+    """Map a regime key to the team-form columns. Unknown/'default' → all None
+    (engine uses its global config). Returns {form_sigma, form_min, form_max}."""
+    vals = FORM_REGIMES.get((key or "default"))
+    if not vals:
+        return {"form_sigma": None, "form_min": None, "form_max": None}
+    sigma, fmin, fmax = vals
+    return {"form_sigma": sigma, "form_min": fmin, "form_max": fmax}
+
+
+def form_regime_key(sigma, fmin, fmax) -> str:
+    """Reverse of resolve_form_regime: map stored form_* columns back to a regime
+    key for display. Unrecognized combinations fall back to 'default'."""
+    probe = (sigma, fmin, fmax)
+    for key, vals in FORM_REGIMES.items():
+        if vals is None:
+            if probe == (None, None, None):
+                return key
+        elif tuple(vals) == probe:
+            return key
+    return "default"
+
 # Phase 10: position players only — pitchers are generated separately as
 # a dedicated rotation + bullpen (see generate_players()).
 FIELDER_POSITIONS = ["CF", "SS", "2B", "3B", "RF", "LF", "1B", "C"]

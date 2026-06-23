@@ -49,6 +49,12 @@
             <option value="0" {{ 'selected' if not co_by_league.get(lg) }}>CO&nbsp;Off</option>
             <option value="1" {{ 'selected' if co_by_league.get(lg) }}>CO&nbsp;On</option>
           </select>
+          <select name="league_form_regime" class="form-select form-select-sm" style="max-width:11rem"
+                  title="Team-form regime (the per-half hot/cold band) for this league">
+            {% for key, label in form_regime_options %}
+            <option value="{{ key }}" {{ 'selected' if form_by_league.get(lg, 'default') == key }}>{{ label }}</option>
+            {% endfor %}
+          </select>
         </div>
         {% endfor %}
       </div>

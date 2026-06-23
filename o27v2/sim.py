@@ -2033,6 +2033,15 @@ def _simulate_game_locked(game_id: int, seed: int | None = None,
     if bool((home_row.get("cricket_order_enabled") if home_row else 0) or 0):
         home_team.cricket_order_enabled = True
         visitors_team.cricket_order_enabled = True
+    # Team-form regime — per-league override of the hot/cold band (LOCKED_FORM_*).
+    # Each non-NULL column overrides that knob on the engine; NULL leaves the
+    # global default. sigma <= 0 disables form entirely (talent-pure). Both teams
+    # share a league, so the home row is authoritative.
+    if home_row is not None:
+        for _attr in ("form_sigma", "form_min", "form_max"):
+            _v = home_row.get(_attr)
+            if _v is not None:
+                setattr(state, _attr, float(_v))
     # Stamp the per-game weather context (drawn at schedule time). prob.py
     # reads this; everything else passes it through.
     from o27.engine.weather import Weather

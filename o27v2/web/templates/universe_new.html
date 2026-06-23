@@ -259,6 +259,15 @@
           <option value="1">On</option>
         </select>
       </label>
+      <label class="block">
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1" title="The per-half hot/cold band (team form variance)">Team Form</span>
+        <select name="lg_form_regime" class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
+          <option value="default">Default</option>
+          <option value="talent">Talent-pure (off)</option>
+          <option value="standard">Standard drama</option>
+          <option value="high_drama">High drama</option>
+        </select>
+      </label>
     </div>
 
     {# Blend editor — hidden by default; toggled with the 🎨 Blend link. #}
@@ -595,6 +604,7 @@
         park:      card.querySelector('[name=lg_park]').value,
         power_play: card.querySelector('[name=lg_power_play]').value,
         cricket_order: card.querySelector('[name=lg_cricket_order]').value,
+        form_regime: card.querySelector('[name=lg_form_regime]').value,
       };
       const customBiases = {};
       panel.querySelectorAll('.cust-attr').forEach(s => {
@@ -628,6 +638,7 @@
       if (preset.park)      card.querySelector('[name=lg_park]').value = preset.park;
       if (preset.power_play !== undefined) card.querySelector('[name=lg_power_play]').value = preset.power_play;
       if (preset.cricket_order !== undefined) card.querySelector('[name=lg_cricket_order]').value = preset.cricket_order;
+      if (preset.form_regime !== undefined) card.querySelector('[name=lg_form_regime]').value = preset.form_regime;
       // Locale can arrive as a string id (preset/region) OR an object blend.
       // Object form populates the blend editor and disables the dropdown.
       if (preset.locale !== undefined && preset.locale !== null) {
