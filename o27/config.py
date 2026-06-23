@@ -225,13 +225,14 @@ INJURY_INGAME_ROSTER_FLOOR: int      = 7
 # double ~19%, GO ~14%, FO ~13%, LO ~8.5%, HR ~6%, ...). All EV in mph, LA/spray
 # in degrees, distances in feet.
 # Resolver-specific texture mix (decoupled from BATTED_BALL_WEIGHTS, which the
-# runner-erasing OUT_SHIFT lever uses). O27 is a doubles-heavy environment, so
-# the LA distribution is liner-dominant — these weights reflect that.
+# runner-erasing OUT_SHIFT lever uses). Cricket-lean retune: lift the FLY-BALL
+# share (and nudge GROUNDERS up too) at the expense of the previously dominant
+# liner band, for a more varied air/ground mix.
 #                   (dribbler, grounder, liner, flyball)
 RES_TEXTURE_WEIGHTS = {
-    "weak":   (0.22, 0.34, 0.34, 0.10),
-    "medium": (0.05, 0.22, 0.53, 0.20),
-    "hard":   (0.0,  0.06, 0.53, 0.41),
+    "weak":   (0.20, 0.46, 0.18, 0.16),
+    "medium": (0.04, 0.38, 0.27, 0.31),
+    "hard":   (0.0,  0.22, 0.27, 0.51),
 }
 RES_POPUP_LA: float        = 50.0   # above this LA → automatic fly out
 RES_FLY_LA: float          = 26.0   # fly-ball band floor
