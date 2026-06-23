@@ -2,7 +2,7 @@
 
 **Date completed:** 2026-06-23
 **Branch:** `claude/vigilant-davinci-hn34xy`
-**Commit:** `170e019` (offense lift + cold-tail floor)
+**Commits:** `170e019` (offense lift + cold-tail floor), `0dda8ce` (grounder BABIP follow-up)
 
 ---
 
@@ -42,7 +42,7 @@ More balls in play become hits, and fewer plate appearances end in a whiff:
 | Knob | Was | Now | Effect |
 | --- | --- | --- | --- |
 | `RES_LINER_HIT_BASE` | 0.76 | 0.90 | liner-band BABIP (the highest band) up |
-| `RES_GB_HIT_BASE` | 0.44 | 0.62 | grounders find holes far more often |
+| `RES_GB_HIT_BASE` | 0.44 | 0.74 | grounders find holes far more often |
 | `RES_FLY_HIT_FLOOR` | 210.0 | 190.0 | shorter flies stop being automatic outs |
 | `RES_FLY_DROP_SCALE` | 0.92 | 1.02 | sub-HR flies drop for XBH more readily |
 | `PITCHER_DOM_SWINGING` | +0.025 | +0.005 | dominant pitchers miss fewer bats |
@@ -63,18 +63,33 @@ At `MIN = 0.92` with `SIGMA = 0.66`, roughly the bottom ~45% of form draws clamp
 to the floor, so no lineup gets a genuinely cold night, while the long hot tail
 up to 2.15× is preserved.
 
+### 3. Grounder BABIP follow-up (`0dda8ce`)
+
+After the first pass shipped at `RES_GB_HIT_BASE = 0.62`, the user judged
+grounders still too stingy relative to the cricket-lean target — liners were
+sitting at 0.90 while grounders lagged. Bumped **0.62 → 0.74**. This is the
+single change in the follow-up commit; it pushed the run environment up another
+notch (see validation).
+
 ---
 
 ## Validation
 
 `python3 -m pytest o27/tests tests/test_stat_invariants.py` → **195 passed.**
 
-Behavioral check via a 200-game sim (`manage.py sim 200`, 400 team-games):
+Behavioral check, two sims:
+
+**After the floor pass** (`170e019`, 200-game sim, `RES_GB_HIT_BASE = 0.62`):
 
 - **runs/team: mean ~12 → ~16.8**, median 14, **max 60** (blowouts intact).
 - **Shutouts: 0. 1-0 finals: 0.** The hard requirement is met across the batch.
 - Lowest single game in 200 was one **2-1**; only 3 of 200 games had a team
   under 3 runs, and only 1 team-game (of 400) scored ≤1.
+
+**After the grounder follow-up** (`0dda8ce`, 150-game sim, `RES_GB_HIT_BASE = 0.74`):
+
+- **runs/team: mean ~19.1**, median 17, **max 57** (blowouts intact).
+- **Shutouts: 0. 1-0 finals: 0.** Floor still holds; lowest game was a **3-2**.
 
 A 150-game sim taken *before* the `LOCKED_FORM_MIN` push still produced 1 shutout
 and 1 actual 1-0 final — i.e. lifting offense alone did **not** kill the floor;
@@ -106,6 +121,7 @@ the asymmetric form clip is what did it. That's the load-bearing change.
 
 ## One-line takeaway
 
-Lifting BABIP + cutting whiffs got the run environment to a cricket-lean
-~16.8/team; the thing that actually killed the 1-0 game was clamping the cold
-side of the form multiplier while leaving the blowout ceiling alone.
+Lifting BABIP (grounders in particular, finally landing at 0.74) + cutting
+whiffs got the run environment to a cricket-lean ~19/team; the thing that
+actually killed the 1-0 game was clamping the cold side of the form multiplier
+while leaving the blowout ceiling alone.
