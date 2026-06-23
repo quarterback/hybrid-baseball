@@ -156,16 +156,26 @@ def score_substitution(
 
 
 def _desperation_rally(state) -> bool:
-    """True when the batting team trails by `DESPERATION_DEFICIT`+ with at least
-    `DESPERATION_OUTS_LEFT` outs remaining — chase mode: deploy the bench to try
-    to manufacture the comeback."""
+    """True when the batting team trails by DESPERATION_DEFICIT..(blowout-1) with
+    at least `DESPERATION_OUTS_LEFT` outs remaining — chase mode: deploy the best
+    bats/legs to manufacture the comeback. Capped below the blowout band, where
+    the game is conceded and only low-tier scrubs rotate in (garbage time)."""
     if getattr(state, "is_super_inning", False):
         return False
     deficit = (state.score.get(state.fielding_team.team_id, 0)
                - state.score.get(state.batting_team.team_id, 0))
-    if deficit < int(getattr(cfg, "DESPERATION_DEFICIT", 5)):
+    if not (int(getattr(cfg, "DESPERATION_DEFICIT", 5))
+            <= deficit < int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))):
         return False
     return (27 - state.outs) >= int(getattr(cfg, "DESPERATION_OUTS_LEFT", 9))
+
+
+def _scrub_pick(candidates: list) -> Optional[Player]:
+    """Lowest-tier bench bat for a garbage-time / rest rotation — never a PH
+    specialist (premium tactical assets stay parked in a decided game)."""
+    pool = [c for c in candidates
+            if str(getattr(c, "roster_slot", "")) != "ph_specialist"] or candidates
+    return min(pool, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
 
 
 def _decisive_chase(state) -> bool:
@@ -1155,6 +1165,16 @@ def pick_new_pitcher(state: GameState) -> Optional[Player]:
         if pp_candidates:
             return max(pp_candidates, key=lambda pl: float(getattr(pl, "arm", 0.5) or 0.5))
 
+    # Mop-up in a blowout: when the game is decided either way, bring in the
+    # lowest-leverage arm to eat the remaining outs — protecting a big lead, you
+    # rest the good relievers; absorbing a beating, you don't burn them in a
+    # lost game. Bypasses the role/rest tiers below by design (this is exactly
+    # the spot for your worst available arm).
+    if (abs(deficit) >= int(getattr(cfg, "BLOWOUT_PULL_LEAD", 10))
+            and pitcher_candidates):
+        return min(pitcher_candidates,
+                   key=lambda p: float(getattr(p, "pitcher_skill", 0.5) or 0.5))
+
     # Hard rest filter: pitchers who appeared in the last day or two are
     # de-prioritized from relief eligibility. We use a tier system mirroring
     # the SP picker — start with the most rested pool and broaden only when
@@ -1387,29 +1407,29 @@ def should_pinch_hit(state: GameState, rng=None) -> Optional[Player]:
     if best_cand is not None and best_score >= threshold:
         return best_cand
 
-    # Blowout bench ("garbage time"): once the margin is decisive — EITHER way —
-    # and the order has turned a couple of times, rotate a fresh bat in for the
-    # regular due up. The leader rests his starters; the trailer gives the bench
-    # a look and tries to spark something (it may not work, but a club down 20
-    # shouldn't bat its same nine passively). Low-leverage by design — NOT a
-    # leverage upgrade (those returned above).
-    margin = abs(state.score.get(team.team_id, 0)
-                 - state.score.get(state.fielding_team.team_id, 0))
-    if (margin >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
-            and team.lineup_cycle_number >= int(getattr(cfg, "BLOWOUT_REST_MIN_CYCLE", 2))):
-        return max(candidates, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
+    lead = (state.score.get(team.team_id, 0)
+            - state.score.get(state.fielding_team.team_id, 0))
 
-    # Live workload rest: late in a DECIDED game (a comfortable margin either
-    # way, short of the blowout band above), give a worn or slumping regular
-    # the rest of the day off. Never in a do-or-die spot (decisive chase) — you
-    # keep your guy when the game is on the line. Only the worn/cold sit
-    # (rest_pressure gate), so this isn't blanket churn.
-    if (not _decisive_chase(state)
+    # Garbage time (decided by a blowout margin, EITHER way): rotate in a
+    # LOW-tier bench bat — the leader rests a regular, the trailer gives a scrub
+    # a look — WITHOUT burning premium tactical assets (PH specialists) or your
+    # best bats in a settled game. Down 5-9 is handled instead by the comeback
+    # boost in score_substitution (best bats, a real rally), so that band falls
+    # through to the leverage path above rather than here.
+    if (abs(lead) >= int(getattr(cfg, "BLOWOUT_REST_LEAD", 10))
+            and team.lineup_cycle_number >= int(getattr(cfg, "BLOWOUT_REST_MIN_CYCLE", 2))):
+        return _scrub_pick(candidates)
+
+    # Live workload rest: AHEAD but short of a blowout, late, give a worn or
+    # cold regular the back third off — again with a low-tier fill-in (premium
+    # assets stay parked). Only when leading (a trailing team rallies, it
+    # doesn't rest) and never in a do-or-die spot. Only the worn/cold sit.
+    if (lead >= int(getattr(cfg, "WORKLOAD_REST_SAFE_GAP", 5))
+            and not _decisive_chase(state)
             and state.outs >= int(getattr(cfg, "WORKLOAD_REST_MIN_OUTS", 15))
-            and margin >= int(getattr(cfg, "WORKLOAD_REST_SAFE_GAP", 5))
             and float(getattr(batter, "rest_pressure", 0.0))
                 >= float(getattr(cfg, "REST_PRESSURE_THRESHOLD", 0.6))):
-        return max(candidates, key=lambda p: float(getattr(p, "skill", 0.5) or 0.5))
+        return _scrub_pick(candidates)
     return None
 
 

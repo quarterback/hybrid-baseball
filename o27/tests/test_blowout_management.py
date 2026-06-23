@@ -132,6 +132,45 @@ def test_worn_regular_not_rested_when_the_game_is_close():
     assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
 
 
+def test_trailing_team_does_not_rest_a_worn_star():
+    # Down 6 is the rally band, not the rest band — a worn star is NOT benched
+    # (and with a weak bench here, nothing fires).
+    st = _state()
+    st.score = {"visitors": 3, "home": 9}
+    st.outs = 18
+    st.visitors.lineup[0].skill = 0.95
+    st.visitors.lineup[0].rest_pressure = 0.9
+    for p in st.visitors.roster:
+        if p.player_id.startswith("VB"):
+            p.skill = 0.3
+    assert mgr.should_pinch_hit(st, rng=random.Random(0)) is None
+
+
+# --- garbage time uses low-tier bats / mop-up arms -------------------------
+
+def test_blowout_rotation_uses_low_tier_not_premium():
+    st = _state()
+    st.score = {"visitors": 20, "home": 3}     # up 17 — garbage time
+    bench = [p for p in st.visitors.roster if p.player_id.startswith("VB")]
+    bench[0].skill = 0.9
+    bench[0].roster_slot = "ph_specialist"     # premium asset — stays parked
+    bench[1].skill = 0.3
+    bench[1].roster_slot = ""                   # the scrub the manager uses
+    bench[2].skill = 0.7
+    res = mgr.should_pinch_hit(st, rng=random.Random(0))
+    assert res is bench[1]
+
+
+def test_blowout_pitching_change_uses_mopup_arm():
+    st = _state()
+    st.score = {"visitors": 3, "home": 20}     # home (fielding) up 17
+    pen = [p for p in st.home.roster if p.player_id.startswith("HP")]
+    pen[0].pitcher_skill = 0.9
+    pen[1].pitcher_skill = 0.2                  # mop-up — eat the outs
+    pen[2].pitcher_skill = 0.7
+    assert mgr.pick_new_pitcher(st) is pen[1]
+
+
 # --- last-licks (decisive-half) offense boost ------------------------------
 
 def _marginal():

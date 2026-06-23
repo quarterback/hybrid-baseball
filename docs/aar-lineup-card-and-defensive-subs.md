@@ -251,6 +251,27 @@ contradicts the owner's instruction that a winning team rest its starters — no
 implemented. 172 engine tests pass (4 new: boost when chasing; gated by deficit
 and outs-remaining; off in super-innings).
 
+**Garbage-time refinements (the anti-lock version of §3B).** A follow-on spec
+proposed the *right* alternative to the rejected roster-lock: in a decided game
+you rotate but with low-leverage assets. Implemented:
+- Blowout bench rotation now picks the **lowest-tier** bench bat (`_scrub_pick`)
+  and never a PH specialist — rest a regular / give a scrub a look without
+  burning premium tactical assets or your best bats in a settled game.
+- The comeback rally is **capped below the blowout band** (`DESPERATION_DEFICIT`
+  ≤ deficit < `BLOWOUT_REST_LEAD`): down 5-9 = real rally with the best bats;
+  down 10+ = garbage-time scrubs.
+- Workload rest is now **lead-only** (you rest when ahead; a trailing team
+  rallies, it doesn't bench its worn star) and also uses `_scrub_pick`.
+- `pick_new_pitcher` adds a **mop-up** branch: when the game is decided either
+  way (`|margin| ≥ BLOWOUT_PULL_LEAD`), bring in the lowest-Stuff available arm
+  to eat outs — the leader rests his good relievers, the trailer doesn't burn
+  them in a lost game (the §4 "concession" idea).
+
+175 engine tests pass (3 more: blowout rotation uses a low-tier non-premium
+bat; blowout pitching change uses the mop-up arm; a trailing team doesn't bench
+its worn star). Deferred (outcome-model changes, owner confirm): pitch-to-
+contact when way ahead, and passive/station-to-station baserunning in blowouts.
+
 ## 5. Follow-ups / not done
 
 - The marginal defense update keys on a player's canonical `position` to match
