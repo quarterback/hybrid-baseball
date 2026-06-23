@@ -784,6 +784,17 @@ class GameState:
     # (the joker insertion is EXTRA — base lineup position is unchanged).
     batter_override: Optional[Player] = None
 
+    # --- Auxiliary line-cutter override ---
+    # A one-off pinch hitter ("auxiliary"/"aux") used ONLY when the due batter
+    # is already a baserunner during his own turn — which can only happen after
+    # a Cricket Batting Order flip puts a just-reached batter back at the top of
+    # the order. The aux hits in his place for one PA; unlike a joker the base
+    # lineup DOES advance afterward (the on-base batter forfeits this turn and
+    # stays on as a runner). The aux is not designated — any available bench bat
+    # may be drafted (manager.select_auxiliary). current_batter checks this after
+    # the joker override. Cleared at PA end (_end_at_bat) and at half start.
+    aux_override: Optional[Player] = None
+
     # --- Halftime target ---
     target_score: Optional[int] = None         # visitors' score; set at halftime
 
@@ -880,6 +891,9 @@ class GameState:
         # the base lineup batter.
         if self.batter_override is not None:
             return self.batter_override
+        # Auxiliary line-cutter: hits in place of a due batter stranded on base.
+        if self.aux_override is not None:
+            return self.aux_override
         return self.batting_team.current_batter()
 
     @property

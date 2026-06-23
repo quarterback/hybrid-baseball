@@ -26,7 +26,7 @@ from o27.engine.state import GameState, Team
 from o27.engine.prob import ProbabilisticProvider
 from o27.engine.game import run_game
 from o27.render.render import Renderer
-from test_power_play import _mk_state, _mk_team
+from test_power_play import _mk_state, _mk_team, _mk_fielder
 
 
 class _Bat:
@@ -315,3 +315,71 @@ def test_handed_valley_preserves_valley_tiers():
         tier_talent = sorted([_bat_score(talent[i]), _bat_score(talent[n - 1 - i])])
         tier_handed = sorted([_bat_score(handed[i]), _bat_score(handed[n - 1 - i])])
         assert tier_talent == pytest.approx(tier_handed)
+
+
+# ---------------------------------------------------------------------------
+# Auxiliary line-cutter: when a flip puts a just-reached batter back at the top
+# of the order, he can't bat while he's a runner. A one-off auxiliary (any bench
+# bat, NOT a designated joker) hits in his place; the on-base batter keeps his
+# runner status and the lineup advances past him. The hard invariant: no player
+# may ever occupy two bases at once.
+# ---------------------------------------------------------------------------
+
+def _run_aux_games(monkeypatch, *, with_bench, seeds=range(30)):
+    """Force the rule on and spend every earned flip so the on-base-leadoff
+    conflict surfaces constantly; instrument apply_event for the no-duplicate
+    invariant. Returns (aux_inserts, aux_skips, dup_violations, conflict_count)."""
+    monkeypatch.setattr(cfg, "CRICKET_BATTING_ORDER_ENABLED", True, raising=False)
+    monkeypatch.setattr(mgr, "should_use_flip", lambda state, rng=None: True)
+
+    import o27.engine.game as game
+    import o27.engine.pa as pa
+    orig = pa.apply_event
+    tally = {"aux": 0, "skip": 0, "dup": 0, "conflict": 0}
+
+    def patched(state, event):
+        et = event.get("type")
+        if et in ("aux_insertion", "aux_skip"):
+            due = state.batting_team.current_batter()
+            if due.player_id in {b for b in state.bases if b is not None}:
+                tally["conflict"] += 1
+            tally["aux" if et == "aux_insertion" else "skip"] += 1
+        out = orig(state, event)
+        ids = [b for b in state.bases if b is not None]
+        if len(ids) != len(set(ids)):
+            tally["dup"] += 1
+        return out
+
+    monkeypatch.setattr(game, "apply_event", patched)
+    for seed in seeds:
+        st = _mk_state()
+        for t in (st.home, st.visitors):
+            t.cricket_order_enabled = True
+            t.mgr_flip_aggression = 1.0
+            if with_bench:
+                for i in range(5):
+                    bp = _mk_fielder(f"{t.team_id}_bn{i}", f"{t.team_id}_BN{i}",
+                                     position="LF", arm=0.5, glove=0.5)
+                    bp.contact = bp.power = bp.eye = bp.skill = 0.6
+                    t.roster.append(bp)   # bench: in roster, NOT in lineup
+        run_game(st, ProbabilisticProvider(random.Random(seed)), Renderer())
+    return tally
+
+
+def test_aux_no_duplicate_runner_with_bench(monkeypatch):
+    t = _run_aux_games(monkeypatch, with_bench=True)
+    # The conflict actually arises and is resolved by drafting a bench aux...
+    assert t["aux"] > 0, "a bench aux should be drafted for stranded leadoff batters"
+    # ...every aux/skip fired only because the due batter really was on base...
+    assert t["conflict"] == t["aux"] + t["skip"]
+    # ...and a player never ends up on two bases.
+    assert t["dup"] == 0
+
+
+def test_aux_no_duplicate_runner_when_bench_exhausted(monkeypatch):
+    # No bench at all (bare 9-man roster): the aux can't be drafted, so the
+    # stranded turn is forfeited (aux_skip) — never bat a man who is on base.
+    t = _run_aux_games(monkeypatch, with_bench=False)
+    assert t["skip"] > 0 and t["aux"] == 0
+    assert t["conflict"] == t["skip"]
+    assert t["dup"] == 0

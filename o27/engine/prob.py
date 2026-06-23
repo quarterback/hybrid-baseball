@@ -2710,6 +2710,38 @@ class ProbabilisticProvider:
         # performs the actual reversal.
         return {"type": "cricket_flip", "msg": cricket_order.flip_line(team)}
 
+    def _maybe_auxiliary(self, state: GameState) -> Optional[dict]:
+        """If the due batter is stranded on base during his own turn (only
+        possible right after a cricket flip), draft a one-off auxiliary to hit
+        in his place. Returns an aux_insertion event, or None when there is no
+        conflict, an override is already active, or no eligible bat exists."""
+        if state.aux_override is not None or state.batter_override is not None:
+            return None
+        team = state.batting_team
+        on_base = {b for b in state.bases if b is not None}
+        if not on_base:
+            return None
+        due = team.current_batter()          # the BASE-lineup due batter
+        if due.player_id not in on_base:
+            return None
+        aux = mgr.select_auxiliary(state)
+        if aux is None:
+            # Bench exhausted — no legal hitter to draft. Forfeit the stranded
+            # batter's turn (advance past him) rather than ever bat a man who is
+            # on base. At most three runners can be stranded, so this resolves in
+            # a bounded number of skips to an off-base batter.
+            return {
+                "type": "aux_skip",
+                "msg": (f"  AUX: {due.name} is stranded on base and no bench bat "
+                        f"remains — {team.name} forfeits the turn."),
+            }
+        return {
+            "type": "aux_insertion",
+            "aux": aux,
+            "msg": (f"  AUX: {team.name} sends in {aux.name} to hit for "
+                    f"{due.name}, stranded on base after the flip."),
+        }
+
     def _try_manager_action(self, state: GameState) -> Optional[dict]:
         """Return one manager event if conditions are met, else None.
 
@@ -2755,6 +2787,15 @@ class ProbabilisticProvider:
         flip_evt = self._maybe_cricket_flip(state)
         if flip_evt is not None:
             return flip_evt
+
+        # Auxiliary line-cutter: a flip can put a batter who just reached base
+        # right back at the top of the order. He can't bat while he's a runner,
+        # so the manager sends a one-off auxiliary to hit in his place (checked
+        # after the flip is applied, on the re-entry for the new leadoff). The
+        # on-base batter keeps his runner status; the lineup advances past him.
+        aux_evt = self._maybe_auxiliary(state)
+        if aux_evt is not None:
+            return aux_evt
 
         # Pitching change check.
         if mgr.should_change_pitcher(state):

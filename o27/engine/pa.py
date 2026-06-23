@@ -349,10 +349,13 @@ def _end_at_bat(state: GameState) -> list[str]:
     # Joker AB: clear the override and DO NOT advance the base lineup.
     # The joker insertion was an EXTRA PA — the base lineup position
     # stays the same so the originally-scheduled batter takes the next
-    # turn.
+    # turn. An AUXILIARY AB is different: it REPLACES the stranded due
+    # batter's turn, so the lineup advances normally (clearing the aux
+    # override on the way) and the on-base batter forfeits this turn.
     if state.batter_override is not None:
         state.batter_override = None
     else:
+        state.aux_override = None
         state.batting_team.advance_lineup()
     state.pitcher_spell_count += 1
     state.total_pa_this_half += 1
@@ -734,6 +737,22 @@ def _apply_event_inner(state: GameState, event: dict) -> list[str]:
         if msg:
             log.append(msg)
         return log
+
+    if etype == "aux_skip":
+        # No bench bat to draft for a stranded due batter — forfeit his turn by
+        # advancing the base lineup past him (never bat a man who is on base).
+        state.batting_team.advance_lineup()
+        msg = event.get("msg") or ""
+        return [msg] if msg else []
+
+    if etype == "aux_insertion":
+        # Auxiliary line-cutter: a one-off pinch hitter for a due batter who is
+        # stranded on base after a cricket flip. Set the override; unlike a joker
+        # the base lineup advances when this PA ends (see _end_at_bat), so the
+        # on-base batter forfeits this turn and the order moves on.
+        state.aux_override = event["aux"]
+        msg = event.get("msg") or ""
+        return [msg] if msg else []
 
     if etype == "joker_insertion":
         joker = event["joker"]
