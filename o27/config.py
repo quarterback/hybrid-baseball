@@ -1041,6 +1041,17 @@ DECISIVE_HALF_LEVERAGE_BONUS: float = 0.12   # added to leverage in the decisive
 DECISIVE_HALF_MIN_OUTS: int         = 12     # only this deep into the half
 DECISIVE_HALF_MAX_GAP: int          = 3      # only when the game is this close
 
+# Late-game platoon pinch-hitting: when a bench bat flips an unfavorable
+# handedness matchup to favorable, the manager values it more the later it
+# gets. Scaled by the game's lateness (out/27), so it's a non-factor early and
+# a real pull late. Added on top of the matchup factor.
+PLATOON_LATE_BONUS: float = 0.10
+
+# Pinch-run specialist preference: nudge a dedicated burner (roster_slot
+# 'pr_specialist' or role_run) to the top of the pinch-run candidate pool so
+# the manager sends the right legs, not just any faster bat.
+PR_SPECIALIST_BONUS: float = 0.10
+
 
 
 

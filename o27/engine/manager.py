@@ -116,6 +116,7 @@ def score_substitution(
     # the inline platoon-pool logic in the legacy should_pinch_hit (Item
     # 2 follow-up: handedness migrates into the trigger function).
     matchup_f = 0.5
+    platoon_late_bonus = 0.0
     if kind == "pinch_hit":
         pitcher = state.get_current_pitcher()
         if pitcher is not None:
@@ -124,11 +125,20 @@ def score_substitution(
             out_edge  = _has_platoon_edge(getattr(out_player, "bats", "") or "", p_throws)
             if cand_edge and not out_edge:
                 matchup_f = 0.85
+                # Going to get the platoon bat matters more the later it gets —
+                # a classic late-game lefty/righty move. Scaled by lateness so
+                # it's a non-factor early and a real pull in the late innings.
+                platoon_late_bonus = (
+                    float(getattr(cfg, "PLATOON_LATE_BONUS", 0.10)) * late_arc_f
+                )
             elif out_edge and not cand_edge:
                 matchup_f = 0.15
 
     # Combine — equal-weighted average over five factors.
     score = (score_gap_f + late_arc_f + runner_f + upgrade_f + matchup_f) / 5.0
+
+    # Late-game platoon pull (pinch_hit only; 0 unless a handedness flip).
+    score += platoon_late_bonus
 
     # Last-licks boost: the second-batting team's at-bats are do-or-die, so in
     # a close, late spot the manager deploys bats for situational runs more
@@ -1574,6 +1584,12 @@ def should_pinch_run(state: GameState, rng=None) -> Optional[dict]:
     best_cand: Optional[Player] = None
     for cand in bench_pool:
         s = score_substitution(state, cand, "pinch_run", out_runner)
+        # Prefer a dedicated pinch-run specialist (a true burner) so the
+        # manager sends the right legs, not just any faster bat — and so the
+        # specialist actually gets deployed in close-and-late spots.
+        if (str(getattr(cand, "roster_slot", "")) == "pr_specialist"
+                or bool(getattr(cand, "role_run", False))):
+            s += float(getattr(cfg, "PR_SPECIALIST_BONUS", 0.10))
         if s > best_score:
             best_score = s
             best_cand = cand

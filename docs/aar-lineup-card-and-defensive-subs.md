@@ -209,13 +209,23 @@ let a non-star bat through a key spot. `score_substitution` now adds
 blowouts (gap too large) are excluded, so it never churns early or in laughers —
 it only sharpens deployment in the spots that decide games.
 
-Tests: `test_blowout_management.py` (9) — pull fires up 12 / quiet in a tie /
+**Platoon pinch-hitting late + pinch-run specialists (same thread).** Two more
+"smart looks":
+- `score_substitution` adds `PLATOON_LATE_BONUS` (0.10) × lateness when a bench
+  bat *flips* an unfavorable handedness matchup to favorable (cand has the
+  platoon edge, the batter doesn't) — the classic late-game lefty/righty pull,
+  a non-factor early and a real move late.
+- `should_pinch_run` adds `PR_SPECIALIST_BONUS` (0.10) for a dedicated burner
+  (`roster_slot='pr_specialist'` or `role_run`) so the manager sends the right
+  legs, not just any faster bat — and (with the last-licks boost) actually
+  deploys him close-and-late.
+
+Tests: `test_blowout_management.py` (11) — pull fires up 12 / quiet in a tie /
 not too early; rest fires up 17 / quiet in a close low-leverage spot / waits for
-the order to turn; last-licks boost raises offense leverage only for the
-second-batting team, not in a blowout gap, not for defensive subs. 162 engine
-tests pass. Broader "different looks" (platoon PH late, PR specialists
-close-and-late, double switches, day-game/back-to-back rest) remains the
-standing direction; these are the first concrete slices.
+the order to turn; last-licks boost only for the second-batting team, not in a
+blowout gap, not for defensive subs; platoon edge worth more late; pinch-run
+picks the specialist over a slightly faster non-specialist. 164 engine tests
+pass. Still standing: workload rest (live), double switches.
 
 ## 5. Follow-ups / not done
 

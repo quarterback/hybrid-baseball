@@ -132,3 +132,50 @@ def test_last_licks_does_not_boost_defensive_subs():
     st.second_batting_team = st.home
     b = mgr.score_substitution(st, cand, "pinch_field", batter)
     assert a == b
+
+
+# --- late-game platoon pinch-hitting ---------------------------------------
+
+def test_platoon_advantage_grows_late():
+    st = _state()
+    st.score = {"visitors": 4, "home": 3}
+    pit = next(p for p in st.home.roster if p.player_id == "HSP")
+    pit.throws = "R"
+    st.current_pitcher_id = "HSP"
+    batter = st.visitors.lineup[0]
+    batter.bats = "R"                                   # no edge vs a RHP
+    flip = next(p for p in st.visitors.roster if p.player_id == "VB1")
+    flip.bats = "L"                                     # flips to a platoon edge
+    noflip = next(p for p in st.visitors.roster if p.player_id == "VB2")
+    noflip.bats = "R"                                   # same hand — no flip
+
+    def swing(outs):
+        st.outs = outs
+        return (mgr.score_substitution(st, flip, "pinch_hit", batter)
+                - mgr.score_substitution(st, noflip, "pinch_hit", batter))
+
+    # The platoon bat is preferred, and the edge is worth more the later it gets.
+    assert swing(24) > swing(3) > 0
+
+
+# --- pinch-run specialist preference ---------------------------------------
+
+def test_pinch_run_prefers_the_specialist():
+    st = _state()
+    st.score = {"visitors": 4, "home": 3}
+    st.outs = 20
+    st.second_batting_team = st.visitors               # decisive chase
+    slow = st.visitors.lineup[7]
+    slow.speed = 0.2
+    st.bases = [slow.player_id, None, None]
+    fast = next(p for p in st.visitors.roster if p.player_id == "VB1")
+    fast.speed = 0.90
+    fast.roster_slot = ""
+    fast.role_run = False
+    spec = next(p for p in st.visitors.roster if p.player_id == "VB2")
+    spec.speed = 0.85                                   # a touch slower...
+    spec.roster_slot = "pr_specialist"                 # ...but the burner
+    spec.role_run = True
+    res = mgr.should_pinch_run(st, rng=random.Random(0))
+    assert res is not None
+    assert res["runner_in"].player_id == "VB2"
