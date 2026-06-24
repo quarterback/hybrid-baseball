@@ -133,10 +133,13 @@
 
 <h4>Batting · Pressure &amp; Dead-Out Avoidance</h4>
 <div class="text-secondary small mb-2" style="padding:0 0.25rem">
-  DOA% is dead-out avoidance; higher means the hitter avoids empty, envelope-burning outs.
-  (Pressure/chase metrics — PAI, TRR+, Chase BA — live on each game's box score.)
+  PAI is chase-pressure-weighted run impact. TRR+ indexes PAI per PA to league average (100 = average). DOA% is dead-out avoidance; higher means the hitter avoids empty, envelope-burning outs.
 </div>
 <div class="row g-3 mb-3">
+  {{ card('PAI', 'pai', '%+.2f', true, batting, tooltip='Pressure-Adjusted Impact — run value weighted by live chase pressure.') }}
+  {{ card('PAI/PA', 'pai_per_pa', '%+.3f', true, batting, tooltip='Pressure-Adjusted Impact per plate appearance.') }}
+  {{ card('TRR+', 'trr_plus', '%d', true, batting, tooltip='True Run Rate Plus — PAI/PA indexed to league average, 100 = average.') }}
+  {{ card('Chase BA', 'chase_ba', '%.3f', true, batting, tooltip='Hit rate on balls in play while TRAILING (the chase). A contact average, not full PAVG (pa_log logs no walks/Ks) — the legible companion to PAI/TRR+.') }}
   {{ card('DOA%', 'dead_out_avoid_pct', '%.1f%%', true, batting, tooltip='Dead Out Avoidance — 100 minus dead-out PA rate. Higher = fewer empty outs.') }}
 </div>
 

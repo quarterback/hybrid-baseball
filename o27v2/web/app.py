@@ -5600,20 +5600,32 @@ def leaders():
     )
     baselines = _league_baselines(league=selected_league)
     _aggregate_batter_rows(batting, baselines=baselines)
-    # Dead-out avoidance enrichment. This reads game_pa_log, which can be empty
-    # or pruned on some saves, so guard it — a builder failure must NEVER 500 the
-    # whole leaderboard. PAI / TRR+ and Chase BA were intentionally dropped from
-    # the board (they live on the box score); pulling those pa_log-derived
-    # builders off /leaders keeps the page robust.
-    hdo_by_player = {}
+    # Pressure (PAI / TRR+) + Chase BA + dead-out enrichments. These read
+    # game_pa_log, which can be empty or pruned on some saves, so they're all
+    # wrapped in one guard — a builder failure degrades those columns to blank
+    # instead of 500ing the whole leaderboard. When the log is present the stats
+    # render normally.
+    pai_by_player, hdo_by_player, chase_by_player = {}, {}, {}
     try:
-        from o27v2.analytics import build_hitter_dead_outs_table
-        hdo_by_player = build_hitter_dead_outs_table(
-            min_pa=1, team_ids=_league_team_ids(selected_league))["by_player"]
+        from o27v2.analytics import (build_pressure_impact, build_hitter_dead_outs_table,
+                                     build_chase_split_table)
+        _leader_team_ids = _league_team_ids(selected_league)
+        pai_by_player = build_pressure_impact(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+        hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+        chase_by_player = build_chase_split_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
     except Exception:
-        app.logger.exception("leaders: hitter dead-out builder failed; skipping")
+        app.logger.exception("leaders: pressure/chase/dead-out builders failed; skipping")
     for row in batting:
-        hdo = hdo_by_player.get(row.get("player_id"), {})
+        pid = row.get("player_id")
+        pai = pai_by_player.get(pid, {})
+        hdo = hdo_by_player.get(pid, {})
+        chase = chase_by_player.get(pid, {})
+        row["pai"] = pai.get("pai")
+        row["pai_per_pa"] = pai.get("pai_per_pa")
+        row["trr_plus"] = pai.get("trr_plus")
+        row["avg_pressure"] = pai.get("avg_pressure")
+        row["chase_ba"] = chase.get("chase_ba")
+        row["chase_pa"] = chase.get("chase_pa")
         row["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
         row["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
         row["dead_outs_bat"] = hdo.get("dead_outs_bat")
