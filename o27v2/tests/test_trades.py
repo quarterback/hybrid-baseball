@@ -248,46 +248,45 @@ def test_rebuild_fire_sale_sends_vets(fresh_db):
 # 6. Win-now overpay sends more than it gets
 # ---------------------------------------------------------------------------
 
-def test_win_now_overpay_overshoots(fresh_db):
-    """In win_now_overpay deals, the initiator (win_now) sends more
-    players than it receives."""
+def test_trades_are_roster_neutral(fresh_db):
+    """Trades are count-balanced (1:1 ratio), so they can NEVER change a team's
+    net roster size — even with aggressive sellers/buyers churning. Guards the
+    fix for the skeleton-roster bug (a seller drained to 9 batters / 5 pitchers
+    by lopsided N-for-1 dumps). Replaces the old test that *expected* win_now to
+    send more bodies than it received — the behavior we deliberately removed."""
     from o27v2 import db, league
     from o27v2.trades import run_motivation_pass
 
     league.seed_league(rng_seed=31)
     _seed_season_window()
-    teams = db.fetchall("SELECT id FROM teams ORDER BY id")
-    win_now_id = teams[0]["id"]
-    db.execute("UPDATE teams SET fo_strategy = 'rebuild', fo_aggression = 0.9")
+    # Maximize trade volume: everyone aggressive, one win-now buyer.
+    db.execute("UPDATE teams SET fo_strategy = 'rebuild', fo_aggression = 0.95")
     db.execute(
-        "UPDATE teams SET fo_strategy = 'win_now', fo_aggression = 0.95 WHERE id = ?",
-        (win_now_id,),
+        "UPDATE teams SET fo_strategy = 'win_now', fo_aggression = 0.95 "
+        "WHERE id = (SELECT MIN(id) FROM teams)"
     )
 
-    # Each pass emits at most one trade per team because of the per-date
-    # throttle. Within one pass, count how many players the win_now team
-    # sent (events with team_id == win_now_id) versus received.
+    def _counts() -> dict[int, int]:
+        return {r["team_id"]: r["n"] for r in db.fetchall(
+            "SELECT team_id, COUNT(*) AS n FROM players "
+            "WHERE team_id IS NOT NULL GROUP BY team_id")}
+
+    before = _counts()
+
     import datetime as _dt
-    sent_more = 0
-    total = 0
+    fired = 0
     for i in range(60):
         d = (_dt.date(2024, 7, 14) + _dt.timedelta(days=i % 18)).isoformat()
         events = run_motivation_pass(d, games_played=130, rng_seed=2024 + i)
-        overpay = [e for e in events if e["event_type"] == "trade_win_now_overpay"]
-        if not overpay:
-            continue
-        # Only consider passes where the win_now team actually participated.
-        win_now_sent = sum(1 for e in overpay if e["team_id"] == win_now_id)
-        partner_sent = sum(1 for e in overpay if e["team_id"] != win_now_id)
-        if win_now_sent == 0 and partner_sent == 0:
-            continue
-        total += 1
-        if win_now_sent > partner_sent:
-            sent_more += 1
+        fired += sum(1 for e in events if e["event_type"].startswith("trade_"))
 
-    assert total > 0, "no win_now_overpay trades fired across 60 passes"
-    assert sent_more / total >= 0.6, (
-        f"win_now sent more in only {sent_more}/{total} overpay trades"
+    after = _counts()
+    assert fired > 0, "no trades fired across 60 passes"
+    changed = {tid: (before.get(tid), after.get(tid))
+               for tid in before if before.get(tid) != after.get(tid)}
+    assert not changed, (
+        f"trades changed net roster sizes (should be impossible with balanced "
+        f"trades): {changed}"
     )
 
 

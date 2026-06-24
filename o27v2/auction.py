@@ -49,6 +49,14 @@ ROSTER_FINAL_CAP = ROSTER_TARGET + RESERVE_CAP   # 47
 # enforces 47. Mirrors NFL preseason: 90 → 53 at cut day.
 ROSTER_DRAFT_CAP = 50
 
+# Minimum-roster guarantee. No team may exit the auction below a viable roster:
+# a light-spending club that won few lots is topped up from the free-agent pool
+# so it can always field a full lineup + staff. Without this, a low-bid team
+# leaves the auction with a skeleton roster (the 9-batter / 5-pitcher bug).
+AUCTION_MIN_ROSTER   = ROSTER_TARGET           # total players a team must exit with
+AUCTION_MIN_PITCHERS = 11                       # staff floor among those
+_CANONICAL_POSITIONS = ("C", "1B", "2B", "3B", "SS", "LF", "CF", "RF")
+
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -485,6 +493,83 @@ def _team_bid(player: dict, team_id: int, purse_remaining: int,
     remaining_slots = max(1, ROSTER_TARGET - n_keepers)
     cap = _per_lot_cap(purse_remaining, lot_order, remaining_slots, min_bid)
     return max(0, min(max_bid, cap))
+
+
+def _guarantee_min_roster(team_ids: list[int]) -> list[dict]:
+    """Top up any team the auction left short from the free-agent pool.
+
+    Guarantees each team exits with: every canonical hitter position covered,
+    >= AUCTION_MIN_PITCHERS arms, and >= AUCTION_MIN_ROSTER total players.
+    Signs best-available FAs (team_id IS NULL) per need, marking them active.
+    Returns a list of {team_id, player_id, detail} signing events. Pitching
+    roles are re-derived for any team that gained an arm."""
+    from o27v2 import rotation as _rotation
+    events: list[dict] = []
+    touched_pitching: set[int] = set()
+
+    for tid in team_ids:
+        roster = [dict(r) for r in db.fetchall(
+            "SELECT id, position, is_pitcher, COALESCE(is_joker,0) AS is_joker "
+            "FROM players WHERE team_id = ?", (tid,))]
+        n_total = len(roster)
+        n_pit = sum(1 for p in roster if p["is_pitcher"])
+        have_pos = {p["position"] for p in roster
+                    if not p["is_pitcher"] and not p["is_joker"]}
+        need_pos = [pos for pos in _CANONICAL_POSITIONS if pos not in have_pos]
+        need_pit = max(0, AUCTION_MIN_PITCHERS - n_pit)
+        if not need_pos and need_pit == 0 and n_total >= AUCTION_MIN_ROSTER:
+            continue
+
+        # Free-agent pool, bucketed.
+        fa = [dict(r) for r in db.fetchall(
+            "SELECT * FROM players WHERE team_id IS NULL")]
+        fa_pit = sorted((p for p in fa if p["is_pitcher"]),
+                        key=_player_overall, reverse=True)
+        fa_pos_by: dict[str, list[dict]] = {}
+        for p in fa:
+            if not p["is_pitcher"] and not (p.get("is_joker") or 0):
+                fa_pos_by.setdefault(p["position"], []).append(p)
+        for lst in fa_pos_by.values():
+            lst.sort(key=_player_overall, reverse=True)
+
+        signed: set[int] = set()
+        to_sign: list[dict] = []
+        # 1) Cover any missing canonical position.
+        for pos in need_pos:
+            pick = next((p for p in fa_pos_by.get(pos, [])
+                         if p["id"] not in signed), None)
+            if pick:
+                to_sign.append(pick); signed.add(pick["id"])
+        # 2) Reach the pitcher floor.
+        for p in fa_pit:
+            if need_pit <= 0:
+                break
+            if p["id"] in signed:
+                continue
+            to_sign.append(p); signed.add(p["id"]); need_pit -= 1
+        # 3) Fill to the total floor with best available.
+        remaining = AUCTION_MIN_ROSTER - (n_total + len(to_sign))
+        if remaining > 0:
+            rest = sorted((p for p in fa if p["id"] not in signed),
+                          key=_player_overall, reverse=True)
+            for p in rest[:remaining]:
+                to_sign.append(p); signed.add(p["id"])
+
+        for p in to_sign:
+            db.execute("UPDATE players SET team_id = ?, is_active = 1 WHERE id = ?",
+                       (tid, p["id"]))
+            if p["is_pitcher"]:
+                touched_pitching.add(tid)
+            events.append({
+                "team_id":   tid,
+                "player_id": p["id"],
+                "detail":    f"Auction floor signing: {p.get('name', '?')} "
+                             f"({p.get('position', '?')}) — roster top-up from FA pool",
+            })
+
+    for tid in touched_pitching:
+        _rotation.assign_roles_for_team(tid)
+    return events
 
 
 # ---------------------------------------------------------------------------
@@ -967,6 +1052,17 @@ def apply_auction(
                 "UPDATE players SET is_active = 1 WHERE id = ?",
                 (k["id"],),
             )
+
+    # Step 5: minimum-roster guarantee. Top up any team the auction left short
+    # from the free-agent pool so no club exits with a skeleton roster.
+    floor_signings = _guarantee_min_roster(team_ids)
+    if floor_signings:
+        from o27v2.transactions import log_many
+        from datetime import date as _date
+        log_many(season, _date.today().isoformat(),
+                 [{"event_type": "auction_floor_signing",
+                   "team_id": s["team_id"], "player_id": s["player_id"],
+                   "detail": s["detail"]} for s in floor_signings])
 
     # Per-team summary for the UI. Spent is the per-team delta against
     # THAT team's initial purse (which may be its own team_budget remaining

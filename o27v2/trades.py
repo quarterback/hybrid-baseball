@@ -706,6 +706,27 @@ def _build_offer(
     return [], []
 
 
+def _balance_offer(
+    send: list[dict], recv: list[dict]
+) -> tuple[list[dict], list[dict]]:
+    """Force a count-balanced (1:1-ratio) deal so a trade never changes either
+    team's net roster size.
+
+    Several motivations build lopsided packages (e.g. win-now sends 3 youngsters
+    for 1 star; deadline buys 2-for-1). Left alone, a frequent seller bleeds net
+    bodies and collapses to the lineup floor (the 9-batter/5-pitcher bug). We
+    trim the longer side to the shorter side's length, keeping the highest-value
+    players on each side so the swap stays as fair as possible (partner
+    acceptance still re-checks value downstream). Equal counts in → equal counts
+    out → net roster size preserved on both sides."""
+    n = min(len(send), len(recv))
+    if n == 0:
+        return [], []
+    send = sorted(send, key=trade_value, reverse=True)[:n]
+    recv = sorted(recv, key=trade_value, reverse=True)[:n]
+    return send, recv
+
+
 def _pick_by_value(
     pool: list[dict],
     target_value: float,
@@ -791,6 +812,12 @@ def _validate_offer(
 ) -> bool:
     """Reject offers that would strip a roster below safe operating depth."""
     if not send or not recv:
+        return False
+    # Balanced deals only: every player out must be matched by a player in, so
+    # a trade can never reduce a team's net roster size. The AI builds some
+    # lopsided packages (N-for-1 dumps); those are normalized to equal counts
+    # by `_balance_offer` before we get here — this is the hard backstop.
+    if len(send) != len(recv):
         return False
     # No duplicate players within a side.
     if len({p["id"] for p in send}) != len(send):
@@ -995,6 +1022,7 @@ def _run_team_iteration(
         if partner["fo_last_trade_date"] == game_date:
             continue
         send, recv = _build_offer(team, partner, motivation, ctx, game_date, rng)
+        send, recv = _balance_offer(send, recv)   # enforce equal counts (no net roster loss)
         if not _validate_offer(send, recv, team, partner, game_date):
             continue
         if not _evaluate_offer(partner, send, recv, motivation, rng):
