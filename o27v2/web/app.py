@@ -5188,9 +5188,13 @@ def stats_browse():
                 if (not sel_lg or t["league"] == sel_lg)
                 and (sel_div == "all" or t["division"] == sel_div)
             ]
-        from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
-        pai_by_player = build_pressure_impact(min_pa=1, team_ids=stat_team_ids)["by_player"]
-        hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=stat_team_ids)["by_player"]
+        pai_by_player, hdo_by_player = {}, {}
+        try:
+            from o27v2.analytics import build_pressure_impact, build_hitter_dead_outs_table
+            pai_by_player = build_pressure_impact(min_pa=1, team_ids=stat_team_ids)["by_player"]
+            hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=stat_team_ids)["by_player"]
+        except Exception:
+            app.logger.exception("stat panel: pressure/dead-out builders failed; skipping")
         for b in batters:
             pai = pai_by_player.get(b.get("player_id"), {})
             hdo = hdo_by_player.get(b.get("player_id"), {})
@@ -5596,23 +5600,20 @@ def leaders():
     )
     baselines = _league_baselines(league=selected_league)
     _aggregate_batter_rows(batting, baselines=baselines)
-    from o27v2.analytics import (build_pressure_impact, build_hitter_dead_outs_table,
-                                 build_chase_split_table)
-    _leader_team_ids = _league_team_ids(selected_league)
-    pai_by_player = build_pressure_impact(min_pa=1, team_ids=_leader_team_ids)["by_player"]
-    hdo_by_player = build_hitter_dead_outs_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
-    chase_by_player = build_chase_split_table(min_pa=1, team_ids=_leader_team_ids)["by_player"]
+    # Dead-out avoidance enrichment. This reads game_pa_log, which can be empty
+    # or pruned on some saves, so guard it — a builder failure must NEVER 500 the
+    # whole leaderboard. PAI / TRR+ and Chase BA were intentionally dropped from
+    # the board (they live on the box score); pulling those pa_log-derived
+    # builders off /leaders keeps the page robust.
+    hdo_by_player = {}
+    try:
+        from o27v2.analytics import build_hitter_dead_outs_table
+        hdo_by_player = build_hitter_dead_outs_table(
+            min_pa=1, team_ids=_league_team_ids(selected_league))["by_player"]
+    except Exception:
+        app.logger.exception("leaders: hitter dead-out builder failed; skipping")
     for row in batting:
-        pid = row.get("player_id")
-        pai = pai_by_player.get(pid, {})
-        hdo = hdo_by_player.get(pid, {})
-        chase = chase_by_player.get(pid, {})
-        row["pai"] = pai.get("pai")
-        row["pai_per_pa"] = pai.get("pai_per_pa")
-        row["trr_plus"] = pai.get("trr_plus")
-        row["avg_pressure"] = pai.get("avg_pressure")
-        row["chase_ba"] = chase.get("chase_ba")
-        row["chase_pa"] = chase.get("chase_pa")
+        hdo = hdo_by_player.get(row.get("player_id"), {})
         row["dead_out_avoid_pct"] = hdo.get("dead_out_avoid_pct")
         row["dead_out_pa_pct_bat"] = hdo.get("dead_out_pa_pct_bat")
         row["dead_outs_bat"] = hdo.get("dead_outs_bat")
@@ -5687,9 +5688,16 @@ def leaders():
     # Shared helper now produces wERA / xFIP / Decay / GSc / OS+ / AOR / etc.
     wl = _pitcher_wl_map()
     _aggregate_pitcher_rows(pitching, wl, baselines=baselines)
-    from o27v2.analytics import build_expected_outs_table, build_dead_outs_table
-    xo_by_player = build_expected_outs_table(min_bf=1, team_ids=_league_team_ids(selected_league))["by_player"]
-    do_by_player = build_dead_outs_table(min_bf=1, team_ids=_league_team_ids(selected_league))["by_player"]
+    # Expected-outs / dead-out enrichments also read game_pa_log — guard them so
+    # a sparse/pruned log can't 500 the leaderboard (degrade to blank columns).
+    xo_by_player, do_by_player = {}, {}
+    try:
+        from o27v2.analytics import build_expected_outs_table, build_dead_outs_table
+        _pit_team_ids = _league_team_ids(selected_league)
+        xo_by_player = build_expected_outs_table(min_bf=1, team_ids=_pit_team_ids)["by_player"]
+        do_by_player = build_dead_outs_table(min_bf=1, team_ids=_pit_team_ids)["by_player"]
+    except Exception:
+        app.logger.exception("leaders: pitcher xO/dead-out builders failed; skipping")
     for p in pitching:
         outs = p["outs"] or 0
         # OS% = share of a complete game (27 outs) recorded per appearance.
@@ -5778,8 +5786,12 @@ def leaders():
     # Empirical WP built from this league's own outcomes (no MLB
     # crutch). Templates render top 10 by WPA for batters/pitchers
     # and the highest-leverage PA-of-the-season list.
-    from o27v2.analytics.wpa import build_player_wpa
-    wpa_data = build_player_wpa(team_ids=_lg_team_ids)
+    try:
+        from o27v2.analytics.wpa import build_player_wpa
+        wpa_data = build_player_wpa(team_ids=_lg_team_ids)
+    except Exception:
+        app.logger.exception("leaders: WPA builder failed; skipping")
+        wpa_data = {"by_batter": {}, "by_pitcher": {}, "top_pa": [], "n_games": 0}
     # Join WPA / LI onto the batting + pitching rows so the existing
     # `card()` macro can render them like any other stat.
     for b in batting:
@@ -7283,13 +7295,19 @@ def _o27i_batter_rows(team_ids, min_bip: int) -> list[dict]:
     rate_by = {r["player_id"]: r for r in rate}
     # Physics-native xwOBA: expected value per (EV, LA) bin. Meaningful now that
     # the trajectory drives the outcome (vs the weak/med/hard quality version).
-    from o27v2.analytics import (build_xwoba_ev_table, build_pressure_impact,
-                                 build_hitter_dead_outs_table, build_chase_split_table)
-    xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
-    xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
-    pai_by = build_pressure_impact(min_pa=1, team_ids=team_ids)["by_player"]
-    hdo_by = build_hitter_dead_outs_table(min_pa=1, team_ids=team_ids)["by_player"]
-    chase_by = build_chase_split_table(min_pa=1, team_ids=team_ids)["by_player"]
+    # These read game_pa_log / EV-LA bins — guard so a sparse or pruned log can't
+    # 500 the O27 Index page (degrade to blank advanced columns instead).
+    xwoba_by, pai_by, hdo_by, chase_by = {}, {}, {}, {}
+    try:
+        from o27v2.analytics import (build_xwoba_ev_table, build_pressure_impact,
+                                     build_hitter_dead_outs_table, build_chase_split_table)
+        xt = build_xwoba_ev_table(min_pa=1, team_ids=team_ids)
+        xwoba_by = {r["player_id"]: r for r in xt["leaders"]}
+        pai_by = build_pressure_impact(min_pa=1, team_ids=team_ids)["by_player"]
+        hdo_by = build_hitter_dead_outs_table(min_pa=1, team_ids=team_ids)["by_player"]
+        chase_by = build_chase_split_table(min_pa=1, team_ids=team_ids)["by_player"]
+    except Exception:
+        app.logger.exception("o27i batter rows: advanced builders failed; skipping")
 
     rows = []
     for e in ev:
