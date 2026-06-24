@@ -10,7 +10,11 @@
 </div>
 
 {% macro series_tile(s) %}
-<div class="mb-3" style="padding-bottom: 8px; border-bottom: 1px dashed var(--border)">
+<div class="mb-3 playoff-series-tile" style="padding-bottom: 8px; border-bottom: 1px dashed var(--border)">
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <span class="badge text-bg-dark">{{ round_label(s.series_kind) }}</span>
+    <span class="text-secondary small">Best of {{ s.best_of }}</span>
+  </div>
   {% if s.low_seed_team_id %}
   <div class="d-flex justify-content-between align-items-baseline">
     <span>
@@ -27,7 +31,9 @@
     <span class="num{% if s.low_wins > s.high_wins %} fw-bold{% endif %}">{{ s.low_wins }}</span>
   </div>
   {% if s.winner_team_id %}
-  <div class="text-secondary small mt-1">→ {{ s.winner_abbrev }} wins {{ s.high_wins if s.winner_team_id == s.high_seed_team_id else s.low_wins }}-{{ s.low_wins if s.winner_team_id == s.high_seed_team_id else s.high_wins }}</div>
+  <div class="text-secondary small mt-1">Series final: {{ s.winner_abbrev }} advances, {{ s.high_wins if s.winner_team_id == s.high_seed_team_id else s.low_wins }}-{{ s.low_wins if s.winner_team_id == s.high_seed_team_id else s.high_wins }}</div>
+  {% else %}
+  <div class="text-secondary small mt-1">Series in progress: {{ s.high_abbrev }} {{ s.high_wins }}, {{ s.low_abbrev }} {{ s.low_wins }}</div>
   {% endif %}
   {% if s.games %}
   <div class="mt-2 small">
@@ -229,7 +235,7 @@
 {% if not playoffs_initiated and not postseason_disabled %}
 <form method="post" action="{{ url_for('playoffs_settings_save') }}" class="panel panel-body mb-4">
   <h3 class="mb-3" style="font-size: 1rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary)">Postseason Format</h3>
-  <p class="text-secondary small">Set before the bracket locks. Each league runs its own bracket{% if settings.n_leagues == 2 %}; the two league champions meet in the World Series{% endif %}.</p>
+  <p class="text-secondary small">Set before the bracket locks. Each league runs its own bracket{% if settings.n_leagues == 2 %}; the two league champions meet in the World Series{% endif %}. Division winners are seeded first; wild cards are the highest-ranked non-division-winners needed to fill the field.</p>
   <div class="row g-3 align-items-end">
     <div class="col-6 col-md-3">
       <label class="form-label small">Teams per league</label>
@@ -343,5 +349,9 @@
   </div>
 </div>
 {% endif %}
+
+<style>
+.playoff-series-tile { background: linear-gradient(90deg, rgba(212,175,55,.08), transparent); border-radius: 6px; padding: 8px; }
+</style>
 
 {% endblock %}

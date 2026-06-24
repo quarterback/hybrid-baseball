@@ -74,6 +74,19 @@
 </style>
 {% endif %}
 
+{% if postseason_status and postseason_status.made %}
+<div class="panel panel-body mb-3" style="border-left:4px solid var(--accent)">
+  <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2">
+    <div>
+      <div class="score-label">Current postseason</div>
+      <div style="font-weight:700">Made postseason · #{{ postseason_status.seed }} {{ postseason_status.berth }}</div>
+      <div class="text-secondary small">{{ postseason_status.state }} · current/last series {{ postseason_status.series_wins }}–{{ postseason_status.series_losses }}</div>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('playoffs_view') }}">View bracket →</a>
+  </div>
+</div>
+{% endif %}
+
 {# ---- Quick stat tiles ---- #}
 <div class="stat-tiles">
   <div class="stat-tile accent">

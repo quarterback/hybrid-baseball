@@ -405,6 +405,60 @@ def champion() -> dict | None:
     return None
 
 
+
+def team_postseason_status(team_id: int, season: int = 1) -> dict:
+    """Return a compact, UI-friendly current-season postseason status for a team.
+
+    Empty dict means the current live season has no bracket row for the club.
+    Status is derived from playoff_series, so it answers the user-facing question
+    "did this team make the postseason?" even after later rounds are underway.
+    """
+    rows = db.fetchall(
+        """SELECT * FROM playoff_series
+           WHERE season = ?
+             AND (high_seed_team_id = ? OR low_seed_team_id = ? OR winner_team_id = ?)
+           ORDER BY round_idx ASC, id ASC""",
+        (season, team_id, team_id, team_id),
+    )
+    if not rows:
+        return {}
+    first = rows[0]
+    last = rows[-1]
+    seed = first["high_seed"] if first["high_seed_team_id"] == team_id else first["low_seed"]
+    berth = "Postseason berth"
+    # playoff_series does not store bid type, so infer from initial seed versus
+    # division count in that league. This mirrors compute_fields_by_league.
+    try:
+        div_count = (db.fetchone(
+            "SELECT COUNT(DISTINCT division) AS n FROM teams WHERE COALESCE(league,'') = ?",
+            (first["league"] or "",),
+        ) or {}).get("n") or 0
+        berth = "Division winner" if (seed or 999) <= div_count else "Wild Card"
+    except Exception:
+        pass
+    eliminated = bool(last["winner_team_id"] is not None and last["winner_team_id"] != team_id)
+    active = bool(last["winner_team_id"] is None)
+    champion_row = champion()
+    champion_team_id = champion_row["winner_team_id"] if champion_row else None
+    won_title = bool(champion_team_id == team_id)
+    if won_title:
+        state = "Champion"
+    elif eliminated:
+        state = f"Eliminated in {round_label(last['series_kind'])}"
+    elif active:
+        state = f"Alive in {round_label(last['series_kind'])}"
+    else:
+        state = f"Advanced through {round_label(last['series_kind'])}"
+    return {
+        "made": True,
+        "seed": seed,
+        "berth": berth,
+        "state": state,
+        "round": round_label(last["series_kind"]),
+        "series_wins": last["high_wins"] if last["high_seed_team_id"] == team_id else last["low_wins"],
+        "series_losses": last["low_wins"] if last["high_seed_team_id"] == team_id else last["high_wins"],
+    }
+
 def league_champions() -> list[dict]:
     """One row per league that has crowned a champion (its 'championship'
     series winner). Useful for multi-league saves with no World Series."""

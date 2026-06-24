@@ -308,9 +308,15 @@ def export_player_card(player: dict,
 # ---------------------------------------------------------------------------
 
 def export_standings(leagues_with_divisions: dict, win_pct,
-                     gb_calc=None) -> str:
-    """Markdown standings, grouped by league/division."""
-    out: list[str] = ["# Standings", ""]
+                     gb_calc=None, playoff_picture: dict | None = None) -> str:
+    """Markdown standings, grouped by league/division, with explicit playoff picture.
+
+    The playoff notes are intentionally redundant for LLM paste: division
+    winners are separate from wild cards, and wild cards are allocated only
+    after removing division leaders from the pool.
+    """
+    out: list[str] = ["# Standings", "",
+                      "_Playoff rule: division winners qualify first; wild cards are the best remaining non-division-winners. Seeds list division winners first, then wild cards._", ""]
     for league_name, divs in leagues_with_divisions.items():
         out.append(f"## {league_name}")
         out.append("")
@@ -337,6 +343,40 @@ def export_standings(leagues_with_divisions: dict, win_pct,
                 ["l", "l", "r", "r", "r", "r"],
             ))
             out.append("")
+        pic = (playoff_picture or {}).get(league_name)
+        if pic:
+            out.append("### Playoff picture")
+            out.append("")
+            rows = []
+            for i, t in enumerate(pic.get("champs") or [], start=1):
+                rows.append([str(i), t.get("abbrev") or "", t.get("name") or "",
+                             t.get("division") or "", str(t.get("wins") or 0),
+                             str(t.get("losses") or 0), win_pct(t), "Division winner"])
+            for c in pic.get("contenders") or []:
+                if not c.get("in_spot"):
+                    continue
+                t = c.get("team") or {}
+                rows.append([str(c.get("seed") or ""), t.get("abbrev") or "",
+                             t.get("name") or "", t.get("division") or "",
+                             str(t.get("wins") or 0), str(t.get("losses") or 0),
+                             win_pct(t), "Wild Card"])
+            if rows:
+                out.append(_md_table(["Seed", "Tm", "Team", "Div", "W", "L", "Pct", "Bid"], rows,
+                                     ["r", "l", "l", "l", "r", "r", "r", "l"]))
+                out.append("")
+            wc_rows = []
+            for c in pic.get("contenders") or []:
+                t = c.get("team") or {}
+                wc_rows.append(["IN" if c.get("in_spot") else "OUT", t.get("abbrev") or "",
+                                t.get("name") or "", t.get("division") or "",
+                                str(t.get("wins") or 0), str(t.get("losses") or 0),
+                                win_pct(t), str(c.get("wcgb") or "—")])
+            if wc_rows:
+                out.append("Wild-card race (division winners removed):")
+                out.append("")
+                out.append(_md_table(["Status", "Tm", "Team", "Div", "W", "L", "Pct", "WCGB"], wc_rows,
+                                     ["l", "l", "l", "l", "r", "r", "r", "r"]))
+                out.append("")
     out.append("_O27 League · standings export_")
     out.append("")
     return "\n".join(out)
