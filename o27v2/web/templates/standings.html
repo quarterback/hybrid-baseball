@@ -330,6 +330,9 @@
   {% set pic = playoff_picture.get(league_name) %}
   {% if pic and pic.n_wc > 0 %}
   <div class="wc-panel">
+    <div class="text-secondary small mb-2">
+      Playoff allocation: first-place clubs in each division receive division berths. Wild cards are then awarded to the best remaining teams after those division leaders are removed, so a second-place club can outrank another division leader and still be a wild card.
+    </div>
     <div class="div-card-title">
       <span>Playoff Picture</span>
       <span class="text-secondary small">

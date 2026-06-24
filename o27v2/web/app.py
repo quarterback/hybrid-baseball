@@ -4645,8 +4645,9 @@ def player_detail_export(player_id: int):
 
 @app.route("/standings/export.md")
 def standings_export():
+    leagues = _leagues_with_divisions()
     return _md_response(text_export.export_standings(
-        _leagues_with_divisions(), _win_pct, _gb,
+        leagues, _win_pct, _gb, playoff_picture=_playoff_picture(leagues),
     ))
 
 
@@ -8697,6 +8698,11 @@ def team_detail(team_id: int):
     # Staff wERA mean + variance — cascade-fragility read. Computed once
     # league-wide; we pull this team's row out for display.
     staff_disp = _staff_wera_dispersion(_league_baselines()).get(int(team_id), {})
+    try:
+        from o27v2.playoffs import team_postseason_status
+        postseason_status = team_postseason_status(team_id)
+    except Exception:
+        postseason_status = {}
     return _serve("team.html",
                            team=team,
                            batters=batters,
@@ -8706,6 +8712,7 @@ def team_detail(team_id: int):
                            team_payroll=team_payroll,
                            org_strength=org_strength_live,
                            honors=_team_honors(team),
+                           postseason_status=postseason_status,
                            staff_wera=staff_disp)
 
 
