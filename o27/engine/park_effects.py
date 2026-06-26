@@ -69,6 +69,31 @@ def _fence_at_angle(spray: float, park_dims: dict) -> float:
     return float(park_dims.get("cf", 380.0))
 
 
+def _wall_at_angle(spray: float, park_dims: dict) -> float:
+    """Interpolate the fence HEIGHT (ft) at the given spray angle.
+
+    Real parks carry a per-zone `walls` map (lf/lcf/cf/rcf/rf) so a tall wall
+    that only stands down one line — Fenway's 37-ft Monster, Tropicana's tall
+    RF — actually rides the spray angle instead of being smeared into a single
+    scalar. Falls back to the scalar `wall_h` when no `walls` map is present,
+    so procedurally-generated parks (which predate the map) behave exactly as
+    before.
+    """
+    walls = park_dims.get("walls") if park_dims else None
+    scalar = float(park_dims.get("wall_h", 10) or 10) if park_dims else 10.0
+    if not walls:
+        return scalar
+    s = max(-45.0, min(45.0, float(spray or 0.0)))
+    for i in range(len(_FENCE_ANGLES) - 1):
+        a0, a1 = _FENCE_ANGLES[i], _FENCE_ANGLES[i + 1]
+        if a0 <= s <= a1:
+            h0 = float(walls.get(_FENCE_KEYS[i],     scalar))
+            h1 = float(walls.get(_FENCE_KEYS[i + 1], scalar))
+            t = (s - a0) / (a1 - a0) if a1 != a0 else 0.0
+            return h0 + (h1 - h0) * t
+    return float(walls.get("cf", scalar))
+
+
 def _proxy_distance(ev: float, la: float) -> float:
     """Heuristic batted-ball distance (ft) from exit velocity + launch
     angle. Approximates a drag-adjusted projectile range.
@@ -180,7 +205,10 @@ def apply_park_effects(
 
     dist = _proxy_distance(ev, la)
     fence = _fence_at_angle(spray, park_dims)
-    wall_h = float(park_dims.get("wall_h", 10) or 10)
+    # Fence height AT this spray angle — honors a real park's per-zone walls
+    # map (e.g. the Green Monster down the LF line) and falls back to the
+    # scalar wall_h for generated parks. Every downstream rule reads wall_h.
+    wall_h = _wall_at_angle(spray, park_dims)
     abs_spray = abs(spray)
 
     # Tall-wall clearance margin: a 12-ft wall needs +0 ft above fence;

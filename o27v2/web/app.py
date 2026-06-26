@@ -10043,8 +10043,12 @@ def _universe_region_only_options():
 
 
 def _universe_park_options():
-    from o27v2.league import get_park_profiles
-    return [{"key": k, "label": lbl} for k, lbl in get_park_profiles().items()]
+    # Park SOURCE menu: procedural geometry profiles + the realistic-but-varied
+    # generator + real stadiums by tier, grouped for the dropdown. The chosen
+    # token is routed by league._apply_park_source (profile key / "realistic" /
+    # "real:<tier>").
+    from o27v2.league import get_park_source_options
+    return get_park_source_options()
 
 
 @app.route("/universe/new", methods=["GET"])
