@@ -467,6 +467,7 @@
         <th class="num" title="Successful 3B-runner advances / opportunities with a runner on third base">3B</th>
         <th class="num" title="Overall runner advancement rate across all PAs with any runner on base">All%</th>
         <th class="num" title="Runners Advanced — graded total bases gained by runners (MLB Total Bases concept applied to runner movement). 1B→2B = +1, 1B→home = +3, etc.">RAD</th>
+        <th class="num" title="Total Runner Influence = total bases + RAD. The counting stat for moving runners; credits the advance even when a teammate strands the runner (where RBI would not).">TRI</th>
       </tr></thead>
       <tbody><tr>
         <td class="num fw-bold">{% if bt_totals.adv_1b_pct is not none %}{{ '%.1f'|format(bt_totals.adv_1b_pct * 100) }}%{% else %}—{% endif %}</td>
@@ -477,6 +478,7 @@
         <td class="num">{{ bt_totals.adv_adv_3b or 0 }}/{{ bt_totals.adv_op_3b or 0 }}</td>
         <td class="num fw-bold">{% if bt_totals.adv_total_pct is not none %}{{ '%.1f'|format(bt_totals.adv_total_pct * 100) }}%{% else %}—{% endif %}</td>
         <td class="num fw-bold">{{ bt_totals.rad_total or 0 }}</td>
+        <td class="num fw-bold">{{ bt_totals.tri or 0 }}</td>
       </tr></tbody>
     </table>
     </div>

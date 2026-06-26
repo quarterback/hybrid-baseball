@@ -5659,6 +5659,15 @@ def leaders():
             + int(row.get("rad_2b") or 0)
             + int(row.get("rad_3b") or 0)
         )
+        # TRI — own total bases + RAD (see glossary). The runner-moving
+        # counterpart to total bases; RBI is its scoring tail.
+        row["tri"] = (
+            int(row.get("h") or 0)
+            + int(row.get("d2") or 0)
+            + 2 * int(row.get("d3") or 0)
+            + 3 * int(row.get("hr") or 0)
+            + row["rad_total"]
+        )
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
@@ -6677,6 +6686,16 @@ def player_detail(player_id: int):
             + int(bt_totals.get("rad_2b") or 0)
             + int(bt_totals.get("rad_3b") or 0)
         )
+        # TRI — Total Runner Influence = own total bases + RAD (see glossary).
+        # The counting stat for moving runners; credits the advance even when a
+        # teammate strands the runner, where RBI would not.
+        bt_totals["tb"] = (
+            int(bt_totals.get("h") or 0)
+            + int(bt_totals.get("d2") or 0)
+            + 2 * int(bt_totals.get("d3") or 0)
+            + 3 * int(bt_totals.get("hr") or 0)
+        )
+        bt_totals["tri"] = bt_totals["tb"] + bt_totals["rad_total"]
 
     # Per-fielder defense totals (PO + A + E). Assist crediting was
     # added when pitch types were activated — the renderer now also

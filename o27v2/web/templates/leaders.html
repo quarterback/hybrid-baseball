@@ -162,6 +162,7 @@
   {{ card('3B%',  'adv_3b_pct',    '%.3f', true, batting, tooltip='Rate at which the runner who started on THIRD BASE scored during this batter\'s PA. The pure RBI-conversion metric.') }}
   {{ card('All%', 'adv_total_pct', '%.3f', true, batting, tooltip='Overall advancement rate across all PAs with any runner on base. Composite of 1B%/2B%/3B% weighted by opportunity.') }}
   {{ card('RAD',  'rad_total',     '%d',   true, batting, tooltip='Runners Advanced — total bases gained by runners during this batter\'s PAs. Mirrors MLB Total Bases (which counts the batter\'s own bases) but applied to runner movement instead. Sum of bases gained from 1B/2B/3B starting positions.') }}
+  {{ card('TRI',  'tri',           '%d',   true, batting, tooltip='Total Runner Influence = total bases + RAD (own bases + runner bases advanced). The counting stat for O27\'s signature skill, moving runners. Unlike RBI it credits the advance even when a teammate fails to drive the runner home. RBI is its scoring tail.') }}
 </div>
 
 <h4>Batting · Clutch (RISP)</h4>
