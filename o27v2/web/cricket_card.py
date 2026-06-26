@@ -1,10 +1,12 @@
 """Render an O27 game as a cricket-style scorecard.
 
 An exercise in idiom translation: can a baseball box score read like the BBC's
-Test-match card — two innings, each a compact "top order + attack + match state"
-panel? The mapping below is deliberate, and it mostly works because O27 already
-shares cricket's spine (one continuous 27-out half per side = an innings; the
-side batting second is chasing a target).
+Test-match card — a compact "top order + attack + match state" panel per side?
+It mostly works because O27 already shares cricket's spine: there are no innings,
+each side bats one continuous 27-out half. The top bats first, the bottom chases
+a target — two halves of ONE regulation innings, not cricket's two separate
+innings. A side only ever bats a *second* time in a super inning (the tiebreak),
+so super innings are the true "2nd innings, and so forth."
 
 Baseball → cricket mapping
 --------------------------
@@ -19,10 +21,10 @@ Baseball → cricket mapping
 * **A pitcher's figures `W–R`** — outs recorded for runs allowed (e.g. `9–3`),
   read aloud "nine for three". Outs are wickets, so the attack's wickets sum to
   27, mirroring a bowling card summing to 10.
-* **Match state** — the side batting second chases. If it gets there with outs
-  in hand it wins "by N wickets" (outs remaining); otherwise the side that
-  batted first defended its total and wins "by N runs". The losing chase trails
-  "by N runs".
+* **Match state** — the bottom side chases the top's total. O27 plays both
+  27-out halves out (no walk-off), so a decided game is always "won by N runs".
+  A level score after regulation goes to **super innings** (super inning 1, 2,
+  …), the only place a side bats a second time — rendered as their own block.
 
 Pure rendering: it reads the persisted per-game tables (game_batter_stats,
 game_pitcher_stats, games, players) and returns a string for a <pre> block.
@@ -84,17 +86,30 @@ def build_cricket_card(game_id: int, db) -> Optional[dict]:
                     "runs": b["runs"] or 0, "k": b["k"] or 0} for b in bowls]
         bowlers.sort(key=lambda x: (-x["wkts"], x["runs"]))
 
-        outs = sum(b["outs"] or 0 for b in bats)
         runs = sum(b["runs"] for b in bats)
-        return {"team": team_name, "runs": runs, "wickets": outs,
+        # A completed regulation half always bats until 27 outs ("all out") —
+        # the defining O27 rule — so the wicket count is 27 by definition. (The
+        # per-batter outs_recorded ledger undercounts: baserunning outs aren't
+        # charged to a batter.) Super innings carry their own shorter out count.
+        return {"team": team_name, "runs": runs, "wickets": 27,
                 "pa": sum(b["pa"] for b in bats),
                 "batting_first": batting_first,
                 "batters": batters, "bowlers": bowlers}
 
     away = innings(g["away_team_id"], g["away_name"], batting_first=True)
     home = innings(g["home_team_id"], g["home_name"], batting_first=False)
+
+    # Super innings: O27 has no second regulation innings — a side only bats
+    # again to break a tie. Each extra round is its own "innings" (super inning
+    # 1, 2, …), drawn from the play-by-play super_* halves when present.
+    supers = db.fetchall(
+        "SELECT half, MAX(visitors_score) v, MAX(home_score) h "
+        "FROM game_scoring_events WHERE game_id=? AND half LIKE 'super%' "
+        "GROUP BY half", (game_id,))
+    super_innings = [{"half": s["half"], "v": s["v"], "h": s["h"]} for s in supers]
+
     return {"date": g["game_date"], "id": game_id,
-            "innings": [away, home],
+            "innings": [away, home], "super_innings": super_innings,
             "away_score": g["away_score"], "home_score": g["home_score"],
             "winner_id": g["winner_id"],
             "away_id": g["away_team_id"], "home_id": g["home_team_id"]}
@@ -105,23 +120,32 @@ def _opponent(g: dict, team_id: int) -> int:
 
 
 def _result_line(card: dict) -> str:
-    first, second = card["innings"][0], card["innings"][1]
-    if first["runs"] == second["runs"]:
-        return f"  Match tied — {first['runs']} apiece"
-    winner, loser = ((second, first) if second["runs"] > first["runs"]
-                     else (first, second))
-    margin = winner["runs"] - loser["runs"]
-    if winner is second and second["wickets"] < 27:
-        # Chased the target down with outs in hand → "by N wickets".
+    away, home = card["innings"][0], card["innings"][1]
+    # O27 plays both 27-out halves out (no walk-off), so regulation is decided
+    # on runs. A level score after regulation goes to super innings.
+    if away["runs"] != home["runs"]:
+        winner, loser = ((home, away) if home["runs"] > away["runs"]
+                         else (away, home))
+        margin = winner["runs"] - loser["runs"]
         return (f"  {winner['team']} beat {loser['team']} "
-                f"by {27 - second['wickets']} wicket"
-                f"{'s' if 27 - second['wickets'] != 1 else ''}")
-    return (f"  {winner['team']} beat {loser['team']} "
-            f"by {margin} run{'s' if margin != 1 else ''}")
+                f"by {margin} run{'s' if margin != 1 else ''}")
+    # Tied after regulation → super innings settled it (use the result of record).
+    if card["super_innings"]:
+        n = len(card["super_innings"])
+        win = away["team"] if card["winner_id"] == card["away_id"] else home["team"]
+        return (f"  Level at {away['runs']} after regulation — "
+                f"{win} win in super inning{'s' if n != 1 else ''} ({n})")
+    return f"  Match level — {away['runs']} apiece"
 
 
-def _render_innings(inn: dict) -> list[str]:
-    label = "1st innings" if inn["batting_first"] else "2nd innings (chasing)"
+def _render_innings(inn: dict, target: Optional[int]) -> list[str]:
+    # O27 is one 27-out half per side: the top bats first, the bottom chases.
+    # These are halves of the single regulation innings, NOT cricket's two
+    # separate innings — a side only bats again in a super inning.
+    if inn["batting_first"]:
+        label = "top · batting first"
+    else:
+        label = f"bottom · chasing {target}" if target is not None else "bottom"
     head = (f"  {inn['team']:<22} {inn['runs']:>3}/{inn['wickets']:<2}"
             f"   {inn['pa']:>3} PA      {label}")
     lines = [head]
@@ -136,16 +160,31 @@ def _render_innings(inn: dict) -> list[str]:
     return lines
 
 
+def _render_super_innings(card: dict) -> list[str]:
+    if not card["super_innings"]:
+        return []
+    a, h = card["innings"]
+    lines = ["", "  Super innings"]
+    for i, s in enumerate(card["super_innings"], 1):
+        bats_away = "top" in s["half"]
+        team = a["team"] if bats_away else h["team"]
+        runs = s["v"] if bats_away else s["h"]
+        lines.append(f"    {i}.  {team:<22} {runs if runs is not None else '—'}")
+    return lines
+
+
 def render_cricket_card(game_id: int, db) -> str:
     """The full BBC-style card as one string for a <pre> block."""
     card = build_cricket_card(game_id, db)
     if card is None:
         return f"(no game #{game_id})"
     a, h = card["innings"]
+    target = a["runs"] + 1   # the chasing (bottom) side needs to pass this
     title = f"{a['team']} v {h['team']} — O27, {card['date']}  · #{card['id']}"
-    out = [_RULE, f"  {title}", _THIN]
-    out += _render_innings(a)
+    out = [_RULE, f"  {title}", "  Regulation — 27 outs a side", _THIN]
+    out += _render_innings(a, target)
     out.append("")
-    out += _render_innings(h)
+    out += _render_innings(h, target)
+    out += _render_super_innings(card)
     out += [_THIN, _result_line(card), _RULE]
     return "\n".join(out)

@@ -237,10 +237,34 @@
    annotations, and game notes are baked into ONE string by the Python
    renderer in o27v2/web/box_score.py.
    ─────────────────────────────────────────────────────────────────── #}
-<pre style="font-family:'Courier New',Consolas,Menlo,monospace;
+{%- set _box_style = "font-family:'Courier New',Consolas,Menlo,monospace;
             font-size:13px; line-height:1.35; white-space:pre;
             color:var(--fg, inherit); background:transparent;
-            padding:1rem; margin:0; overflow-x:auto;">{{ box_score_text }}</pre>
+            padding:1rem; margin:0; overflow-x:auto;" %}
+{% if cricket_card_text %}
+<div class="btn-group btn-group-sm mb-2" role="group" aria-label="Scorecard view">
+  <button type="button" class="btn btn-outline-secondary active" id="view-box-btn"
+          onclick="o27ShowScore('box')">Box score</button>
+  <button type="button" class="btn btn-outline-secondary" id="view-cricket-btn"
+          onclick="o27ShowScore('cricket')" title="The same game in the cricket idiom: out = wicket, total bases = a batter's innings, pitcher figures = outs–runs">Cricket card</button>
+</div>
+{% endif %}
+<pre id="view-box" style="{{ _box_style }}">{{ box_score_text }}</pre>
+{% if cricket_card_text %}
+<pre id="view-cricket" style="{{ _box_style }} display:none;">{{ cricket_card_text }}</pre>
+<script>
+function o27ShowScore(which){
+  var box=document.getElementById('view-box'), cr=document.getElementById('view-cricket');
+  if(!cr) return;
+  var cricket = which==='cricket';
+  box.style.display = cricket ? 'none':'block';
+  cr.style.display  = cricket ? 'block':'none';
+  var bb=document.getElementById('view-box-btn'), cb=document.getElementById('view-cricket-btn');
+  if(bb) bb.classList.toggle('active', !cricket);
+  if(cb) cb.classList.toggle('active', cricket);
+}
+</script>
+{% endif %}
 
 {# ───── Scoring Events (pesäpallo-style log) ─────
    One row per run that crossed the plate: batter, runner, runner's

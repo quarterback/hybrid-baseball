@@ -4162,6 +4162,15 @@ def game_detail(game_id: int):
         rrr_summary=rrr_summary,
     )
 
+    # Cricket-idiom view of the same game (out = wicket, total bases = a
+    # batter's innings, pitcher figures = outs-for-runs). Pure render over the
+    # persisted tables; never let it break the page.
+    try:
+        from o27v2.web.cricket_card import render_cricket_card
+        cricket_card_text = render_cricket_card(game_id, db)
+    except Exception:
+        cricket_card_text = None
+
     # Pesäpallo-style scoring events log — one row per run that crossed
     # the plate during this game. Joined to players for display names.
     scoring_events = db.fetchall(
@@ -4223,6 +4232,7 @@ def game_detail(game_id: int):
         game_notes=notes,
         weather_label=weather_label,
         box_score_text=box_score_text,
+        cricket_card_text=cricket_card_text,
         away_bips=away_bips,
         home_bips=home_bips,
         park_dims=park_dims,
