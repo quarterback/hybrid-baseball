@@ -22,12 +22,14 @@ primary_region = "ams"
 [http_service]
   internal_port = 8080
   force_https = true
-  # Scale to zero when idle: Fly stops idle machines after a period with no
-  # traffic, then auto-starts a machine on the next incoming request. This
-  # avoids paying for the VMs while the sim app is not in use. Expect a few
-  # seconds of cold-start latency on the first request after an idle period.
+  # Off until manually booted: Fly stops idle machines and does NOT auto-start
+  # them on incoming requests, so they stay off (no charges) until you
+  # explicitly start one with `fly machine start --app hybrid-baseball` (or
+  # `fly scale count 1`). While stopped, visiting the URL will NOT wake a
+  # machine — the request fails until you boot it. This trades convenience
+  # for full control over when the VMs (and their cost) are running.
   auto_stop_machines = 'stop'
-  auto_start_machines = true
+  auto_start_machines = false
   # Two machines exist for load distribution. IMPORTANT: each machine mounts
   # its own Fly volume — SQLite state is NOT shared between machines. Use
   # sticky_sessions so every browser client is pinned to one machine for
