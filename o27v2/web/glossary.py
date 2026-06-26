@@ -91,6 +91,8 @@ GLOSSARY_SECTIONS: list[dict] = [
              "desc": "Overall advancement rate across all PAs with any runner on base. Composite of 1B%/2B%/3B% weighted by opportunity."},
             {"key": "rad_total", "abbr": "RAD", "name": "Runners Advanced",
              "desc": "Total bases gained by runners during this batter's PAs. The runner-movement analogue of MLB Total Bases."},
+            {"key": "tri", "abbr": "TRI", "name": "Total Runner Influence",
+             "desc": "A batter's own total bases plus RAD (the bases of runner movement he caused): TRI = TB + RAD. The counting stat for O27's signature skill — moving runners with the stay. Unlike RBI it credits the advancement even when a teammate fails to drive the runner home, so it isolates a bat's own contribution. RBI is TRI's scoring tail."},
         ],
     },
     {
