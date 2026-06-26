@@ -22,15 +22,21 @@ primary_region = "ams"
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = false
+  # Scale to zero when idle: Fly stops idle machines after a period with no
+  # traffic, then auto-starts a machine on the next incoming request. This
+  # avoids paying for the VMs while the sim app is not in use. Expect a few
+  # seconds of cold-start latency on the first request after an idle period.
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  # Two machines for load distribution. IMPORTANT: each machine mounts its
-  # own Fly volume — SQLite state is NOT shared between machines. Use
+  # Two machines exist for load distribution. IMPORTANT: each machine mounts
+  # its own Fly volume — SQLite state is NOT shared between machines. Use
   # sticky_sessions so every browser client is pinned to one machine for
   # the duration of their session; this prevents a user from seeing
   # inconsistent data across machines. If you need true shared state across
   # machines, migrate to LiteFS (fly.io/docs/litefs) or PostgreSQL.
-  min_machines_running = 2
+  # min_machines_running = 0 lets BOTH machines stop when idle; Fly starts
+  # one (or more, under concurrency pressure) on demand.
+  min_machines_running = 0
   [http_service.concurrency]
     type = "requests"
     # soft_limit triggers back-pressure (Fly routes new connections elsewhere);
