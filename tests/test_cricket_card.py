@@ -23,6 +23,21 @@ def test_total_bases_mapping():
     assert cc._total_bases({"hits": 3, "doubles": 0, "triples": 0, "hr": 0}) == 3
 
 
+def test_tri_is_total_bases_plus_runners_advanced():
+    # 3 self total bases + (2+1+1) runner bases advanced = 7.
+    b = {"hits": 2, "doubles": 1, "triples": 0, "hr": 0,
+         "rad_1b": 2, "rad_2b": 1, "rad_3b": 1}
+    assert cc._total_bases(b) == 3
+    assert cc._runners_advanced(b) == 4
+    assert cc._tri(b) == 7
+    # A bat that moved runners without padding its own line still scores.
+    mover = {"hits": 1, "doubles": 0, "triples": 0, "hr": 0,
+             "rad_1b": 3, "rad_2b": 3, "rad_3b": 2}
+    assert cc._tri(mover) == 1 + 8
+    # Missing rad columns degrade to plain total bases.
+    assert cc._tri({"hits": 2, "doubles": 0, "triples": 0, "hr": 0}) == 2
+
+
 def test_short_name():
     assert cc._short("Devon Conway") == "D. Conway"
     assert cc._short("Ichiro") == "Ichiro"

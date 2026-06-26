@@ -13,11 +13,13 @@ Baseball → cricket mapping
 * **Team total `R/W`** — runs for outs. An out is a wicket; an innings closes at
   27, so a completed side reads `7/27` (cf. cricket's "all out" at 10). The PA
   count rides alongside as the "balls faced" depth.
-* **A batter's innings = total bases** (1B=1, 2B=2, 3B=3, HR=4) — the cleanest
-  analog to a batsman accumulating runs off the bat. Balls faced = plate
-  appearances. A batter who never made an out (outs == 0, ≥1 PA) is **not out**,
-  marked `*`, exactly like a cricket `74*`. The card lists the top order by
-  innings score, just as cricket lists the highest scorers.
+* **A batter's innings = TRI** (Total Runner Influence = own total bases + RAD,
+  the graded bases of runner movement he caused). Plain total bases misses the
+  point of O27 — the signature bat skill is *moving runners* with the stay — so
+  TRI is the runner-moving cousin of total bases, with RBI as its scoring tail.
+  Balls faced = plate appearances; a batter who never made an out (outs == 0,
+  ≥1 PA) is **not out**, marked `*` like a cricket `74*`. The card lists the top
+  order by TRI, as cricket lists the highest scorers.
 * **A pitcher's figures `W–R`** — outs recorded for runs allowed (e.g. `9–3`),
   read aloud "nine for three". Outs are wickets, so the attack's wickets sum to
   27, mirroring a bowling card summing to 10.
@@ -52,6 +54,20 @@ def _total_bases(b: dict) -> int:
     return singles + 2 * b["doubles"] + 3 * b["triples"] + 4 * b["hr"]
 
 
+def _runners_advanced(b: dict) -> int:
+    """RAD — graded bases each runner gained off this PA (the runner-movement
+    analog of total bases)."""
+    return (b.get("rad_1b") or 0) + (b.get("rad_2b") or 0) + (b.get("rad_3b") or 0)
+
+
+def _tri(b: dict) -> int:
+    """TRI — a batter's own total bases PLUS RAD (bases of runner movement he
+    caused). O27's signature bat skill is moving runners with the stay, so TRI
+    is the headline "innings" number here: the runner-moving cousin of total
+    bases, with RBI as its scoring tail."""
+    return _total_bases(b) + _runners_advanced(b)
+
+
 def build_cricket_card(game_id: int, db) -> Optional[dict]:
     """Assemble the structured card for a finished game, or None if unknown.
 
@@ -66,12 +82,13 @@ def build_cricket_card(game_id: int, db) -> Optional[dict]:
     def innings(team_id: int, team_name: str, batting_first: bool) -> dict:
         bats = db.fetchall(
             "SELECT p.name AS name, b.pa, b.hits, b.doubles, b.triples, b.hr, "
-            "b.runs, b.rbi, b.outs_recorded AS outs FROM game_batter_stats b "
+            "b.runs, b.rbi, b.rad_1b, b.rad_2b, b.rad_3b, "
+            "b.outs_recorded AS outs FROM game_batter_stats b "
             "JOIN players p ON p.id=b.player_id "
             "WHERE b.game_id=? AND b.team_id=? AND b.pa>0",
             (game_id, team_id))
         batters = [{
-            "name": b["name"], "score": _total_bases(b), "balls": b["pa"],
+            "name": b["name"], "score": _tri(b), "balls": b["pa"],
             "runs": b["runs"], "rbi": b["rbi"],
             "not_out": (b["outs"] or 0) == 0,
         } for b in bats]
@@ -186,5 +203,7 @@ def render_cricket_card(game_id: int, db) -> str:
     out.append("")
     out += _render_innings(h, target)
     out += _render_super_innings(card)
-    out += [_THIN, _result_line(card), _RULE]
+    out += [_THIN, _result_line(card),
+            "  batters: TRI (total bases + runners advanced) · balls · * not out",
+            _RULE]
     return "\n".join(out)
