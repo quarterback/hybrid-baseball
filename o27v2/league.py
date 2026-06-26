@@ -3205,6 +3205,50 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
     # managers, etc.
     surname_pool = _park_surname_pool(rng2)
     used_park_names: set[str] = set()
+
+    # ── Real-stadium sourcing ──────────────────────────────────────────────
+    # Two independent, optional modes — each keyed like the other per-league
+    # configs (a bare string applies to every league; a {league: value} dict
+    # targets specific ones):
+    #   "real_parks": "MLB"       → assign ACTUAL stadiums to teams (abbrev
+    #                               match first, then positional) so O27 is
+    #                               played at Fenway, Coors, etc. with their
+    #                               real geometry / walls / park factors and —
+    #                               via the park's real coords + city — real
+    #                               weather and first-pitch clock.
+    #   "park_gen":   "realistic" → generate fresh parks jittered from that
+    #                               tier's real distribution: realistic but
+    #                               varied, instead of the exotic global mix.
+    from o27v2 import real_parks as _real_parks
+
+    def _per_league_cfg(raw, league_name):
+        return raw.get(league_name) if isinstance(raw, dict) else raw
+
+    real_parks_cfg = config.get("real_parks")
+    park_gen_cfg   = config.get("park_gen")
+    _real_pool: dict[str, list[dict]] = {}   # tier → shuffled available records
+    _real_used: set[int] = set()             # id() of consumed records
+
+    def _take_real_park(tier: str, abbrev: str):
+        """Claim a real-park record for a team: its own stadium by abbreviation
+        when available, otherwise the next unused park of that tier."""
+        rec = _real_parks.find_by_abbrev(abbrev) if abbrev else None
+        if (rec is not None and id(rec) not in _real_used
+                and (rec.get("tier") or "").upper() == (tier or "").upper()):
+            _real_used.add(id(rec))
+            return rec
+        pool = _real_pool.get(tier)
+        if pool is None:
+            pool = list(_real_parks.parks_for_tier(tier))
+            rng2.shuffle(pool)
+            _real_pool[tier] = pool
+        while pool:
+            rec = pool.pop(0)
+            if id(rec) not in _real_used:
+                _real_used.add(id(rec))
+                return rec
+        return None
+
     mgr_name_picker = make_name_picker(
         random.Random(rng_seed ^ 0xA17C0DE),
         gender         = name_config.get("gender", "male"),
@@ -3290,6 +3334,31 @@ def seed_league(rng_seed: int = 42, config_id: str = "30teams",
         park_shape  = _dim_dict.pop("shape", "")
         park_dims   = json.dumps(_dim_dict)
         park_quirks = json.dumps(_roll_park_quirks(rng2, park_shape))
+
+        # Real / realistic park overrides (see _take_real_park above). The
+        # default roll above is left intact when neither mode is active.
+        _rp_tier  = _per_league_cfg(real_parks_cfg, league_name)
+        _gen_mode = _per_league_cfg(park_gen_cfg, league_name)
+        if _rp_tier:
+            _rec = _take_real_park(str(_rp_tier), abbrev)
+            if _rec is not None:
+                _dim_dict   = _real_parks.park_to_dimensions(_rec)
+                park_shape  = _dim_dict.pop("shape", "")
+                park_dims   = json.dumps(_dim_dict)
+                park_hr, park_hits = _real_parks.park_factors(_rec)
+                park_name   = _rec.get("park") or park_name
+                park_quirks = json.dumps([])   # authentic parks: no fictional quirks
+                if _rec.get("city"):
+                    city = _rec["city"]
+                if _rec.get("lat") is not None:
+                    lat = _rec["lat"]
+                if _rec.get("lon") is not None:
+                    lon = _rec["lon"]
+        elif _gen_mode == "realistic":
+            _dim_dict  = _real_parks.realistic_park_dimensions(rng2, str(level))
+            park_shape = _dim_dict.pop("shape", "")
+            park_dims  = json.dumps(_dim_dict)
+
         mgr = roll_manager(rng2)
         fo  = roll_fo(rng2)
         if name_regions_cfg.get(league_name):
