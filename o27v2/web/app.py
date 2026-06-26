@@ -4162,6 +4162,15 @@ def game_detail(game_id: int):
         rrr_summary=rrr_summary,
     )
 
+    # Cricket-idiom view of the same game (out = wicket, total bases = a
+    # batter's innings, pitcher figures = outs-for-runs). Pure render over the
+    # persisted tables; never let it break the page.
+    try:
+        from o27v2.web.cricket_card import render_cricket_card
+        cricket_card_text = render_cricket_card(game_id, db)
+    except Exception:
+        cricket_card_text = None
+
     # Pesäpallo-style scoring events log — one row per run that crossed
     # the plate during this game. Joined to players for display names.
     scoring_events = db.fetchall(
@@ -4223,6 +4232,7 @@ def game_detail(game_id: int):
         game_notes=notes,
         weather_label=weather_label,
         box_score_text=box_score_text,
+        cricket_card_text=cricket_card_text,
         away_bips=away_bips,
         home_bips=home_bips,
         park_dims=park_dims,
@@ -5649,6 +5659,15 @@ def leaders():
             + int(row.get("rad_2b") or 0)
             + int(row.get("rad_3b") or 0)
         )
+        # TRI — own total bases + RAD (see glossary). The runner-moving
+        # counterpart to total bases; RBI is its scoring tail.
+        row["tri"] = (
+            int(row.get("h") or 0)
+            + int(row.get("d2") or 0)
+            + 2 * int(row.get("d3") or 0)
+            + 3 * int(row.get("hr") or 0)
+            + row["rad_total"]
+        )
 
     pitching = db.fetchall(
         f"""SELECT p.id as player_id, p.name as player_name,
@@ -6667,6 +6686,16 @@ def player_detail(player_id: int):
             + int(bt_totals.get("rad_2b") or 0)
             + int(bt_totals.get("rad_3b") or 0)
         )
+        # TRI — Total Runner Influence = own total bases + RAD (see glossary).
+        # The counting stat for moving runners; credits the advance even when a
+        # teammate strands the runner, where RBI would not.
+        bt_totals["tb"] = (
+            int(bt_totals.get("h") or 0)
+            + int(bt_totals.get("d2") or 0)
+            + 2 * int(bt_totals.get("d3") or 0)
+            + 3 * int(bt_totals.get("hr") or 0)
+        )
+        bt_totals["tri"] = bt_totals["tb"] + bt_totals["rad_total"]
 
     # Per-fielder defense totals (PO + A + E). Assist crediting was
     # added when pitch types were activated — the renderer now also
