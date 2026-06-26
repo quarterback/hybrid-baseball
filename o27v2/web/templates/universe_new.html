@@ -239,10 +239,13 @@
         <input type="hidden" name="lg_locale" class="lg-locale-hidden" value="">
       </label>
       <label class="block">
-        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Park geometry</span>
+        <span class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Park source</span>
         <select name="lg_park" class="block w-full rounded-md border-0 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500">
-          <option value="">(varied — all eras)</option>
-          {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+          {% for g in park_options %}
+          <optgroup label="{{ g.group }}">
+            {% for p in g.options %}<option value="{{ p.value }}">{{ p.label }}</option>{% endfor %}
+          </optgroup>
+          {% endfor %}
         </select>
       </label>
       <label class="block">

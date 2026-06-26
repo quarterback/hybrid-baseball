@@ -288,12 +288,9 @@ def build_custom_config(
         cfg["team_naming"]  = "generated"
         cfg["name_regions"] = {lg: hr for lg in leagues}
 
-    # Field geometry profile.
-    if park and park.strip():
-        pk = park.strip()
-        if pk not in _PARK_PROFILES:
-            raise ValueError(f"Unknown park profile {pk!r}.")
-        cfg["park_profiles"] = {lg: pk for lg in leagues}
+    # Field geometry: a procedural profile, the realistic generator, or real
+    # stadiums — routed from one "park source" token.
+    _apply_park_source(cfg, park, leagues)
 
     return cfg
 
@@ -337,6 +334,8 @@ def build_universe_config(
     style_profiles: dict[str, str] = {}
     name_regions: dict[str, str] = {}
     park_profiles: dict[str, str] = {}
+    park_gen: dict[str, str] = {}
+    real_parks: dict[str, str] = {}
     valid_regions = set(get_name_regions().keys()) | set(get_name_region_presets().keys())
 
     for i, lg in enumerate(leagues):
@@ -393,8 +392,6 @@ def build_universe_config(
             if locale and locale not in valid_regions:
                 raise ValueError(f"League {name!r}: unknown locale {locale!r}.")
         park = (lg.get("park") or "").strip()
-        if park and park not in _PARK_PROFILES:
-            raise ValueError(f"League {name!r}: unknown park profile {park!r}.")
         league_specs.append({"name": name, "teams": teams, "divisions": ndiv})
         # Style may be a preset key (str) or a custom per-attribute bias dict.
         if isinstance(style, dict):
@@ -425,8 +422,13 @@ def build_universe_config(
             # a {region: weight} dict for an inline blend. Both shapes are
             # consumed by resolve_name_region_weights / team_naming.
             name_regions[name] = locale
-        if park:
-            park_profiles[name] = park
+        # Park source: procedural profile / realistic generator / real stadiums.
+        # Routes into the matching {league: value} dict (raises on a bad token).
+        _src: dict = {}
+        _apply_park_source(_src, park, [name])
+        park_profiles.update(_src.get("park_profiles", {}))
+        park_gen.update(_src.get("park_gen", {}))
+        real_parks.update(_src.get("real_parks", {}))
 
     team_count = sum(s["teams"] for s in league_specs)
     g = (gender or "male").lower()
@@ -457,6 +459,8 @@ def build_universe_config(
         "style_profiles":         style_profiles,
         "name_regions":           name_regions,
         "park_profiles":          park_profiles,
+        "park_gen":               park_gen,
+        "real_parks":             real_parks,
         # Within a league, split games evenly between same-division and
         # cross-division opponents.
         "intra_division_weight":  0.5,
@@ -1604,6 +1608,66 @@ def get_park_profiles() -> dict[str, str]:
     """Named park-geometry profiles → human label, for the league-builder menus.
     The value passed into a config's `park_profiles` block is the key."""
     return {k: _PARK_PROFILE_LABELS.get(k, k) for k in _PARK_PROFILES}
+
+
+# Tiers the real-stadium dataset can source a league's parks from, surfaced in
+# the builder "park source" menu as "real:<tier>" tokens.
+_REAL_PARK_TIERS = ("MLB", "AAA", "AA", "A+", "A")
+_REAL_TIER_LABELS = {
+    "MLB": "Real MLB stadiums", "AAA": "Real Triple-A parks",
+    "AA": "Real Double-A parks", "A+": "Real High-A parks",
+    "A": "Real Single-A parks",
+}
+
+
+def get_park_source_options() -> list[dict]:
+    """Ordered groups [{group, options:[{value,label}]}] for the builder's
+    park-source menu. Order is preserved (the default "Varied" stays first, so
+    it's the selected option), unlike a Jinja groupby which sorts alphabetically.
+
+    One control spans three sources of a league's fields:
+      * procedural geometry profiles (the existing _PARK_PROFILES, value = key),
+      * the realistic-but-varied generator (value "realistic"),
+      * real stadiums by tier (value "real:<tier>").
+    The chosen token is routed by _apply_park_source().
+    """
+    procedural = [{"value": "", "label": "Varied — all eras (default)"}]
+    procedural += [{"value": k, "label": lbl}
+                   for k, lbl in get_park_profiles().items()]
+    return [
+        {"group": "Procedural geometry", "options": procedural},
+        {"group": "From real ballpark data",
+         "options": [{"value": "realistic",
+                      "label": "Realistic — real MLB shapes, varied"}]},
+        {"group": "Real stadiums (actual dimensions)",
+         "options": [{"value": f"real:{t}", "label": _REAL_TIER_LABELS[t]}
+                     for t in _REAL_PARK_TIERS]},
+    ]
+
+
+def _apply_park_source(cfg: dict, token, leagues: list[str]) -> None:
+    """Route a park-source token into the right per-league config key.
+
+    "" → varied; a _PARK_PROFILES key → park_profiles; "realistic" → park_gen;
+    "real:<tier>" → real_parks. Unknown tokens raise ValueError. Each key is a
+    {league_name: value} dict so different leagues in a universe can differ.
+    """
+    if not token or not str(token).strip():
+        return
+    tok = str(token).strip()
+    if tok == "realistic":
+        cfg.setdefault("park_gen", {}).update({lg: "realistic" for lg in leagues})
+        return
+    if tok.startswith("real:"):
+        tier = tok.split(":", 1)[1].strip().upper()
+        if tier not in _REAL_PARK_TIERS:
+            raise ValueError(f"Unknown real-park tier {tier!r}.")
+        cfg.setdefault("real_parks", {}).update({lg: tier for lg in leagues})
+        return
+    if tok in _PARK_PROFILES:
+        cfg.setdefault("park_profiles", {}).update({lg: tok for lg in leagues})
+        return
+    raise ValueError(f"Unknown park source {tok!r}.")
 
 
 def _resolve_park_shape_weights(profile) -> list[float] | None:

@@ -123,18 +123,56 @@ targets specific ones):
   plumbing (`config.get(...)` in `seed_league`), the weather/gametime systems
   (driven for free by setting each team's real city + coords).
 
+## Follow-up (2026-06-26): calibration + per-angle walls + web picker
+
+Owner: *"do [park-factor calibration] but then of course expose it in the web UI,
+the lack of park picking is a real problem."* Three things shipped.
+
+### Park-factor calibration — the double-count was real and large
+
+A measurement harness (`scripts/calibrate_real_parks.py`, run via a Monte-Carlo
+over the **live** `resolve_batted_ball`) showed the naive mapping
+(`park_hr ← listed HR factor`) was badly broken: the engine's
+`hr_bar = fence / park_hr` lever amplifies the factor ~5–13×, so a listed 0.79
+nearly erased HRs and 1.26 nearly tripled them — **RMSE 0.53** vs the listed
+factors. Geometry alone already produced a realistic 0.73–1.20 HR spread, and
+`park_hits` mapped ~1:1 (AVG fine). So only `park_hr` was wrong.
+
+Fix: per-park numeric calibration. For every park the harness bisects
+`park_hr` / `park_hits` until the live resolver reproduces the listed HR / AVG
+factors (common random numbers vs the mean-MLB neutral). The solved pair lands
+in an `"engine"` block in `real_parks.json`; `real_parks.park_factors()` reads
+it (compressed fallback for any uncalibrated record). Result: **HR factor RMSE
+0.53 → 0.0010**, AVG RMSE 0.0013, across all 203 parks. The calibrated
+`park_hr` is a gentle *residual* on top of geometry — Detroit's raw 0.791
+becomes ~1.007 (Comerica's deep geometry already suppresses HRs), Coors' 1.257
+becomes ~1.052 (the residual carries the altitude the fence model can't see).
+Re-run the script if the RES_* resolver tuning or the geometry mapping changes.
+
+### Live resolver now honors per-angle walls
+
+The original `_wall_at_angle` was added to `park_effects.apply_park_effects` —
+but that hook is **dead in the live sim** (only tests call it; the physics-first
+`resolve_batted_ball` superseded it). The live resolver used a scalar `wall_h`,
+so Fenway's 37-ft Monster collapsed to a mean regardless of spray.
+`o27/engine/batted_ball.py` now calls `_wall_at_angle(spray, park_dims)`, so a
+tall wall robs HRs only at its own spray angle. Backward compatible (generated
+parks have no `walls` key → scalar). This was wired in **before** calibration so
+the solved factors reflect final behavior.
+
+### Web UI — one "Park source" picker
+
+`get_park_source_options()` returns ordered, grouped options; `_apply_park_source()`
+routes the chosen token into the right config key. Both builder forms
+(`new_league.html`, `universe_new.html`) now show a **Park source** dropdown:
+Procedural geometry (the existing profiles), *Realistic — real MLB shapes,
+varied*, and *Real stadiums* by tier (MLB/AAA/AA/A+/A). The single-league and
+per-league-universe routes both flow through the shared router, so a universe
+can mix a real-MLB league next to a cricket-grounds one. "Varied" stays first
+(selected) because options are pre-ordered, not Jinja-`groupby`-sorted.
+
 ## Honest gaps / what's still open
 
-- **No web-UI exposure of the new presets.** `mlb_real` is seedable from the
-  config dir and `real_parks` / `park_gen` are honored by `seed_league`, but
-  the `/new-league` + universe-builder forms don't surface them yet (they
-  iterate `_PARK_PROFILES` / style menus). A follow-up should add a "park
-  source" picker and a `get_real_park_levels()` helper for the dropdown.
-- **Park factors aren't engine-calibrated.** We map the spreadsheet's empirical
-  HR/AVG factors onto `park_hr`/`park_hits` directly; whether O27's geometry
-  hook + these multipliers reproduce the real run environment is unverified. The
-  geometry now does most of the work, so there's a double-count risk worth a
-  calibration pass (sim each real park, compare HR/2B/3B vs the listed factors).
 - **Realistic generator isn't wired into the universe builder's randomizer**,
   and jitter magnitudes (±6 ft fences, ±2 ft walls) are hand-set, not fit to the
   per-zone variance in the data.

@@ -70,7 +70,14 @@
    "hr_rhb": 0.898,
    "overall": 1.005
   },
-  "team": "MIL"
+  "team": "MIL",
+  "engine": {
+   "park_hr": 0.9867,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.898,
+   "sim_avg_factor": 1.022
+  }
  },
  {
   "park": "Angel Stadium of Anaheim",
@@ -143,7 +150,14 @@
    "hr_rhb": 0.92,
    "overall": 0.995
   },
-  "team": "LAA"
+  "team": "LAA",
+  "engine": {
+   "park_hr": 0.9855,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.934,
+   "sim_avg_factor": 0.995
+  }
  },
  {
   "park": "Busch Stadium",
@@ -216,7 +230,14 @@
    "hr_rhb": 0.915,
    "overall": 1.009
   },
-  "team": "STL"
+  "team": "STL",
+  "engine": {
+   "park_hr": 1.0044,
+   "park_hits": 1.0369,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.916,
+   "sim_avg_factor": 1.028
+  }
  },
  {
   "park": "Chase Field",
@@ -289,7 +310,14 @@
    "hr_rhb": 1.096,
    "overall": 1.007
   },
-  "team": "AZ"
+  "team": "AZ",
+  "engine": {
+   "park_hr": 1.01,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.091,
+   "sim_avg_factor": 1.005
+  }
  },
  {
   "park": "Citi Field",
@@ -362,7 +390,14 @@
    "hr_rhb": 0.952,
    "overall": 0.99
   },
-  "team": "NYM"
+  "team": "NYM",
+  "engine": {
+   "park_hr": 0.9871,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.921,
+   "sim_avg_factor": 0.985
+  }
  },
  {
   "park": "Citizens Bank Park",
@@ -435,7 +470,14 @@
    "hr_rhb": 0.927,
    "overall": 0.99
   },
-  "team": "PHI"
+  "team": "PHI",
+  "engine": {
+   "park_hr": 0.9867,
+   "park_hits": 0.9842,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.924,
+   "sim_avg_factor": 0.982
+  }
  },
  {
   "park": "Comerica Park",
@@ -508,7 +550,14 @@
    "hr_rhb": 0.773,
    "overall": 1.009
   },
-  "team": "DET"
+  "team": "DET",
+  "engine": {
+   "park_hr": 1.0068,
+   "park_hits": 1.0662,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.791,
+   "sim_avg_factor": 1.046
+  }
  },
  {
   "park": "Coors Field",
@@ -581,7 +630,14 @@
    "hr_rhb": 1.245,
    "overall": 1.066
   },
-  "team": "COL"
+  "team": "COL",
+  "engine": {
+   "park_hr": 1.0515,
+   "park_hits": 1.157,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.256,
+   "sim_avg_factor": 1.131
+  }
  },
  {
   "park": "Daikin Park",
@@ -654,7 +710,14 @@
    "hr_rhb": 0.905,
    "overall": 1.008
   },
-  "team": "HOU"
+  "team": "HOU",
+  "engine": {
+   "park_hr": 1.0064,
+   "park_hits": 1.0398,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.904,
+   "sim_avg_factor": 1.033
+  }
  },
  {
   "park": "Dodger Stadium",
@@ -727,7 +790,14 @@
    "hr_rhb": 0.995,
    "overall": 1.001
   },
-  "team": "LAD"
+  "team": "LAD",
+  "engine": {
+   "park_hr": 0.9984,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.994,
+   "sim_avg_factor": 1.003
+  }
  },
  {
   "park": "Fenway Park",
@@ -800,7 +870,14 @@
    "hr_rhb": 0.949,
    "overall": 0.975
   },
-  "team": "BOS"
+  "team": "BOS",
+  "engine": {
+   "park_hr": 0.9742,
+   "park_hits": 0.9432,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.948,
+   "sim_avg_factor": 0.947
+  }
  },
  {
   "park": "Globe Life Field",
@@ -873,7 +950,14 @@
    "hr_rhb": 1.077,
    "overall": 1.004
   },
-  "team": "TEX"
+  "team": "TEX",
+  "engine": {
+   "park_hr": 1.0008,
+   "park_hits": 0.9959,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.092,
+   "sim_avg_factor": 0.999
+  }
  },
  {
   "park": "Great American Ball Park",
@@ -946,7 +1030,14 @@
    "hr_rhb": 0.963,
    "overall": 0.995
   },
-  "team": "CIN"
+  "team": "CIN",
+  "engine": {
+   "park_hr": 0.9859,
+   "park_hits": 0.993,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.974,
+   "sim_avg_factor": 0.992
+  }
  },
  {
   "park": "Kauffman Stadium",
@@ -1019,7 +1110,14 @@
    "hr_rhb": 1.048,
    "overall": 1.004
   },
-  "team": "KC"
+  "team": "KC",
+  "engine": {
+   "park_hr": 1.0034,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.048,
+   "sim_avg_factor": 1.01
+  }
  },
  {
   "park": "loanDepot Park",
@@ -1092,7 +1190,14 @@
    "hr_rhb": 0.902,
    "overall": 1.017
   },
-  "team": "MIA"
+  "team": "MIA",
+  "engine": {
+   "park_hr": 1.0149,
+   "park_hits": 1.0633,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.909,
+   "sim_avg_factor": 1.049
+  }
  },
  {
   "park": "Nationals Park",
@@ -1165,7 +1270,14 @@
    "hr_rhb": 0.975,
    "overall": 0.989
   },
-  "team": "WSH"
+  "team": "WSH",
+  "engine": {
+   "park_hr": 0.9843,
+   "park_hits": 0.9769,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.976,
+   "sim_avg_factor": 0.974
+  }
  },
  {
   "park": "Oracle Park",
@@ -1238,7 +1350,14 @@
    "hr_rhb": 0.805,
    "overall": 0.993
   },
-  "team": "SF"
+  "team": "SF",
+  "engine": {
+   "park_hr": 0.9847,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.789,
+   "sim_avg_factor": 1.004
+  }
  },
  {
   "park": "Oriole Park at Camden Yards",
@@ -1311,7 +1430,14 @@
    "hr_rhb": 0.935,
    "overall": 0.985
   },
-  "team": "BAL"
+  "team": "BAL",
+  "engine": {
+   "park_hr": 0.9778,
+   "park_hits": 0.9695,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.961,
+   "sim_avg_factor": 0.967
+  }
  },
  {
   "park": "Petco Park",
@@ -1384,7 +1510,14 @@
    "hr_rhb": 0.93,
    "overall": 0.998
   },
-  "team": "SD"
+  "team": "SD",
+  "engine": {
+   "park_hr": 0.9943,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.925,
+   "sim_avg_factor": 1.001
+  }
  },
  {
   "park": "PNC Park",
@@ -1457,7 +1590,14 @@
    "hr_rhb": 0.936,
    "overall": 0.999
   },
-  "team": "PIT"
+  "team": "PIT",
+  "engine": {
+   "park_hr": 1.0016,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.934,
+   "sim_avg_factor": 1.003
+  }
  },
  {
   "park": "Progressive Field",
@@ -1530,7 +1670,14 @@
    "hr_rhb": 1.008,
    "overall": 0.987
   },
-  "team": "CLE"
+  "team": "CLE",
+  "engine": {
+   "park_hr": 0.9899,
+   "park_hits": 0.9637,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.01,
+   "sim_avg_factor": 0.965
+  }
  },
  {
   "park": "Sutter Health Park",
@@ -1604,7 +1751,14 @@
    "overall": 0.994
   },
   "team": "ATH",
-  "notes": "Athletics' interim home; geometry from AAA-PCL Sacramento."
+  "notes": "Athletics' interim home; geometry from AAA-PCL Sacramento.",
+  "engine": {
+   "park_hr": 0.9899,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.919,
+   "sim_avg_factor": 0.994
+  }
  },
  {
   "park": "Rate Field",
@@ -1677,7 +1831,14 @@
    "hr_rhb": 1.044,
    "overall": 0.99
   },
-  "team": "CWS"
+  "team": "CWS",
+  "engine": {
+   "park_hr": 0.9883,
+   "park_hits": 0.9666,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.04,
+   "sim_avg_factor": 0.967
+  }
  },
  {
   "park": "Rogers Centre",
@@ -1750,7 +1911,14 @@
    "hr_rhb": 0.936,
    "overall": 0.996
   },
-  "team": "TOR"
+  "team": "TOR",
+  "engine": {
+   "park_hr": 0.981,
+   "park_hits": 0.9842,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.948,
+   "sim_avg_factor": 0.987
+  }
  },
  {
   "park": "T-Mobile Park",
@@ -1823,7 +1991,14 @@
    "hr_rhb": 0.9,
    "overall": 0.984
   },
-  "team": "SEA"
+  "team": "SEA",
+  "engine": {
+   "park_hr": 0.9778,
+   "park_hits": 0.9783,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.903,
+   "sim_avg_factor": 0.971
+  }
  },
  {
   "park": "Target Field",
@@ -1896,7 +2071,14 @@
    "hr_rhb": 0.945,
    "overall": 0.996
   },
-  "team": "MIN"
+  "team": "MIN",
+  "engine": {
+   "park_hr": 0.9867,
+   "park_hits": 1.0018,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.924,
+   "sim_avg_factor": 0.995
+  }
  },
  {
   "park": "Tropicana Field",
@@ -1969,7 +2151,14 @@
    "hr_rhb": 1.094,
    "overall": 0.983
   },
-  "team": "TB"
+  "team": "TB",
+  "engine": {
+   "park_hr": 0.9834,
+   "park_hits": 0.9278,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.092,
+   "sim_avg_factor": 0.933
+  }
  },
  {
   "park": "Truist Park",
@@ -2042,7 +2231,14 @@
    "hr_rhb": 1.066,
    "overall": 1.011
   },
-  "team": "ATL"
+  "team": "ATL",
+  "engine": {
+   "park_hr": 1.0036,
+   "park_hits": 1.0193,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.071,
+   "sim_avg_factor": 1.021
+  }
  },
  {
   "park": "Wrigley Field",
@@ -2115,7 +2311,14 @@
    "hr_rhb": 0.911,
    "overall": 0.995
   },
-  "team": "CHC"
+  "team": "CHC",
+  "engine": {
+   "park_hr": 0.9742,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.897,
+   "sim_avg_factor": 0.995
+  }
  },
  {
   "park": "Yankee Stadium",
@@ -2188,7 +2391,14 @@
    "hr_rhb": 0.895,
    "overall": 0.992
   },
-  "team": "NYY"
+  "team": "NYY",
+  "engine": {
+   "park_hr": 0.9963,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.912,
+   "sim_avg_factor": 0.992
+  }
  },
  {
   "park": "121 Financial Park",
@@ -2261,7 +2471,14 @@
    "hr_rhb": 1.004,
    "overall": 1.004
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0261,
+   "park_hits": 1.008,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.041,
+   "sim_avg_factor": 1.004
+  }
  },
  {
   "park": "AutoZone Park",
@@ -2334,7 +2551,14 @@
    "hr_rhb": 1.134,
    "overall": 0.993
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0012,
+   "park_hits": 0.9607,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.126,
+   "sim_avg_factor": 0.966
+  }
  },
  {
   "park": "CHS Field",
@@ -2407,7 +2631,14 @@
    "hr_rhb": 1.069,
    "overall": 0.986
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0012,
+   "park_hits": 0.9461,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.076,
+   "sim_avg_factor": 0.954
+  }
  },
  {
   "park": "Coca-Cola Park",
@@ -2480,7 +2711,14 @@
    "hr_rhb": 0.858,
    "overall": 0.996
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9826,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.843,
+   "sim_avg_factor": 1.008
+  }
  },
  {
   "park": "Coolray Field",
@@ -2553,7 +2791,14 @@
    "hr_rhb": 1.027,
    "overall": 1.019
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.01,
+   "park_hits": 1.0457,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.028,
+   "sim_avg_factor": 1.045
+  }
  },
  {
   "park": "Durham Bulls Athletic Park",
@@ -2626,7 +2871,14 @@
    "hr_rhb": 1.12,
    "overall": 0.986
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0044,
+   "park_hits": 0.9402,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.114,
+   "sim_avg_factor": 0.947
+  }
  },
  {
   "park": "Fifth Third Field",
@@ -2699,7 +2951,14 @@
    "hr_rhb": 0.974,
    "overall": 0.993
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.979,
+   "sim_avg_factor": 0.982
+  }
  },
  {
   "park": "First Horizon Park",
@@ -2772,7 +3031,14 @@
    "hr_rhb": 0.977,
    "overall": 1.001
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9992,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.981,
+   "sim_avg_factor": 1.011
+  }
  },
  {
   "park": "Frontier Field",
@@ -2845,7 +3111,14 @@
    "hr_rhb": 0.952,
    "overall": 0.992
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9971,
+   "park_hits": 0.9856,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.948,
+   "sim_avg_factor": 0.985
+  }
  },
  {
   "park": "Harbor Park",
@@ -2918,7 +3191,14 @@
    "hr_rhb": 0.978,
    "overall": 0.992
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9984,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.983,
+   "sim_avg_factor": 0.984
+  }
  },
  {
   "park": "Huntington Park",
@@ -2991,7 +3271,14 @@
    "hr_rhb": 1.145,
    "overall": 0.986
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.007,
+   "park_hits": 0.9469,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.159,
+   "sim_avg_factor": 0.957
+  }
  },
  {
   "park": "Louisville Slugger Field",
@@ -3064,7 +3351,14 @@
    "hr_rhb": 0.984,
    "overall": 1
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9992,
+   "park_hits": 1.0018,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.981,
+   "sim_avg_factor": 0.999
+  }
  },
  {
   "park": "NBT Bank Stadium",
@@ -3137,7 +3431,14 @@
    "hr_rhb": 0.856,
    "overall": 0.991
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9873,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.888,
+   "sim_avg_factor": 0.991
+  }
  },
  {
   "park": "PNC Field",
@@ -3210,7 +3511,14 @@
    "hr_rhb": 1.001,
    "overall": 1.002
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0141,
+   "park_hits": 1.0026,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.001,
+   "sim_avg_factor": 1.005
+  }
  },
  {
   "park": "Polar Park",
@@ -3283,7 +3591,14 @@
    "hr_rhb": 0.93,
    "overall": 0.987
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9959,
+   "park_hits": 0.9725,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.948,
+   "sim_avg_factor": 0.972
+  }
  },
  {
   "park": "Principal Park",
@@ -3356,7 +3671,14 @@
    "hr_rhb": 0.954,
    "overall": 0.999
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9875,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.951,
+   "sim_avg_factor": 1.0
+  }
  },
  {
   "park": "Sahlen Field",
@@ -3429,7 +3751,14 @@
    "hr_rhb": 1.01,
    "overall": 0.989
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9947,
+   "park_hits": 0.9637,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.016,
+   "sim_avg_factor": 0.968
+  }
  },
  {
   "park": "Truist Field",
@@ -3502,7 +3831,14 @@
    "hr_rhb": 1.194,
    "overall": 0.998
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0133,
+   "park_hits": 0.9622,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.188,
+   "sim_avg_factor": 0.97
+  }
  },
  {
   "park": "Victory Field",
@@ -3575,7 +3911,14 @@
    "hr_rhb": 0.971,
    "overall": 1
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0012,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.006,
+   "sim_avg_factor": 1.0
+  }
  },
  {
   "park": "Werner Park",
@@ -3648,7 +3991,14 @@
    "hr_rhb": 1.11,
    "overall": 1.003
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0197,
+   "park_hits": 0.9871,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.104,
+   "sim_avg_factor": 0.995
+  }
  },
  {
   "park": "Cheney Stadium",
@@ -3721,7 +4071,14 @@
    "hr_rhb": 0.967,
    "overall": 0.983
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0074,
+   "park_hits": 0.9578,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.971,
+   "sim_avg_factor": 0.956
+  }
  },
  {
   "park": "Chickasaw Bricktown Ballpark",
@@ -3794,7 +4151,14 @@
    "hr_rhb": 1.025,
    "overall": 1.015
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0141,
+   "park_hits": 1.0398,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.022,
+   "sim_avg_factor": 1.036
+  }
  },
  {
   "park": "Constellation Field",
@@ -3867,7 +4231,14 @@
    "hr_rhb": 1.095,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0052,
+   "park_hits": 1.0025,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.071,
+   "sim_avg_factor": 0.999
+  }
  },
  {
   "park": "Dell Diamond",
@@ -3940,7 +4311,14 @@
    "hr_rhb": 1.082,
    "overall": 1.015
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0125,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.095,
+   "sim_avg_factor": 1.029
+  }
  },
  {
   "park": "Greater Nevada Field",
@@ -4013,7 +4391,14 @@
    "hr_rhb": 1.119,
    "overall": 1.058
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0584,
+   "park_hits": 1.1687,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.116,
+   "sim_avg_factor": 1.128
+  }
  },
  {
   "park": "Isotopes Park",
@@ -4086,7 +4471,14 @@
    "hr_rhb": 1.184,
    "overall": 1.083
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0793,
+   "park_hits": 1.2684,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.16,
+   "sim_avg_factor": 1.184
+  }
  },
  {
   "park": "Las Vegas Ballpark",
@@ -4159,7 +4551,14 @@
    "hr_rhb": 1.195,
    "overall": 1.04
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0382,
+   "park_hits": 1.0809,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.197,
+   "sim_avg_factor": 1.071
+  }
  },
  {
   "park": "Ballpark at America First Square",
@@ -4232,7 +4631,14 @@
    "hr_rhb": 1.202,
    "overall": 1.064
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0539,
+   "park_hits": 1.1687,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.215,
+   "sim_avg_factor": 1.134
+  }
  },
  {
   "park": "Southwest University Park",
@@ -4305,7 +4711,14 @@
    "hr_rhb": 1.219,
    "overall": 1.051
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0382,
+   "park_hits": 1.1219,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.226,
+   "sim_avg_factor": 1.106
+  }
  },
  {
   "park": "Sutter Health Park",
@@ -4378,7 +4791,14 @@
    "hr_rhb": 0.904,
    "overall": 0.994
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9899,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.919,
+   "sim_avg_factor": 0.994
+  }
  },
  {
   "park": "Canal Park",
@@ -4451,7 +4871,14 @@
    "hr_rhb": 1.047,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9939,
+   "park_hits": 0.9871,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.045,
+   "sim_avg_factor": 0.988
+  }
  },
  {
   "park": "Delta Dental Stadium",
@@ -4524,7 +4951,14 @@
    "hr_rhb": 1.001,
    "overall": 0.971
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9754,
+   "park_hits": 0.9197,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.046,
+   "sim_avg_factor": 0.925
+  }
  },
  {
   "park": "Dunkin' Donuts Park",
@@ -4597,7 +5031,14 @@
    "hr_rhb": 1.173,
    "overall": 0.963
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.979,
+   "park_hits": 0.8699,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.184,
+   "sim_avg_factor": 0.886
+  }
  },
  {
   "park": "FirstEnergy Stadium",
@@ -4670,7 +5111,14 @@
    "hr_rhb": 1.104,
    "overall": 0.984
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9959,
+   "park_hits": 0.9344,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.099,
+   "sim_avg_factor": 0.943
+  }
  },
  {
   "park": "FNB Field",
@@ -4743,7 +5191,14 @@
    "hr_rhb": 0.998,
    "overall": 0.989
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9879,
+   "park_hits": 0.9754,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.984,
+   "sim_avg_factor": 0.975
+  }
  },
  {
   "park": "Hadlock Field",
@@ -4816,7 +5271,14 @@
    "hr_rhb": 0.864,
    "overall": 0.975
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9677,
+   "park_hits": 0.9593,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.865,
+   "sim_avg_factor": 0.951
+  }
  },
  {
   "park": "Mirabito Stadium",
@@ -4889,7 +5351,14 @@
    "hr_rhb": 1.026,
    "overall": 0.992
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9971,
+   "park_hits": 0.9725,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.026,
+   "sim_avg_factor": 0.973
+  }
  },
  {
   "park": "People's Natural Gas Field",
@@ -4962,7 +5431,14 @@
    "hr_rhb": 1.054,
    "overall": 1.002
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0036,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.017,
+   "sim_avg_factor": 1.004
+  }
  },
  {
   "park": "Prince George's Stadium",
@@ -5035,7 +5511,14 @@
    "hr_rhb": 1.012,
    "overall": 0.988
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9851,
+   "park_hits": 0.9754,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.008,
+   "sim_avg_factor": 0.974
+  }
  },
  {
   "park": "TD Bank Ballpark",
@@ -5108,7 +5591,14 @@
    "hr_rhb": 1.028,
    "overall": 0.982
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9794,
+   "park_hits": 0.952,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.038,
+   "sim_avg_factor": 0.952
+  }
  },
  {
   "park": "CarMax Park",
@@ -5181,7 +5671,14 @@
    "hr_rhb": 0.938,
    "overall": 1
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0092,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.938,
+   "sim_avg_factor": 1.007
+  }
  },
  {
   "park": "UPMC Park",
@@ -5254,7 +5751,14 @@
    "hr_rhb": 1.071,
    "overall": 0.989
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0133,
+   "park_hits": 0.9578,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.064,
+   "sim_avg_factor": 0.961
+  }
  },
  {
   "park": "Erlanger Park",
@@ -5327,7 +5831,14 @@
    "hr_rhb": 1.071,
    "overall": 1.003
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0064,
+   "park_hits": 0.993,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.082,
+   "sim_avg_factor": 0.996
+  }
  },
  {
   "park": "Blue Wahoos Stadium",
@@ -5400,7 +5911,14 @@
    "hr_rhb": 1.044,
    "overall": 1.009
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0068,
+   "park_hits": 1.0018,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.063,
+   "sim_avg_factor": 1.001
+  }
  },
  {
   "park": "MGM Park",
@@ -5473,7 +5991,14 @@
    "hr_rhb": 1.111,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0001,
+   "park_hits": 0.971,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.111,
+   "sim_avg_factor": 0.978
+  }
  },
  {
   "park": "Montgomery Riverwalk Stadium",
@@ -5546,7 +6071,14 @@
    "hr_rhb": 1.083,
    "overall": 0.998
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9986,
+   "park_hits": 0.9871,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.074,
+   "sim_avg_factor": 0.989
+  }
  },
  {
   "park": "Regions Field",
@@ -5619,7 +6151,14 @@
    "hr_rhb": 1.052,
    "overall": 1.003
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0018,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.064,
+   "sim_avg_factor": 1.002
+  }
  },
  {
   "park": "Smokies Stadium",
@@ -5692,7 +6231,14 @@
    "hr_rhb": 1.106,
    "overall": 1.007
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0104,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.117,
+   "sim_avg_factor": 1.002
+  }
  },
  {
   "park": "Toyota Field",
@@ -5765,7 +6311,14 @@
    "hr_rhb": 0.987,
    "overall": 1.009
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0072,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.993,
+   "sim_avg_factor": 1.023
+  }
  },
  {
   "park": "Synovus Park",
@@ -5838,7 +6391,14 @@
    "hr_rhb": 1.189,
    "overall": 0.995
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0084,
+   "park_hits": 0.9578,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.188,
+   "sim_avg_factor": 0.963
+  }
  },
  {
   "park": "Arvest Ballpark",
@@ -5911,7 +6471,14 @@
    "hr_rhb": 1.116,
    "overall": 1.017
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0161,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.135,
+   "sim_avg_factor": 1.029
+  }
  },
  {
   "park": "Dickey-Stephens Park",
@@ -5984,7 +6551,14 @@
    "hr_rhb": 0.866,
    "overall": 1.015
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 1.075,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.857,
+   "sim_avg_factor": 1.054
+  }
  },
  {
   "park": "Hammons Field",
@@ -6057,7 +6631,14 @@
    "hr_rhb": 1.098,
    "overall": 1.013
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0076,
+   "park_hits": 1.0311,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.088,
+   "sim_avg_factor": 1.026
+  }
  },
  {
   "park": "Hodgetown",
@@ -6130,7 +6711,14 @@
    "hr_rhb": 1.295,
    "overall": 1.041
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0463,
+   "park_hits": 1.0633,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.325,
+   "sim_avg_factor": 1.065
+  }
  },
  {
   "park": "Momentum Bank Ballpark",
@@ -6203,7 +6791,14 @@
    "hr_rhb": 1.221,
    "overall": 1.042
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0398,
+   "park_hits": 1.0896,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.212,
+   "sim_avg_factor": 1.081
+  }
  },
  {
   "park": "Nelson W. Wolff Municipal Stadium",
@@ -6276,7 +6871,14 @@
    "hr_rhb": 1.107,
    "overall": 1.015
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0092,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.081,
+   "sim_avg_factor": 1.028
+  }
  },
  {
   "park": "ONEOK Field",
@@ -6349,7 +6951,14 @@
    "hr_rhb": 1.156,
    "overall": 0.999
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0068,
+   "park_hits": 0.9695,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.178,
+   "sim_avg_factor": 0.979
+  }
  },
  {
   "park": "Riders Field",
@@ -6422,7 +7031,14 @@
    "hr_rhb": 0.993,
    "overall": 1.017
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0133,
+   "park_hits": 1.0516,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.997,
+   "sim_avg_factor": 1.044
+  }
  },
  {
   "park": "Riverfront Stadium",
@@ -6495,7 +7111,14 @@
    "hr_rhb": 1.042,
    "overall": 1.014
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0197,
+   "park_hits": 1.0252,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.056,
+   "sim_avg_factor": 1.027
+  }
  },
  {
   "park": "Whataburger Field",
@@ -6568,7 +7191,14 @@
    "hr_rhb": 0.938,
    "overall": 1.011
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0004,
+   "park_hits": 1.0516,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.936,
+   "sim_avg_factor": 1.04
+  }
  },
  {
   "park": "Classic Park",
@@ -6641,7 +7271,14 @@
    "hr_rhb": 1.086,
    "overall": 0.987
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9984,
+   "park_hits": 0.952,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.091,
+   "sim_avg_factor": 0.955
+  }
  },
  {
   "park": "Day Air Ballpark",
@@ -6714,7 +7351,14 @@
    "hr_rhb": 0.965,
    "overall": 0.998
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9947,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.963,
+   "sim_avg_factor": 1.003
+  }
  },
  {
   "park": "Dow Diamond",
@@ -6787,7 +7431,14 @@
    "hr_rhb": 1.01,
    "overall": 0.987
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9875,
+   "park_hits": 0.9637,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.016,
+   "sim_avg_factor": 0.967
+  }
  },
  {
   "park": "Dozer Park",
@@ -6860,7 +7511,14 @@
    "hr_rhb": 1.06,
    "overall": 0.987
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9843,
+   "park_hits": 0.9695,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.036,
+   "sim_avg_factor": 0.966
+  }
  },
  {
   "park": "Four Winds Field at Coveleski Stadium",
@@ -6933,7 +7591,14 @@
    "hr_rhb": 0.875,
    "overall": 1.001
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9931,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.876,
+   "sim_avg_factor": 1.013
+  }
  },
  {
   "park": "Harry C. Pohlman Field",
@@ -7006,7 +7671,14 @@
    "hr_rhb": 1.022,
    "overall": 0.99
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9708,
+   "park_hits": 0.971,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.021,
+   "sim_avg_factor": 0.973
+  }
  },
  {
   "park": "Jackson Field",
@@ -7079,7 +7751,14 @@
    "hr_rhb": 0.968,
    "overall": 0.991
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9984,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.974,
+   "sim_avg_factor": 0.982
+  }
  },
  {
   "park": "LMCU Ballpark",
@@ -7152,7 +7831,14 @@
    "hr_rhb": 0.893,
    "overall": 0.999
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9915,
+   "park_hits": 1.0223,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.89,
+   "sim_avg_factor": 1.014
+  }
  },
  {
   "park": "Modern Woodmen Park",
@@ -7225,7 +7911,14 @@
    "hr_rhb": 0.987,
    "overall": 0.992
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9915,
+   "park_hits": 0.9754,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.018,
+   "sim_avg_factor": 0.977
+  }
  },
  {
   "park": "Neuroscience Group Field at Fox Cities Stadium",
@@ -7298,7 +7991,14 @@
    "hr_rhb": 0.954,
    "overall": 0.994
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.979,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.926,
+   "sim_avg_factor": 0.994
+  }
  },
  {
   "park": "Parkview Field",
@@ -7371,7 +8071,14 @@
    "hr_rhb": 0.948,
    "overall": 1.001
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0052,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.958,
+   "sim_avg_factor": 1.005
+  }
  },
  {
   "park": "Veterans Memorial Stadium",
@@ -7444,7 +8151,14 @@
    "hr_rhb": 1.03,
    "overall": 0.993
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9959,
+   "park_hits": 0.9754,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.027,
+   "sim_avg_factor": 0.979
+  }
  },
  {
   "park": "Avista Stadium",
@@ -7517,7 +8231,14 @@
    "hr_rhb": 1.099,
    "overall": 1
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0044,
+   "park_hits": 0.9783,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.135,
+   "sim_avg_factor": 0.987
+  }
  },
  {
   "park": "Everett Memorial Stadium",
@@ -7590,7 +8311,14 @@
    "hr_rhb": 1.036,
    "overall": 0.966
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9371,
+   "park_hits": 0.8831,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.06,
+   "sim_avg_factor": 0.89
+  }
  },
  {
   "park": "Gesa Stadium",
@@ -7663,7 +8391,14 @@
    "hr_rhb": 0.834,
    "overall": 1
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.981,
+   "park_hits": 1.0311,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.832,
+   "sim_avg_factor": 1.021
+  }
  },
  {
   "park": "Nat Bailey Stadium",
@@ -7736,7 +8471,14 @@
    "hr_rhb": 1.021,
    "overall": 0.973
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9718,
+   "park_hits": 0.9227,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.997,
+   "sim_avg_factor": 0.93
+  }
  },
  {
   "park": "PK Park",
@@ -7809,7 +8551,14 @@
    "hr_rhb": 0.949,
    "overall": 0.988
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.977,
+   "park_hits": 0.9607,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.966,
+   "sim_avg_factor": 0.96
+  }
  },
  {
   "park": "Hillsboro Ballpark",
@@ -7882,7 +8631,14 @@
    "hr_rhb": 0.792,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9943,
+   "park_hits": 1.0369,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.791,
+   "sim_avg_factor": 1.024
+  }
  },
  {
   "park": "Bowling Green Ballpark",
@@ -7955,7 +8711,14 @@
    "hr_rhb": 1.08,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.002,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.083,
+   "sim_avg_factor": 0.985
+  }
  },
  {
   "park": "Daniel S. Frawley Stadium",
@@ -8028,7 +8791,14 @@
    "hr_rhb": 0.741,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.977,
+   "park_hits": 1.0369,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.785,
+   "sim_avg_factor": 1.022
+  }
  },
  {
   "park": "First National Bank Field",
@@ -8101,7 +8871,14 @@
    "hr_rhb": 1.292,
    "overall": 0.988
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0028,
+   "park_hits": 0.9227,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.293,
+   "sim_avg_factor": 0.935
+  }
  },
  {
   "park": "Fluor Field at the West End",
@@ -8174,7 +8951,14 @@
    "hr_rhb": 0.976,
    "overall": 1.004
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0,
+   "park_hits": 1.0223,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.955,
+   "sim_avg_factor": 1.017
+  }
  },
  {
   "park": "Heritage Financial Park",
@@ -8247,7 +9031,14 @@
    "hr_rhb": 0.891,
    "overall": 0.993
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9843,
+   "park_hits": 0.9856,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.886,
+   "sim_avg_factor": 0.98
+  }
  },
  {
   "park": "Fifth Third Park",
@@ -8320,7 +9111,14 @@
    "hr_rhb": 1.086,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0125,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.086,
+   "sim_avg_factor": 1.004
+  }
  },
  {
   "park": "Leidos Field at Ripken Stadium",
@@ -8393,7 +9191,14 @@
    "hr_rhb": 0.962,
    "overall": 0.998
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 0.9871,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.96,
+   "sim_avg_factor": 0.988
+  }
  },
  {
   "park": "McCormick Field",
@@ -8466,7 +9271,14 @@
    "hr_rhb": 1.326,
    "overall": 0.987
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9721,
+   "park_hits": 0.9014,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.403,
+   "sim_avg_factor": 0.921
+  }
  },
  {
   "park": "Maimonides Park",
@@ -8539,7 +9351,14 @@
    "hr_rhb": 0.971,
    "overall": 0.991
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 0.9695,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.943,
+   "sim_avg_factor": 0.969
+  }
  },
  {
   "park": "ShoreTown Ballpark",
@@ -8612,7 +9431,14 @@
    "hr_rhb": 0.899,
    "overall": 0.989
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9899,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.901,
+   "sim_avg_factor": 0.983
+  }
  },
  {
   "park": "AdventHealth Stadium",
@@ -8685,7 +9511,14 @@
    "hr_rhb": 1.067,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0032,
+   "park_hits": 1.0018,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.074,
+   "sim_avg_factor": 1.003
+  }
  },
  {
   "park": "Truist Stadium",
@@ -8758,7 +9591,14 @@
    "hr_rhb": 1.099,
    "overall": 1.001
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0088,
+   "park_hits": 0.99,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.085,
+   "sim_avg_factor": 0.993
+  }
  },
  {
   "park": "John Thurman Field",
@@ -8831,7 +9671,14 @@
    "hr_rhb": 0.802,
    "overall": 0.998
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9754,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.822,
+   "sim_avg_factor": 1.02
+  }
  },
  {
   "park": "Banner Island Ballpark",
@@ -8904,7 +9751,14 @@
    "hr_rhb": 1.066,
    "overall": 0.982
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9883,
+   "park_hits": 0.9461,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.079,
+   "sim_avg_factor": 0.948
+  }
  },
  {
   "park": "Chukchansi Park",
@@ -8977,7 +9831,14 @@
    "hr_rhb": 1.012,
    "overall": 0.999
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.993,
+   "sim_avg_factor": 0.998
+  }
  },
  {
   "park": "Excite Ballpark",
@@ -9050,7 +9911,14 @@
    "hr_rhb": 0.913,
    "overall": 0.983
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9734,
+   "park_hits": 0.9754,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.913,
+   "sim_avg_factor": 0.971
+  }
  },
  {
   "park": "Lake Elsinore Diamond",
@@ -9123,7 +9991,14 @@
    "hr_rhb": 0.883,
    "overall": 1.019
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0177,
+   "park_hits": 1.0633,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.95,
+   "sim_avg_factor": 1.052
+  }
  },
  {
   "park": "LoanMart Field",
@@ -9196,7 +10071,14 @@
    "hr_rhb": 0.973,
    "overall": 1.018
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0036,
+   "park_hits": 1.0618,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.971,
+   "sim_avg_factor": 1.051
+  }
  },
  {
   "park": "Valley Strong Ballpark",
@@ -9269,7 +10151,14 @@
    "hr_rhb": 0.929,
    "overall": 0.995
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9891,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.93,
+   "sim_avg_factor": 0.997
+  }
  },
  {
   "park": "San Manuel Stadium",
@@ -9342,7 +10231,14 @@
    "hr_rhb": 0.829,
    "overall": 1.028
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0204,
+   "park_hits": 1.1219,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.82,
+   "sim_avg_factor": 1.09
+  }
  },
  {
   "park": "ONT Field",
@@ -9415,7 +10311,14 @@
    "hr_rhb": 0.981,
    "overall": 1.004
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0052,
+   "park_hits": 1.0135,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.0,
+   "sim_avg_factor": 1.011
+  }
  },
  {
   "park": "Arthur W. Perdue Stadium",
@@ -9488,7 +10391,14 @@
    "hr_rhb": 0.925,
    "overall": 0.991
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9903,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.909,
+   "sim_avg_factor": 0.993
+  }
  },
  {
   "park": "Atrium Health Ballpark",
@@ -9561,7 +10471,14 @@
    "hr_rhb": 0.955,
    "overall": 1.014
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0181,
+   "park_hits": 1.0516,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.956,
+   "sim_avg_factor": 1.041
+  }
  },
  {
   "park": "Bank of the James Stadium",
@@ -9634,7 +10551,14 @@
    "hr_rhb": 0.874,
    "overall": 0.996
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9818,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.875,
+   "sim_avg_factor": 1.001
+  }
  },
  {
   "park": "Wilson Ballpark",
@@ -9707,7 +10631,14 @@
    "hr_rhb": 1.077,
    "overall": 0.989
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9947,
+   "park_hits": 0.9578,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.076,
+   "sim_avg_factor": 0.96
+  }
  },
  {
   "park": "L.P. Frans Stadium",
@@ -9780,7 +10711,14 @@
    "hr_rhb": 1.108,
    "overall": 1.011
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0153,
+   "park_hits": 1.0135,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.11,
+   "sim_avg_factor": 1.012
+  }
  },
  {
   "park": "Joseph P. Riley, Jr. Park",
@@ -9853,7 +10791,14 @@
    "hr_rhb": 0.987,
    "overall": 1.002
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9915,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.995,
+   "sim_avg_factor": 1.001
+  }
  },
  {
   "park": "Salem Memorial Ballpark",
@@ -9926,7 +10871,14 @@
    "hr_rhb": 0.959,
    "overall": 1.006
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0048,
+   "park_hits": 1.0223,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.959,
+   "sim_avg_factor": 1.017
+  }
  },
  {
   "park": "Segra Park",
@@ -9999,7 +10951,14 @@
    "hr_rhb": 1,
    "overall": 0.999
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9979,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.003,
+   "sim_avg_factor": 0.997
+  }
  },
  {
   "park": "Segra Stadium",
@@ -10072,7 +11031,14 @@
    "hr_rhb": 1.077,
    "overall": 0.991
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9921,
+   "park_hits": 0.9677,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.056,
+   "sim_avg_factor": 0.967
+  }
  },
  {
   "park": "SRP Park",
@@ -10145,7 +11111,14 @@
    "hr_rhb": 1.083,
    "overall": 0.992
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9927,
+   "park_hits": 0.9681,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.098,
+   "sim_avg_factor": 0.968
+  }
  },
  {
   "park": "Pelicans Ballpark",
@@ -10218,7 +11191,14 @@
    "hr_rhb": 1.05,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0024,
+   "park_hits": 0.9871,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.046,
+   "sim_avg_factor": 0.988
+  }
  },
  {
   "park": "Virginia Credit Union Stadium",
@@ -10291,7 +11271,14 @@
    "hr_rhb": 0.89,
    "overall": 1.006
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9979,
+   "park_hits": 1.0223,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.898,
+   "sim_avg_factor": 1.015
+  }
  },
  {
   "park": "BayCare Ballpark",
@@ -10364,7 +11351,14 @@
    "hr_rhb": 1.001,
    "overall": 1.011
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0165,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.006,
+   "sim_avg_factor": 1.025
+  }
  },
  {
   "park": "Clover Park",
@@ -10437,7 +11431,14 @@
    "hr_rhb": 0.954,
    "overall": 1.013
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0036,
+   "park_hits": 1.0457,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.954,
+   "sim_avg_factor": 1.039
+  }
  },
  {
   "park": "George M. Steinbrenner Field",
@@ -10510,7 +11511,14 @@
    "hr_rhb": 0.946,
    "overall": 1.012
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0092,
+   "park_hits": 1.0398,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.972,
+   "sim_avg_factor": 1.037
+  }
  },
  {
   "park": "Hammond Stadium",
@@ -10583,7 +11591,14 @@
    "hr_rhb": 1.053,
    "overall": 1.01
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0116,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.052,
+   "sim_avg_factor": 1.016
+  }
  },
  {
   "park": "Jackie Robinson Ballpark",
@@ -10656,7 +11671,14 @@
    "hr_rhb": 0.973,
    "overall": 1.009
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 1.034,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.97,
+   "sim_avg_factor": 1.029
+  }
  },
  {
   "park": "Joker Marchant Stadium",
@@ -10729,7 +11751,14 @@
    "hr_rhb": 0.866,
    "overall": 1.028
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.033,
+   "park_hits": 1.1116,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.864,
+   "sim_avg_factor": 1.081
+  }
  },
  {
   "park": "LECOM Park",
@@ -10802,7 +11831,14 @@
    "hr_rhb": 1.067,
    "overall": 1.007
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9971,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.068,
+   "sim_avg_factor": 1.009
+  }
  },
  {
   "park": "Roger Dean Stadium",
@@ -10875,7 +11911,14 @@
    "hr_rhb": 1.085,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0004,
+   "park_hits": 0.9988,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.107,
+   "sim_avg_factor": 1.0
+  }
  },
  {
   "park": "TD Ballpark",
@@ -10948,7 +11991,14 @@
    "hr_rhb": 1.091,
    "overall": 1.003
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9971,
+   "park_hits": 0.993,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.1,
+   "sim_avg_factor": 0.994
+  }
  },
  {
   "park": "American Family Fields of Phoenix",
@@ -11021,7 +12071,14 @@
    "hr_rhb": 0.957,
    "overall": 1.028
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0052,
+   "park_hits": 1.0896,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.948,
+   "sim_avg_factor": 1.072
+  }
  },
  {
   "park": "Camelback Ranch",
@@ -11094,7 +12151,14 @@
    "hr_rhb": 1.023,
    "overall": 1.022
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.01,
+   "park_hits": 1.0584,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.025,
+   "sim_avg_factor": 1.051
+  }
  },
  {
   "park": "Fitch Park",
@@ -11167,7 +12231,14 @@
    "hr_rhb": 0.943,
    "overall": 1.033
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0173,
+   "park_hits": 1.1072,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.951,
+   "sim_avg_factor": 1.084
+  }
  },
  {
   "park": "Goodyear Ballpark",
@@ -11240,7 +12311,14 @@
    "hr_rhb": 0.938,
    "overall": 1.026
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0189,
+   "park_hits": 1.0867,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.946,
+   "sim_avg_factor": 1.066
+  }
  },
  {
   "park": "Peoria Sports Complex",
@@ -11313,7 +12391,14 @@
    "hr_rhb": 0.956,
    "overall": 1.029
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0116,
+   "park_hits": 1.0955,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.958,
+   "sim_avg_factor": 1.078
+  }
  },
  {
   "park": "Salt River Fields at Talking Stick",
@@ -11386,7 +12471,14 @@
    "hr_rhb": 0.951,
    "overall": 1.032
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0116,
+   "park_hits": 1.1043,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.949,
+   "sim_avg_factor": 1.083
+  }
  },
  {
   "park": "Scottsdale Stadium",
@@ -11459,7 +12551,14 @@
    "hr_rhb": 0.711,
    "overall": 1.045
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.035,
+   "park_hits": 1.2039,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.768,
+   "sim_avg_factor": 1.138
+  }
  },
  {
   "park": "Sloan Park",
@@ -11532,7 +12631,14 @@
    "hr_rhb": 0.911,
    "overall": 1.037
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0052,
+   "park_hits": 1.1395,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.87,
+   "sim_avg_factor": 1.104
+  }
  },
  {
   "park": "Surprise Stadium",
@@ -11605,7 +12711,14 @@
    "hr_rhb": 0.867,
    "overall": 1.037
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.01,
+   "park_hits": 1.1336,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.866,
+   "sim_avg_factor": 1.105
+  }
  },
  {
   "park": "Tempe Diablo Stadium",
@@ -11678,7 +12791,14 @@
    "hr_rhb": 0.782,
    "overall": 1.044
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0185,
+   "park_hits": 1.2039,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.765,
+   "sim_avg_factor": 1.136
+  }
  },
  {
   "park": "Charlotte Sports Park",
@@ -11751,7 +12871,14 @@
    "hr_rhb": 0.968,
    "overall": 1.016
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.01,
+   "park_hits": 1.0516,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.969,
+   "sim_avg_factor": 1.042
+  }
  },
  {
   "park": "CoolToday Park",
@@ -11824,7 +12951,14 @@
    "hr_rhb": 1.024,
    "overall": 1.007
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9996,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.029,
+   "sim_avg_factor": 1.014
+  }
  },
  {
   "park": "Ed Smith Stadium",
@@ -11897,7 +13031,14 @@
    "hr_rhb": 1.08,
    "overall": 1.006
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0012,
+   "park_hits": 1.0047,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.085,
+   "sim_avg_factor": 1.002
+  }
  },
  {
   "park": "Pirate City",
@@ -11970,7 +13111,14 @@
    "hr_rhb": 0.847,
    "overall": 1.024
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0221,
+   "park_hits": 1.1043,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.87,
+   "sim_avg_factor": 1.076
+  }
  },
  {
   "park": "CACTI Park of the Palm Beaches",
@@ -12043,7 +13191,14 @@
    "hr_rhb": 0.962,
    "overall": 1.017
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0108,
+   "park_hits": 1.0662,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.947,
+   "sim_avg_factor": 1.051
+  }
  },
  {
   "park": "JetBlue Park at Fenway South",
@@ -12116,7 +13271,14 @@
    "hr_rhb": 1.102,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9943,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.103,
+   "sim_avg_factor": 0.986
+  }
  },
  {
   "park": "Arizona Diamondbacks AZPB DR",
@@ -12189,7 +13351,14 @@
    "hr_rhb": 1.056,
    "overall": 1.014
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9915,
+   "park_hits": 1.0311,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.041,
+   "sim_avg_factor": 1.03
+  }
  },
  {
   "park": "Toronto Blue Jays DR Complex",
@@ -12262,7 +13431,14 @@
    "hr_rhb": 1.128,
    "overall": 1.008
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.999,
+   "park_hits": 1.0052,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.128,
+   "sim_avg_factor": 1.002
+  }
  },
  {
   "park": "Baltimore Orioles DR Complex",
@@ -12335,7 +13511,14 @@
    "hr_rhb": 1.087,
    "overall": 1.013
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.077,
+   "sim_avg_factor": 1.02
+  }
  },
  {
   "park": "Academia Padres San Diego DR",
@@ -12408,7 +13591,14 @@
    "hr_rhb": 1.04,
    "overall": 1.021
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0229,
+   "park_hits": 1.0574,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.032,
+   "sim_avg_factor": 1.044
+  }
  },
  {
   "park": "White Sox DR Complex",
@@ -12481,7 +13671,14 @@
    "hr_rhb": 1.122,
    "overall": 1.01
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9939,
+   "park_hits": 1.0076,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.116,
+   "sim_avg_factor": 1.009
+  }
  },
  {
   "park": "Academia de Beisbol Bravos de Atlanta",
@@ -12554,7 +13751,14 @@
    "hr_rhb": 1.083,
    "overall": 1.009
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9883,
+   "park_hits": 1.0179,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.083,
+   "sim_avg_factor": 1.018
+  }
  },
  {
   "park": "Milwaukee Brewers Baseball DR Complex",
@@ -12627,7 +13831,14 @@
    "hr_rhb": 1.068,
    "overall": 1.012
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.002,
+   "park_hits": 1.0223,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.079,
+   "sim_avg_factor": 1.023
+  }
  },
  {
   "park": "Campo de Béisbol Las Palmas de Los Dodgers",
@@ -12700,7 +13911,14 @@
    "hr_rhb": 1.087,
    "overall": 1.013
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0116,
+   "park_hits": 1.0193,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.098,
+   "sim_avg_factor": 1.021
+  }
  },
  {
   "park": "Cleveland Guardians Baseball DR Complex",
@@ -12773,7 +13991,14 @@
    "hr_rhb": 1.025,
    "overall": 1.013
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9947,
+   "park_hits": 1.034,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.019,
+   "sim_avg_factor": 1.03
+  }
  },
  {
   "park": "Rockies of Colorado Academy DR",
@@ -12846,7 +14071,14 @@
    "hr_rhb": 1.076,
    "overall": 1.013
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0022,
+   "park_hits": 1.0193,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.085,
+   "sim_avg_factor": 1.021
+  }
  },
  {
   "park": "Miami Marlins Baseball Academy DR",
@@ -12919,7 +14151,14 @@
    "hr_rhb": 1.195,
    "overall": 1.007
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9967,
+   "park_hits": 0.9871,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.18,
+   "sim_avg_factor": 0.996
+  }
  },
  {
   "park": "New York Mets DR Complex",
@@ -12992,7 +14231,14 @@
    "hr_rhb": 0.954,
    "overall": 1.024
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0189,
+   "park_hits": 1.0809,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.957,
+   "sim_avg_factor": 1.062
+  }
  },
  {
   "park": "Texas Rangers Baseball Academy DR",
@@ -13065,7 +14311,14 @@
    "hr_rhb": 1.101,
    "overall": 1.016
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0183,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.083,
+   "sim_avg_factor": 1.03
+  }
  },
  {
   "park": "New York Yankees DR Complex",
@@ -13138,7 +14391,14 @@
    "hr_rhb": 0.934,
    "overall": 1.022
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0181,
+   "park_hits": 1.075,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.943,
+   "sim_avg_factor": 1.06
+  }
  },
  {
   "park": "Houston Astros DR Complex",
@@ -13211,7 +14471,14 @@
    "hr_rhb": 1.098,
    "overall": 1.011
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0072,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.099,
+   "sim_avg_factor": 1.013
+  }
  },
  {
   "park": "Academia de Béisbol de los Atléticos",
@@ -13284,7 +14551,14 @@
    "hr_rhb": 0.997,
    "overall": 1.019
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0074,
+   "park_hits": 1.0604,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.001,
+   "sim_avg_factor": 1.049
+  }
  },
  {
   "park": "Academia de Baseball Tampa Bay Rays DR",
@@ -13357,7 +14631,14 @@
    "hr_rhb": 1.098,
    "overall": 1.011
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9939,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.098,
+   "sim_avg_factor": 1.017
+  }
  },
  {
   "park": "Cincinnati Reds DR Complex",
@@ -13430,7 +14711,14 @@
    "hr_rhb": 1.056,
    "overall": 1.014
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9916,
+   "park_hits": 1.0281,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.055,
+   "sim_avg_factor": 1.027
+  }
  },
  {
   "park": "Kansas City Royals DR Complex",
@@ -13503,7 +14791,14 @@
    "hr_rhb": 1.172,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9907,
+   "park_hits": 0.9812,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.17,
+   "sim_avg_factor": 0.993
+  }
  },
  {
   "park": "Chicago Cubs Dominican Baseball Academy DR",
@@ -13576,7 +14871,14 @@
    "hr_rhb": 1.023,
    "overall": 1.017
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0125,
+   "park_hits": 1.0428,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.031,
+   "sim_avg_factor": 1.042
+  }
  },
  {
   "park": "Academia de Baseball de Los Piratas de Pittsburgh",
@@ -13649,7 +14951,14 @@
    "hr_rhb": 0.956,
    "overall": 1.022
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0076,
+   "park_hits": 1.075,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.97,
+   "sim_avg_factor": 1.056
+  }
  },
  {
   "park": "Boston Red Sox Baseball Academy DR",
@@ -13722,7 +15031,14 @@
    "hr_rhb": 1.115,
    "overall": 1.01
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0056,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.115,
+   "sim_avg_factor": 1.016
+  }
  },
  {
   "park": "Detroit Tigers DR Facility",
@@ -13795,7 +15111,14 @@
    "hr_rhb": 1.097,
    "overall": 1.012
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0076,
+   "park_hits": 1.0164,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.099,
+   "sim_avg_factor": 1.018
+  }
  },
  {
   "park": "Los Angeles Angels of Anaheim DR Complex",
@@ -13868,7 +15191,14 @@
    "hr_rhb": 1.045,
    "overall": 1.017
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.006,
+   "park_hits": 1.0398,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.045,
+   "sim_avg_factor": 1.036
+  }
  },
  {
   "park": "Academia St Louis Cardinals",
@@ -13941,7 +15271,14 @@
    "hr_rhb": 1.032,
    "overall": 1.018
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.01,
+   "park_hits": 1.0457,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.029,
+   "sim_avg_factor": 1.042
+  }
  },
  {
   "park": "San Francisco Giants DR Complex",
@@ -14014,7 +15351,14 @@
    "hr_rhb": 1.191,
    "overall": 1.005
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9961,
+   "park_hits": 0.9754,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.191,
+   "sim_avg_factor": 0.99
+  }
  },
  {
   "park": "Academia De Béisbol Felipe Alou",
@@ -14087,7 +15431,14 @@
    "hr_rhb": 1.233,
    "overall": 1.001
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9919,
+   "park_hits": 0.9637,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.234,
+   "sim_avg_factor": 0.976
+  }
  },
  {
   "park": "Academia Marinero de Seattle",
@@ -14160,7 +15511,14 @@
    "hr_rhb": 1.105,
    "overall": 1.009
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0044,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.118,
+   "sim_avg_factor": 1.009
+  }
  },
  {
   "park": "Nationals Complex Dominican",
@@ -14233,7 +15591,14 @@
    "hr_rhb": 1.23,
    "overall": 1.003
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9955,
+   "park_hits": 0.971,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.23,
+   "sim_avg_factor": 0.98
+  }
  },
  {
   "park": "Philadelphia Phillies Baseball Academy DR",
@@ -14306,7 +15671,14 @@
    "hr_rhb": 0.994,
    "overall": 1.019
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0044,
+   "park_hits": 1.0662,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.994,
+   "sim_avg_factor": 1.053
+  }
  },
  {
   "park": "Minnesota Twins DR Complex",
@@ -14379,7 +15751,14 @@
    "hr_rhb": 0.954,
    "overall": 1.025
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0149,
+   "park_hits": 1.0867,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.943,
+   "sim_avg_factor": 1.071
+  }
  },
  {
   "park": "Nymeo Field at Harry Grove Stadium",
@@ -14452,7 +15831,14 @@
    "hr_rhb": 1.089,
    "overall": 0.989
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9897,
+   "park_hits": 0.9607,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.088,
+   "sim_avg_factor": 0.962
+  }
  },
  {
   "park": "Eastwood Field",
@@ -14525,7 +15911,14 @@
    "hr_rhb": 0.992,
    "overall": 0.999
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 1.0052,
+   "park_hits": 0.993,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.993,
+   "sim_avg_factor": 0.994
+  }
  },
  {
   "park": "Medlar Field",
@@ -14598,7 +15991,14 @@
    "hr_rhb": 0.847,
    "overall": 1.012
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9943,
+   "park_hits": 1.075,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.863,
+   "sim_avg_factor": 1.052
+  }
  },
  {
   "park": "Trenton Thunder Ballpark",
@@ -14671,7 +16071,14 @@
    "hr_rhb": 0.757,
    "overall": 1.006
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9907,
+   "park_hits": 1.0662,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.759,
+   "sim_avg_factor": 1.044
+  }
  },
  {
   "park": "Kendrick Family Ballpark",
@@ -14744,7 +16151,14 @@
    "hr_rhb": 1.103,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9988,
+   "park_hits": 0.9725,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 1.102,
+   "sim_avg_factor": 0.979
+  }
  },
  {
   "park": "Bowman Field",
@@ -14817,6 +16231,13 @@
    "hr_rhb": 0.895,
    "overall": 0.997
   },
-  "team": null
+  "team": null,
+  "engine": {
+   "park_hr": 0.9923,
+   "park_hits": 1.0105,
+   "calibrated_n": 30000,
+   "sim_hr_factor": 0.875,
+   "sim_avg_factor": 1.006
+  }
  }
 ]

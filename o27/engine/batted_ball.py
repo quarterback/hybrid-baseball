@@ -276,7 +276,7 @@ def resolve_batted_ball(
 ) -> tuple[str, bool, bool]:
     """Return (hit_type, batter_safe, caught_fly) from the trajectory."""
     import o27.config as _cfg
-    from o27.engine.park_effects import _proxy_distance, _fence_at_angle
+    from o27.engine.park_effects import _proxy_distance, _fence_at_angle, _wall_at_angle
 
     hi = lambda v: max(0.0, min(0.97, v))
 
@@ -288,7 +288,11 @@ def resolve_batted_ball(
     if la >= _cfg.RES_FLY_LA:
         dist = _proxy_distance(ev, la)
         fence = _fence_at_angle(spray, park_dims) if park_dims else 380.0
-        wall_h = float((park_dims or {}).get("wall_h", 10) or 10)
+        # Wall height AT this spray angle — real parks carry a per-zone `walls`
+        # map so an asymmetric wall (Fenway's 37-ft Monster down the LF line)
+        # actually rides the spray angle instead of collapsing to a mean. Falls
+        # back to the scalar wall_h for generated parks (no `walls` key).
+        wall_h = _wall_at_angle(spray, park_dims) if park_dims else 10.0
         margin = max(0.0, (wall_h - 12.0) * 0.55)
         hr_bar = (fence + margin) / max(0.5, park_hr)
         if dist >= hr_bar + _cfg.RES_HR_MARGIN:

@@ -142,15 +142,30 @@ def park_to_dimensions(rec: dict) -> dict:
     return dims
 
 
+# The raw empirical HR factor cannot be used as park_hr directly: the engine's
+# hr_bar = fence / park_hr lever amplifies it ~5-13x (a 0.79 factor nearly
+# erases HRs). Calibrated values in the per-park `engine` block are solved so
+# the live resolver reproduces the listed factor (scripts/calibrate_real_parks.py).
+# For any record lacking a calibration we compress the HR residual toward 1.
+_HR_FALLBACK_COMPRESSION = 0.15
+
+
 def park_factors(rec: dict) -> tuple[float, float]:
-    """(park_hr, park_hits) multipliers from a record's park factors, mapped
-    onto the engine's two per-team knobs. park_hr <- HR factor, park_hits <-
-    AVG factor. Missing factors fall back to neutral 1.0."""
+    """(park_hr, park_hits) engine multipliers for a record.
+
+    Prefers the calibrated `engine` block — solved so the live resolver
+    reproduces this park's listed factors. Falls back to a gently compressed
+    mapping (HR pulled toward neutral, AVG ~linear) when uncalibrated, and to
+    neutral 1.0 when a park has no factors at all.
+    """
+    eng = rec.get("engine") or {}
+    if eng.get("park_hr") and eng.get("park_hits"):
+        return float(eng["park_hr"]), float(eng["park_hits"])
     pf = rec.get("park_factors") or {}
     hr = pf.get("hr")
     avg = pf.get("avg")
-    park_hr = round(float(hr), 3) if hr else 1.0
-    park_hits = round(float(avg), 3) if avg else 1.0
+    park_hr = round(1.0 + (float(hr) - 1.0) * _HR_FALLBACK_COMPRESSION, 4) if hr else 1.0
+    park_hits = round(float(avg), 4) if avg else 1.0
     return park_hr, park_hits
 
 

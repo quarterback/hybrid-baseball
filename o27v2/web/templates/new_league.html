@@ -264,12 +264,15 @@
               </div>
             </div>
             <div class="col-md-4">
-              <label class="form-label" for="cf-park">Field geometry (parks)</label>
+              <label class="form-label" for="cf-park">Park source</label>
               <select id="cf-park" name="cf_park" class="form-select form-select-sm">
-                <option value="">(varied — all eras)</option>
-                {% for p in park_options %}<option value="{{ p.key }}">{{ p.label }}</option>{% endfor %}
+                {% for g in park_options %}
+                <optgroup label="{{ g.group }}">
+                  {% for p in g.options %}<option value="{{ p.value }}">{{ p.label }}</option>{% endfor %}
+                </optgroup>
+                {% endfor %}
               </select>
-              <div class="text-secondary mt-1" style="font-size:.72rem">Park dimensions: HR vs. triples / inside-the-park &amp; defensive range.</div>
+              <div class="text-secondary mt-1" style="font-size:.72rem">Procedural geometry profile, realistic-but-varied real shapes, or play in actual stadiums (real dimensions, walls &amp; factors).</div>
             </div>
 
             <div class="col-12">
