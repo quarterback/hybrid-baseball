@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}SP Chart{% endblock %}
+{% block content %}
+
+{# Filter value carried through the day links (omitted at default to keep URLs clean). #}
+{% set lg = selected_league if selected_league != 'all' else none %}
+
+<div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+  <h2 class="fw-bold mb-0">Daily SP Chart</h2>
+  <div class="small text-secondary">Projected starters, ranked for streaming</div>
+</div>
+
+<form class="filter-bar d-flex flex-wrap gap-2 align-items-end mb-2" method="get">
+  {% if view_date %}<input type="hidden" name="date" value="{{ view_date }}">{% endif %}
+  {% if all_leagues and all_leagues|length > 1 %}
+  <div>
+    <label class="form-label small text-secondary mb-1">League</label>
+    <select name="league" class="form-select form-select-sm" onchange="this.form.submit()">
+      <option value="all" {% if selected_league == 'all' %}selected{% endif %}>All Leagues</option>
+      {% for lgn in all_leagues %}
+      <option value="{{ lgn }}" {% if selected_league == lgn %}selected{% endif %}>{{ lgn }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+</form>
+
+{# ---------- Day navigator ---------- #}
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <a class="btn btn-sm btn-outline-secondary"
+     {% if prev_day %}href="{{ url_for('sp_chart', date=prev_day, league=lg) }}"{% else %}disabled{% endif %}>‹ Prev day</a>
+  <div class="fw-bold">{{ view_date_label or 'No scheduled games' }}</div>
+  <a class="btn btn-sm btn-outline-secondary"
+     {% if next_day %}href="{{ url_for('sp_chart', date=next_day, league=lg) }}"{% else %}disabled{% endif %}>Next day ›</a>
+</div>
+
+{% if not starters %}
+  <div class="alert alert-secondary">No projected starters for this day. Try another date or sim more games.</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table dense-table mb-0">
+    <thead>
+      <tr>
+        <th class="num">Rk</th>
+        <th>Pitcher</th>
+        <th>Tm</th>
+        <th>Opp</th>
+        <th class="num" title="Throws (L/R)">T</th>
+        <th class="num" title="Innings pitched (season)">IP</th>
+        <th class="num">ERA</th>
+        <th class="num">WHIP</th>
+        <th class="num" title="Strikeout rate">K%</th>
+        <th class="num col-group-end" title="Strikeout minus walk rate">K-BB%</th>
+        <th class="num" title="Opponent team offense rank by wOBA (1 = best offense)">Opp Off</th>
+        <th class="num col-group-end" title="Opponent team strikeout rate">Opp K%</th>
+        <th class="num" title="Shallow / 10-team start">10</th>
+        <th class="num" title="Medium / 12-team start">12</th>
+        <th class="num" title="Deep / 15-team+ start">15+</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in starters %}
+      <tr>
+        <td class="num">{{ s.rank or '—' }}</td>
+        <td><a href="{{ url_for('player_detail', player_id=s.player_id) }}">{{ s.name }}</a></td>
+        <td>{{ s.team }}</td>
+        <td>{{ s.opp }}</td>
+        <td class="num">{{ s.throws }}</td>
+        {% if s.has_stats %}
+        <td class="num">{{ '%.1f'|format(s.ip) }}</td>
+        <td class="num">{{ '%.2f'|format(s.era) }}</td>
+        <td class="num">{{ '%.2f'|format(s.whip) }}</td>
+        <td class="num">{{ '%.0f'|format(s.k_pct * 100) }}%</td>
+        <td class="num col-group-end">{{ '%.0f'|format(s.k_minus_bb_pct * 100) }}%</td>
+        {% else %}
+        <td class="num text-secondary" colspan="5">no season log yet</td>
+        {% endif %}
+        <td class="num">{{ ('%d'|format(s.opp_off_rank)) if s.opp_off_rank else '—' }}{% if s.opp_off_rank and n_teams %}<span class="text-secondary">/{{ n_teams }}</span>{% endif %}</td>
+        <td class="num col-group-end">{{ ('%.0f%%'|format(s.opp_k_pct * 100)) if s.opp_k_pct is not none else '—' }}</td>
+        <td class="num">{% if s.t_shallow %}<span class="fw-bold" style="color:var(--accent)">x</span>{% endif %}</td>
+        <td class="num">{% if s.t_medium %}<span class="fw-bold" style="color:var(--accent)">x</span>{% endif %}</td>
+        <td class="num">{% if s.t_deep %}<span class="fw-bold" style="color:var(--accent)">x</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="small text-secondary mt-3" style="max-width:60rem">
+  <p class="mb-1"><strong>How to read it.</strong> Starters are O27's <em>projected</em> arms — the
+  pitcher the sim would hand the ball to given each club's rest as of this date. Like an MLB
+  probable, the pick can shift once intervening games run.</p>
+  <p class="mb-1">Rank is a value score combining the pitcher's season skill (K-BB%, run prevention,
+  WHIP) with the matchup (the opponent's team offense). The <strong>10 / 12 / 15+</strong> columns
+  are start recommendations for shallow / medium / deep leagues — an <span style="color:var(--accent)">x</span>
+  means "start him." Deep includes everyone shallow and medium does, never fewer.</p>
+  <p class="mb-0"><strong>Opp Off</strong> ranks the opposing team's offense by wOBA across the
+  league (1 = toughest offense to face). It is a team-overall measure; a split by the pitcher's
+  handedness is a future enhancement.</p>
+</div>
+{% endif %}
+
+{% endblock %}

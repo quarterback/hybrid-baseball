@@ -3679,6 +3679,270 @@ def schedule():
                   date_hi=date_hi)
 
 
+# ---------------------------------------------------------------------------
+# Daily SP Chart — a FanGraphs-style "Starting Pitcher Chart" for O27.
+#
+# For a single game day, list each game's two *projected* starters (the arm the
+# sim would hand the ball to, via `projected_starter`) ranked into a streaming
+# chart: season rate stats (IP/ERA/WHIP/K%/K-BB%), the opponent's offensive
+# quality, and a shallow/medium/deep start recommendation. O27 commits no
+# rotation, so — exactly like an MLB "probable" — the projection can shift once
+# intervening games run; the page labels it as projected. All stats are reused
+# from the same aggregators the leaderboards use; no engine/schema changes.
+# ---------------------------------------------------------------------------
+def _next_unplayed_date(selected_league: str | None) -> str | None:
+    """The next game day that still has an unplayed game (the live slate);
+    falls back to the most recent day with games so the chart is never empty on
+    a fully-simmed save. League-scoped when a league is selected."""
+    lg = selected_league if (selected_league and selected_league != "all") else None
+    if lg:
+        row = db.fetchone(
+            "SELECT g.game_date AS d FROM games g "
+            "JOIN teams ht ON g.home_team_id = ht.id "
+            "JOIN teams at ON g.away_team_id = at.id "
+            "WHERE g.played = 0 AND (ht.league = ? OR at.league = ?) "
+            "ORDER BY g.game_date, g.id LIMIT 1", (lg, lg))
+        if row and row["d"]:
+            return row["d"]
+        row = db.fetchone(
+            "SELECT MAX(g.game_date) AS d FROM games g "
+            "JOIN teams ht ON g.home_team_id = ht.id "
+            "JOIN teams at ON g.away_team_id = at.id "
+            "WHERE (ht.league = ? OR at.league = ?)", (lg, lg))
+        return row["d"] if row and row["d"] else None
+    row = db.fetchone(
+        "SELECT game_date FROM games WHERE played = 0 ORDER BY game_date, id LIMIT 1")
+    if row and row["game_date"]:
+        return row["game_date"]
+    row = db.fetchone("SELECT MAX(game_date) AS d FROM games")
+    return row["d"] if row and row["d"] else None
+
+
+def _build_sp_chart(view_date: str | None, selected_league: str) -> dict:
+    """Assemble the ranked SP chart for `view_date`. Returns
+    {"starters": [...], "n_teams": int}. Each starter row carries the pitcher's
+    season rate stats, the opponent's team-offense rank, a value score, an
+    overall rank, and three nested start-tier booleans."""
+    if not view_date:
+        return {"starters": [], "n_teams": 0}
+    lg = selected_league if (selected_league and selected_league != "all") else None
+
+    if lg:
+        games = db.fetchall(
+            "SELECT g.id, g.played, g.home_team_id, g.away_team_id, "
+            "       ht.abbrev AS home_abbrev, at.abbrev AS away_abbrev "
+            "FROM games g JOIN teams ht ON g.home_team_id = ht.id "
+            "JOIN teams at ON g.away_team_id = at.id "
+            "WHERE g.game_date = ? AND (ht.league = ? OR at.league = ?) "
+            "ORDER BY g.start_minute, g.id", (view_date, lg, lg))
+    else:
+        games = db.fetchall(
+            "SELECT g.id, g.played, g.home_team_id, g.away_team_id, "
+            "       ht.abbrev AS home_abbrev, at.abbrev AS away_abbrev "
+            "FROM games g JOIN teams ht ON g.home_team_id = ht.id "
+            "JOIN teams at ON g.away_team_id = at.id "
+            "WHERE g.game_date = ? ORDER BY g.start_minute, g.id", (view_date,))
+    if not games:
+        return {"starters": [], "n_teams": 0}
+
+    # Played games record their actual game-starter; unplayed games get the
+    # sim's projected starter (the same selection the live engine uses).
+    played_ids = [g["id"] for g in games if g["played"]]
+    actual_sp: dict = {}
+    if played_ids:
+        qm = ",".join("?" for _ in played_ids)
+        for r in db.fetchall(
+            f"SELECT game_id, team_id, player_id FROM game_pitcher_stats "
+            f"WHERE is_starter = 1 AND phase = 0 AND game_id IN ({qm})",
+            tuple(played_ids)):
+            actual_sp[(r["game_id"], r["team_id"])] = r["player_id"]
+
+    # One projected_starter call per distinct unplayed team (≤ one per club on
+    # the day), memoized so a club playing a doubleheader isn't recomputed.
+    proj_cache: dict = {}
+
+    def _starter_for(game, team_id):
+        if game["played"]:
+            return actual_sp.get((game["id"], team_id))
+        if team_id not in proj_cache:
+            s = projected_starter(team_id, view_date)
+            proj_cache[team_id] = s["player_id"] if s else None
+        return proj_cache[team_id]
+
+    entries = []  # one per projected starter on the slate
+    for g in games:
+        for tid, tab, opp_tid, opp_ab in (
+            (g["away_team_id"], g["away_abbrev"], g["home_team_id"], g["home_abbrev"]),
+            (g["home_team_id"], g["home_abbrev"], g["away_team_id"], g["away_abbrev"]),
+        ):
+            pid = _starter_for(g, tid)
+            if pid:
+                entries.append({
+                    "player_id": pid, "team_id": tid, "team_abbrev": tab,
+                    "opp_team_id": opp_tid, "opp_abbrev": opp_ab,
+                })
+    if not entries:
+        return {"starters": [], "n_teams": 0}
+
+    baselines = _league_baselines(lg)
+
+    # Season pitcher aggregates for the charted starters — same column set and
+    # aggregator the /leaders pitching board uses, filtered to these arms.
+    pids = list({e["player_id"] for e in entries})
+    qm = ",".join("?" for _ in pids)
+    pit_rows = db.fetchall(
+        f"""SELECT p.id as player_id, p.name as player_name, p.throws as throws,
+                  t.id as team_id,
+                  COUNT(ps.game_id) as g,
+                  SUM(ps.batters_faced) as bf, SUM(ps.outs_recorded) as outs,
+                  SUM(ps.hits_allowed) as h, SUM(ps.runs_allowed) as r,
+                  SUM(ps.er) as er, SUM(ps.bb) as bb, SUM(ps.k) as k,
+                  SUM(ps.hr_allowed) as hr_allowed,
+                  COALESCE(SUM(ps.hbp_allowed),0) as hbp_allowed,
+                  COALESCE(SUM(ps.unearned_runs),0) as uer,
+                  COALESCE(SUM(ps.er_arc1),0) as er_arc1, COALESCE(SUM(ps.er_arc2),0) as er_arc2, COALESCE(SUM(ps.er_arc3),0) as er_arc3,
+                  COALESCE(SUM(ps.k_arc1),0)  as k_arc1,  COALESCE(SUM(ps.k_arc2),0)  as k_arc2,  COALESCE(SUM(ps.k_arc3),0)  as k_arc3,
+                  COALESCE(SUM(ps.fo_arc1),0) as fo_arc1, COALESCE(SUM(ps.fo_arc2),0) as fo_arc2, COALESCE(SUM(ps.fo_arc3),0) as fo_arc3,
+                  COALESCE(SUM(ps.bf_arc1),0) as bf_arc1, COALESCE(SUM(ps.bf_arc2),0) as bf_arc2, COALESCE(SUM(ps.bf_arc3),0) as bf_arc3,
+                  COALESCE(SUM(ps.is_starter),0) as gs,
+                  COALESCE(SUM(ps.singles_allowed),0) as singles_allowed,
+                  COALESCE(SUM(ps.doubles_allowed),0) as doubles_allowed,
+                  COALESCE(SUM(ps.triples_allowed),0) as triples_allowed
+           FROM {_REG_PSTATS_DEDUP_SQL} ps
+           JOIN players p ON ps.player_id = p.id
+           JOIN teams   t ON ps.team_id = t.id
+           WHERE p.id IN ({qm})
+           GROUP BY p.id""", tuple(pids))
+    _aggregate_pitcher_rows(pit_rows, _pitcher_wl_map(), baselines=baselines)
+    by_pid = {r["player_id"]: r for r in pit_rows}
+    # Name/throws for every charted starter (a rookie with no log yet won't
+    # appear in the aggregate query, but still needs a chart row).
+    meta = {r["id"]: r for r in db.fetchall(
+        f"SELECT id, name, throws FROM players WHERE id IN ({qm})", tuple(pids))}
+
+    # Opponent offense: rank every team in scope by team wOBA (1 = best
+    # offense), reusing the batter aggregator exactly as /teams/stats does.
+    lg_where = "WHERE t.league = ? " if lg else ""
+    lg_param = (lg,) if lg else ()
+    team_bat = db.fetchall(
+        f"""SELECT t.id as team_id, t.abbrev as team_abbrev,
+                   COUNT(DISTINCT bs.game_id) as g,
+                   SUM(bs.pa) as pa, SUM(bs.ab) as ab, SUM(bs.hits) as h,
+                   SUM(bs.doubles) as d2, SUM(bs.triples) as d3, SUM(bs.hr) as hr,
+                   SUM(bs.runs) as r, SUM(bs.rbi) as rbi,
+                   SUM(bs.bb) as bb, SUM(bs.k) as k,
+                   COALESCE(SUM(bs.hbp),0) as hbp,
+                   COALESCE(SUM(bs.sb),0) as sb, COALESCE(SUM(bs.cs),0) as cs
+              FROM (SELECT * FROM game_batter_stats WHERE COALESCE(is_playoff,0)=0) bs
+              JOIN teams t ON bs.team_id = t.id
+              {lg_where}
+             GROUP BY t.id""", lg_param)
+    _aggregate_batter_rows(team_bat, baselines=baselines)
+    n_teams = len(team_bat)
+    ranked = sorted(team_bat, key=lambda r: -(r.get("woba") or 0))
+    woba_rank = {r["team_id"]: i + 1 for i, r in enumerate(ranked)}
+    team_off = {r["team_id"]: r for r in team_bat}
+
+    # League run reference for the value score (league RA/27 == league mean
+    # xRA by the aggregator's anchor; falls back to league ERA, then 0).
+    league_ra = baselines.get("league_werra") or baselines.get("era") or 0.0
+
+    starters = []
+    for e in entries:
+        prow = by_pid.get(e["player_id"])
+        m = meta.get(e["player_id"]) or {}
+        opp = team_off.get(e["opp_team_id"]) or {}
+        opp_woba_plus = opp.get("woba_plus")
+        has_stats = bool(prow and (prow.get("outs") or 0) > 0)
+
+        if has_stats:
+            outs = prow["outs"]
+            ip = outs / 3.0
+            era = 27.0 * (prow.get("er") or 0) / outs
+            whip = 3.0 * ((prow.get("bb") or 0) + (prow.get("h") or 0)) / outs
+            kbb = prow.get("k_minus_bb_pct")
+            kpct = prow.get("k_pct")
+            xra = prow.get("xra")
+            # Value = pitcher skill (K-BB%, run prevention, WHIP) + a matchup
+            # nudge from the opponent's offense (tougher offense lowers it).
+            skill = (100.0 * (kbb or 0.0)
+                     - 8.0 * ((xra if xra is not None else league_ra) - (league_ra or 0.0))
+                     - 10.0 * (whip - 1.30))
+            ref = opp_woba_plus if opp_woba_plus is not None else 100.0
+            matchup = (100.0 - ref) * 0.15
+            value = skill + matchup
+        else:
+            ip = era = whip = kbb = kpct = xra = value = None
+
+        starters.append({
+            "player_id": e["player_id"],
+            "name": (prow["player_name"] if prow else m.get("name")) or "—",
+            "throws": (m.get("throws") or (prow.get("throws") if prow else None) or ""),
+            "team": e["team_abbrev"],
+            "opp": e["opp_abbrev"],
+            "ip": ip, "era": era, "whip": whip,
+            "k_pct": kpct, "k_minus_bb_pct": kbb,
+            "opp_off_rank": woba_rank.get(e["opp_team_id"]),
+            "opp_k_pct": opp.get("k_pct"),
+            "value": value, "has_stats": has_stats,
+            "rank": None, "t_shallow": False, "t_medium": False, "t_deep": False,
+        })
+
+    # Rank the arms with a value score; nest the tiers by rank-percentile so
+    # deep ⊇ medium ⊇ shallow (deep = most inclusive, like FanGraphs 15-team).
+    scored = [s for s in starters if s["value"] is not None]
+    scored.sort(key=lambda s: -s["value"])
+    n = len(scored)
+    for i, s in enumerate(scored):
+        s["rank"] = i + 1
+        pct = (i / n) if n else 1.0
+        s["t_shallow"] = pct < 0.40
+        s["t_medium"] = pct < 0.60
+        s["t_deep"] = pct < 0.85
+    unscored = [s for s in starters if s["value"] is None]
+    return {"starters": scored + unscored, "n_teams": n_teams}
+
+
+@app.route("/sp-chart")
+@_html_cache
+def sp_chart():
+    """Daily SP Chart — projected starters for a game day, ranked for streaming."""
+    all_leagues = _all_leagues()
+    league_arg = request.args.get("league") or "all"
+    selected_league = league_arg if league_arg in all_leagues else "all"
+
+    def _valid_iso(d):
+        try:
+            _dt.date.fromisoformat(d)
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    req_date = request.args.get("date")
+    view_date = (req_date if (req_date and _valid_iso(req_date))
+                 else _next_unplayed_date(selected_league))
+
+    data = _build_sp_chart(view_date, selected_league)
+
+    view_date_label = (_dt.date.fromisoformat(view_date).strftime("%A, %B %-d, %Y")
+                       if view_date else None)
+    prev_day = next_day = None
+    if view_date:
+        vd = _dt.date.fromisoformat(view_date)
+        prev_day = (vd - _dt.timedelta(days=1)).isoformat()
+        next_day = (vd + _dt.timedelta(days=1)).isoformat()
+
+    return _serve("sp_chart.html",
+                  starters=data["starters"],
+                  n_teams=data["n_teams"],
+                  all_leagues=all_leagues,
+                  selected_league=selected_league,
+                  view_date=view_date,
+                  view_date_label=view_date_label,
+                  prev_day=prev_day,
+                  next_day=next_day)
+
+
 @app.route("/game/<int:game_id>")
 @_html_cache
 def game_detail(game_id: int):
